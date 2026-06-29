@@ -159,7 +159,18 @@ export async function signTransaction(
   tx: UnsignedTransaction,
   chainId: number,
 ): Promise<SignatureResult> {
-  const derived = addressOf(newWalletFromExtendedSeed(hexSeed));
+  // Derive the address to check tx.from in a wiped scope: this materialises a
+  // full ML-DSA-87 wallet (incl. the 4896-byte secret key), so zeroize it
+  // immediately like every other wallet materialisation in this module.
+  let derived: string;
+  {
+    const checkWallet = newWalletFromExtendedSeed(hexSeed);
+    try {
+      derived = addressOf(checkWallet);
+    } finally {
+      checkWallet.zeroize();
+    }
+  }
   if (derived.toLowerCase() !== tx.from.toLowerCase()) {
     throw new Error('tx.from does not match the unlocked account');
   }
