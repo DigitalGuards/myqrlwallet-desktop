@@ -98,10 +98,11 @@ export default [
     },
   },
 
-  // Renderer: browser environment, no Node globals. The crypto fence and the
-  // ipcRenderer ban stay in force here (inherited from the base block).
+  // Browser-context surfaces: the (legacy) demo renderer and the native unlock
+  // window. Browser globals, no Node globals. The crypto fence and the
+  // ipcRenderer-global ban stay in force here (inherited from the base block).
   {
-    files: ['src/renderer/**/*.{ts,tsx}'],
+    files: ['src/renderer/**/*.{ts,tsx}', 'src/unlock/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.browser,

@@ -18,14 +18,22 @@ import {
   lockDownNavigation,
 } from './security';
 import { SignerBridge } from './signerBridge';
-import { createKeyVault } from '../keyvault';
+import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
+import { hasSeed } from './seedFile';
+import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
 
 let mainWindow: BrowserWindow | null = null;
+let keyVaultRef: KeyVault | null = null;
 const signer = new SignerBridge(() => {
-  // Autolock fired inside the signer: notify the renderer.
+  // Autolock fired inside the signer (or the signer crashed): notify the
+  // renderer AND surface the native unlock window so the session can be
+  // reopened. keyVaultRef is set once the vault resolves at boot.
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(EVENTS.LOCK_STATE_CHANGED, true);
+  }
+  if (keyVaultRef) {
+    showUnlockWindow({ getMainWindow: () => mainWindow, signer, keyVault: keyVaultRef });
   }
 });
 
@@ -170,10 +178,22 @@ app.whenReady().then(async () => {
     // Windows/Linux; macOS uses the Touch-ID vault regardless.
     allowSafeStorageFallback: process.env.QRL_ALLOW_SAFESTORAGE === '1',
   }).resolve();
+  keyVaultRef = keyVault;
 
-  registerIpcHandlers({ getWindow: () => mainWindow, signer, keyVault });
+  const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
+  registerUnlockIpc(unlockDeps);
+  registerIpcHandlers({
+    getWindow: () => mainWindow,
+    signer,
+    keyVault,
+    showUnlock: () => showUnlockWindow(unlockDeps),
+  });
 
   createWindow();
+
+  // If a wallet already exists, the freshly-forked signer is locked: gate the
+  // app behind the native unlock window before the wallet can be touched.
+  if (await hasSeed()) showUnlockWindow(unlockDeps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

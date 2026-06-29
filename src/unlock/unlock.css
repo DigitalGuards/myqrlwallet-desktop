@@ -1,0 +1,240 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #12151c;
+  --text: #e7e9ee;
+  --muted: #8b90a0;
+  --faint: #5b6072;
+  --accent: #7c5cff;
+  --accent2: #19b9b0;
+  --error: #ff6b6b;
+  --border: #232734;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.unlock-root {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Soft brand-coloured glow at the top, echoing the Proton-style gradient. */
+.unlock-gradient {
+  position: absolute;
+  top: -45%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150%;
+  height: 75%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(124, 92, 255, 0.35),
+    rgba(25, 185, 176, 0.12) 45%,
+    transparent 70%
+  );
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+.unlock-card {
+  position: relative;
+  width: 340px;
+  max-width: 88vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  animation: rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.unlock-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 12px 32px rgba(124, 92, 255, 0.35);
+}
+
+.unlock-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.unlock-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.unlock-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 999px;
+  margin: 2px 0;
+}
+
+.unlock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+}
+
+.unlock-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.unlock-input-wrap {
+  position: relative;
+}
+
+.unlock-input {
+  width: 100%;
+  padding: 13px 64px 13px 16px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+}
+
+.unlock-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+}
+
+.unlock-input::placeholder {
+  color: var(--faint);
+}
+
+.unlock-eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  user-select: none;
+}
+
+.unlock-eye:hover {
+  color: var(--text);
+}
+
+.unlock-button {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  transition:
+    filter 140ms,
+    transform 80ms,
+    opacity 140ms;
+}
+
+.unlock-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.unlock-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.unlock-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.unlock-biometric {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition:
+    border-color 140ms,
+    background 140ms;
+}
+
+.unlock-biometric:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(124, 92, 255, 0.08);
+}
+
+.unlock-error {
+  color: var(--error);
+  font-size: 13px;
+  margin: 0;
+}
+
+.unlock-hint {
+  font-size: 12px;
+  color: var(--faint);
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
