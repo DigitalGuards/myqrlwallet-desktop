@@ -1,0 +1,8 @@
+out
+release
+dist
+node_modules
+railway-wallet-reference
+resources
+*.md
+package-lock.json

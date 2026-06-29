@@ -1,0 +1,106 @@
+# electron-builder 26.x (current GA). v27 is alpha and moves signing under
+# mac.sign / win.sign objects; do NOT adopt that shape here.
+appId: com.digitalguards.qrlwallet.desktop
+productName: MyQRLWallet
+copyright: Copyright © DigitalGuards
+
+directories:
+  output: release
+  buildResources: build
+
+# Exclusion-style files: keep electron-builder's default inclusion (which pulls
+# in out/** and the PRODUCTION node_modules) and strip source / dev artifacts.
+# Replacing this list with explicit includes would drop the runtime deps the
+# signer needs (@node-rs/argon2, @theqrl/*), so keep it exclusion-only.
+files:
+  - '!src/**'
+  - '!docs/**'
+  - '!native/**'
+  - '!scripts/**'
+  - '!test/**'
+  - '!release/**'
+  - '!railway-wallet-reference/**'
+  - '!electron.vite.config.*'
+  - '!tsconfig*.json'
+  - '!eslint.config.*'
+  - '!.prettierrc*'
+  - '!*.md'
+
+asar: true
+# @node-rs/argon2 ships a prebuilt .node that cannot run from inside the asar;
+# unpack every native binary so process.dlopen resolves it from app.asar.unpacked.
+asarUnpack:
+  - '**/*.node'
+
+# --- macOS: sign + notarize + staple, app-bound keychain helper -------------
+mac:
+  category: public.app-category.finance
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip # required for electron-updater auto-update on mac
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # identity comes from CSC_NAME / the login keychain; set to null to skip signing.
+  # Notarization is handled SOLELY by the afterSign hook (scripts/notarize.cjs),
+  # which skips gracefully when the APPLE_API_* env is absent. Keep this false so
+  # the app is not submitted to notarytool twice.
+  notarize: false
+  extendInfo:
+    NSFaceIDUsageDescription: Unlock your QRL wallet with Face ID.
+  # Bundle the signed Swift keychain helper. Run `npm run build:keychain-helper`
+  # before a mac dist build, or this copy is empty and the app falls back to
+  # password-only unlock.
+  extraResources:
+    - from: resources
+      to: .
+      filter: ['**/*', '!**/.gitkeep', '!**/README.md']
+
+dmg:
+  writeUpdateInfo: false
+
+# --- Windows: Authenticode -------------------------------------------------
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  # Prefer WIN_CSC_LINK (path/base64 of the .pfx) + WIN_CSC_KEY_PASSWORD env over
+  # inlining a cert path. For EV / cloud-HSM certs use azureSignOptions or a
+  # custom signtoolOptions.sign hook instead (see ARCHITECTURE_RESEARCH.md).
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+# --- Linux ------------------------------------------------------------------
+linux:
+  category: Finance
+  synopsis: Post-quantum QRL desktop wallet
+  description: >-
+    Self-custody desktop wallet for the quantum-resistant ledger (QRL v2).
+    Keys are encrypted with an Argon2id password-derived key and only ever
+    decrypted inside an isolated signer process.
+  maintainer: DigitalGuards <ops@digitalguards.nl>
+  vendor: DigitalGuards
+  target:
+    - AppImage
+    - deb
+    - rpm
+
+# --- Build hooks ------------------------------------------------------------
+# afterPack: flip @electron/fuses on the packaged binary BEFORE signing.
+afterPack: scripts/afterPack.cjs
+# afterSign: notarize via @electron/notarize (only runs if signing happened).
+afterSign: scripts/notarize.cjs
+# afterAllArtifactBuild: PGP-detach-sign every artifact -> .asc sidecars.
+afterAllArtifactBuild: scripts/pgp-sign.cjs
+
+publish: null

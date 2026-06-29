@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- allow-jit: Electron's V8 engine JIT-compiles JavaScript, which requires
+       mapping writable+executable memory. Hardened runtime forbids this unless
+       this entitlement is present. Required for the renderer and main process. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- disable-library-validation: needed so the app can load the prebuilt
+       @node-rs/argon2 native .node addon (and any other third-party native
+       modules) that are not signed by our Team ID. Without this, the hardened
+       runtime refuses to load dylibs/addons whose signing identity differs from
+       the main binary. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- DELIBERATELY OMITTED: com.apple.security.cs.allow-unsigned-executable-memory.
+       That entitlement weakens code-signing enforcement by allowing arbitrary
+       unsigned executable pages, which is security-reducing and is NOT required:
+       allow-jit already covers V8's controlled JIT mapping. We keep the smallest
+       set of hardened-runtime exceptions. -->
+</dict>
+</plist>

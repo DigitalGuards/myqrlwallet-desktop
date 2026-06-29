@@ -1,0 +1,61 @@
+{
+  "name": "myqrlwallet-desktop",
+  "version": "0.1.0",
+  "description": "Post-quantum, enterprise-grade QRL desktop wallet. Electron shell with a hardened four-process architecture: a sandboxed renderer (reused myqrlwallet-frontend), a broker main process, and an isolated signer utilityProcess that is the sole holder of plaintext keys.",
+  "author": "DigitalGuards",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"scripts/**/*.cjs\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"scripts/**/*.cjs\"",
+    "test": "node --test --import tsx test/*.test.ts",
+    "calibrate:kdf": "tsx scripts/calibrate-kdf.ts",
+    "build:renderer:frontend": "bash scripts/build-renderer.sh",
+    "build:keychain-helper": "bash native/macos-keychain/build.sh",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac --x64 --arm64",
+    "dist:win": "npm run build && electron-builder --win --x64 --arm64",
+    "dist:linux": "npm run build && electron-builder --linux --x64",
+    "rebuild:native": "electron-builder install-app-deps",
+    "fuses:read": "electron-fuses read --app"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@noble/hashes": "^2.2.0",
+    "@theqrl/mldsa87": "^2.1.1",
+    "@theqrl/wallet.js": "^6.1.0",
+    "@theqrl/web3": "^1.0.1",
+    "zod": "^4.3.4"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "@electron/notarize": "^3.0.0",
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^2.3.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
