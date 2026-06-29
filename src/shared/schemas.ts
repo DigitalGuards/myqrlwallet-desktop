@@ -114,6 +114,14 @@ export const ImportWalletRequestSchema = z
   })
   .strict();
 
+/** Generate a brand-new wallet inside the signer (no mnemonic supplied). */
+export const CreateWalletRequestSchema = z
+  .object({
+    password: PasswordSchema,
+    useKeychain: z.boolean().optional().default(false),
+  })
+  .strict();
+
 export const SendRawTransactionRequestSchema = z
   .object({ rawTx: z.string().regex(/^0x[0-9a-fA-F]+$/) })
   .strict();
@@ -128,6 +136,7 @@ export type UnsignedTransaction = z.infer<typeof UnsignedTransactionSchema>;
 export type SignatureRequest = z.infer<typeof SignatureRequestSchema>;
 export type UnlockRequest = z.infer<typeof UnlockRequestSchema>;
 export type ImportWalletRequest = z.infer<typeof ImportWalletRequestSchema>;
+export type CreateWalletRequest = z.infer<typeof CreateWalletRequestSchema>;
 export type SendRawTransactionRequest = z.infer<typeof SendRawTransactionRequestSchema>;
 export type FeeLevel = z.infer<typeof FeeLevelSchema>;
 
@@ -145,6 +154,13 @@ export interface WalletStatus {
   unlockExpiresAt: number | null;
   /** Whether the KEK is currently backed by the OS keychain. */
   keychainBacked: boolean;
+}
+
+export interface CreateWalletResult {
+  status: WalletStatus;
+  /** One-time recovery mnemonic for the user to back up. Never persisted in
+   * plaintext; display it once and drop it. The hex seed never leaves the signer. */
+  mnemonic: string;
 }
 
 export interface SignatureResult {

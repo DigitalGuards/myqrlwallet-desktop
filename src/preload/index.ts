@@ -23,6 +23,7 @@ const api: QrlWalletApi = {
   lock: () => ipcRenderer.invoke(IPC.LOCK),
   getStatus: () => ipcRenderer.invoke(IPC.GET_STATUS),
   hasWallet: () => ipcRenderer.invoke(IPC.HAS_WALLET),
+  createWallet: (req) => ipcRenderer.invoke(IPC.CREATE_WALLET, req),
   importWallet: (req) => ipcRenderer.invoke(IPC.IMPORT_WALLET, req),
   sendRawTransaction: (req) => ipcRenderer.invoke(IPC.SEND_RAW_TRANSACTION, req),
   onLockStateChanged: (cb) => {

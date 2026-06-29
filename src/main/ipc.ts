@@ -20,6 +20,7 @@ import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
 import {
   BuildTransactionRequestSchema,
+  CreateWalletRequestSchema,
   GetBalanceRequestSchema,
   ImportWalletRequestSchema,
   SendRawTransactionRequestSchema,
@@ -143,19 +144,16 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.HAS_WALLET, null, () => hasSeed());
 
   // ---- provisioning -------------------------------------------------------
-  handle(IPC.IMPORT_WALLET, ImportWalletRequestSchema, async (req) => {
-    if (await hasSeed()) throw new Error('a wallet already exists; remove it first');
-    const { encrypted } = await signer.importWallet(req.mnemonic, req.password);
+  // Shared: persist the encrypted seed, open a session, and (opt-in) stash the
+  // KEK in the OS keychain. Returns the live status.
+  async function provisionAndUnlock(
+    encrypted: Parameters<typeof writeSeed>[0],
+    password: string,
+    useKeychain: boolean,
+  ): Promise<WalletStatus> {
     await writeSeed(encrypted);
-    // Open a session immediately. If keychain was requested and is available,
-    // ask the signer for the KEK so we can stash it (defense-in-depth).
-    const wantKek = req.useKeychain && (await keyVault.isAvailable());
-    const result = await signer.unlock({
-      encrypted,
-      autolockMs: AUTOLOCK_MS,
-      password: req.password,
-      wantKek,
-    });
+    const wantKek = useKeychain && (await keyVault.isAvailable());
+    const result = await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password, wantKek });
     if (wantKek && result.kekHex) {
       await keyVault.store(encrypted.address, result.kekHex);
       // result.kekHex is a JS string and cannot be truly zeroized; minimise its
@@ -163,6 +161,20 @@ export function registerIpcHandlers(deps: Deps): void {
     }
     emitLockState(false);
     return buildStatus();
+  }
+
+  handle(IPC.CREATE_WALLET, CreateWalletRequestSchema, async (req) => {
+    if (await hasSeed()) throw new Error('a wallet already exists; remove it first');
+    // The signer generates the seed and returns the mnemonic ONCE for backup.
+    const { encrypted, mnemonic } = await signer.create(req.password);
+    const status = await provisionAndUnlock(encrypted, req.password, req.useKeychain);
+    return { status, mnemonic };
+  });
+
+  handle(IPC.IMPORT_WALLET, ImportWalletRequestSchema, async (req) => {
+    if (await hasSeed()) throw new Error('a wallet already exists; remove it first');
+    const { encrypted } = await signer.importWallet(req.mnemonic, req.password);
+    return provisionAndUnlock(encrypted, req.password, req.useKeychain);
   });
 
   // ---- broadcast ----------------------------------------------------------

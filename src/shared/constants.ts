@@ -29,6 +29,9 @@ export const IPC = {
   // are the minimum extra channels for that, all equally sender+schema gated.
   /** True once an encrypted seed exists on disk for this app data dir. */
   HAS_WALLET: 'wallet:hasWallet',
+  /** Generates a fresh wallet INSIDE the signer; returns the mnemonic once for
+   * backup (never the hex seed/secret key), encrypts + persists it. */
+  CREATE_WALLET: 'wallet:createWallet',
   /** Imports a mnemonic, encrypts the seed under a password, persists it. */
   IMPORT_WALLET: 'wallet:importWallet',
   /** Current lock state + active address (no secrets). */
@@ -56,6 +59,7 @@ export const BRIDGE_KEY = 'qrlWallet';
  */
 export const SIGNER_MSG = {
   READY: 'signer:ready',
+  CREATE: 'signer:create',
   IMPORT: 'signer:import',
   UNLOCK: 'signer:unlock',
   SIGN: 'signer:sign',
