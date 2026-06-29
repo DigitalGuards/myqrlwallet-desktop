@@ -113,3 +113,46 @@ test('the autolock timer fires onAutoLock and locks the session', async (t) => {
   assert.equal(autoLockFired, 1, 'autolock callback must fire once');
   assert.equal(session.unlocked, false, 'autolock must lock the session');
 });
+
+test('unlock via a pre-derived KEK (keychain / Touch-ID path) opens a session', async () => {
+  // Mirrors the keychain unlock in main (ipc.ts): main retrieves the KEK from
+  // the OS vault and passes it instead of a password. The session validates it
+  // by decrypting, exactly like the password path.
+  const { encrypted, hexSeed, address } = await makeFixture();
+  const kek = await deriveKek(PASSWORD, Buffer.from(encrypted.salt, 'hex'), FAST_KDF);
+  const session = new SignerSession(() => {});
+
+  await session.unlock(encrypted, 60_000, { kek }, 0);
+  assert.equal(session.unlocked, true);
+  assert.equal(session.address, address);
+  assert.equal(session.withSeed((s) => s, 1), hexSeed, 'KEK unlock must expose the same seed');
+
+  // The session copies the KEK, so wiping the caller's buffer must not break it.
+  kek.fill(0);
+  assert.equal(session.withSeed((s) => s, 2), hexSeed, 'session must own its KEK copy');
+});
+
+test('the autolock window slides on activity and does not fire early', async (t) => {
+  const { encrypted } = await makeFixture();
+  let fired = 0;
+  const session = new SignerSession(() => {
+    fired += 1;
+  });
+
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await session.unlock(encrypted, 1_000, { password: PASSWORD }, 0);
+
+  // Activity at +500ms re-arms a fresh 1000ms timer (now firing at +1500ms).
+  t.mock.timers.tick(500);
+  session.withSeed((s) => s, 500);
+
+  // Past the ORIGINAL 1000ms deadline (now at +1100ms): the slide moved it out.
+  t.mock.timers.tick(600);
+  assert.equal(fired, 0, 'activity must slide the window, not let it fire');
+  assert.equal(session.unlocked, true);
+
+  // One full interval after the last activity (+1500ms): now it fires.
+  t.mock.timers.tick(400);
+  assert.equal(fired, 1, 'autolock fires one interval after the last activity');
+  assert.equal(session.unlocked, false);
+});

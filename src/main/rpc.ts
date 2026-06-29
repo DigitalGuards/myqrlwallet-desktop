@@ -78,8 +78,9 @@ async function getGasPrice(): Promise<bigint> {
   }
 }
 
-/** Fee-level multiplier, mirroring the web wallet's `applyFeeLevel`. */
-function applyFeeLevel(
+/** Fee-level multiplier, mirroring the web wallet's `applyFeeLevel`. Exported
+ * for unit testing (pure bigint arithmetic; no network). */
+export function applyFeeLevel(
   base: bigint,
   level: FeeLevel,
 ): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
