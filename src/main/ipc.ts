@@ -34,6 +34,8 @@ interface Deps {
   getWindow: () => BrowserWindow | null;
   signer: SignerBridge;
   keyVault: KeyVault;
+  /** Show the native unlock window (called when the renderer requests a lock). */
+  showUnlock: () => void;
 }
 
 let cachedChainId: number | null = null;
@@ -43,7 +45,7 @@ async function chainId(): Promise<number> {
 }
 
 export function registerIpcHandlers(deps: Deps): void {
-  const { getWindow, signer, keyVault } = deps;
+  const { getWindow, signer, keyVault, showUnlock } = deps;
 
   /** Wrap a handler with sender validation + (optional) schema parse. */
   function handle<S extends z.ZodTypeAny, R>(
@@ -136,6 +138,9 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.LOCK, null, async () => {
     await signer.lock();
     emitLockState(true);
+    // Renderer-initiated lock (auto-lock timer / logout): surface the native
+    // unlock window so the session can be reopened with a password.
+    showUnlock();
     return buildStatus();
   });
 

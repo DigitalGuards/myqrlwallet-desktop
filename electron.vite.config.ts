@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import react from '@vitejs/plugin-react';
 
 /**
  * electron-vite builds three targets into `out/`:
@@ -34,7 +35,11 @@ export default defineConfig({
     build: {
       outDir: 'out/preload',
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          // Dedicated preload for the native unlock window.
+          unlock: resolve(__dirname, 'src/unlock/preload.ts'),
+        },
         output: {
           // Sandboxed preloads must be CommonJS.
           format: 'cjs',
@@ -43,7 +48,20 @@ export default defineConfig({
       },
     },
   },
-  // No `renderer` target here: the renderer is the real myqrlwallet-frontend,
-  // built by its own toolchain via scripts/build-renderer.sh into out/renderer
-  // (run by `npm run build`). electron-vite only builds main + preload.
+  // The MAIN wallet renderer is the real myqrlwallet-frontend, built by its own
+  // toolchain via scripts/build-renderer.sh into out/renderer (run by
+  // `npm run build`). The ONLY renderer electron-vite builds here is the small,
+  // app-owned unlock window (out/unlock), native to the desktop app.
+  renderer: {
+    root: 'src/unlock',
+    plugins: [react()],
+    // Relative base so assets resolve under file:// (loadFile).
+    base: './',
+    build: {
+      outDir: resolve(__dirname, 'out/unlock'),
+      rollupOptions: {
+        input: { index: resolve(__dirname, 'src/unlock/index.html') },
+      },
+    },
+  },
 });
