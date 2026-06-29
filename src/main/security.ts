@@ -117,14 +117,24 @@ export function lockDownNavigation(app: Electron.App): void {
     // A file:// SPA with hash routing never legitimately navigates the top
     // document: route changes are hash-only and do not fire will-navigate, and
     // the initial load goes through loadFile/loadURL (also not will-navigate).
-    // So block every navigation AND every server/redirect-driven navigation;
-    // the renderer cannot be steered to new content under any origin.
-    contents.on('will-navigate', (event) => event.preventDefault());
+    // So the renderer is never steered to new in-app content. But an external
+    // link (the explorer, theqrl.org, a token's site) clicked as a plain
+    // <a href> DOES fire will-navigate; rather than dead-ending it (the links
+    // would appear broken), hand any external https URL to the OS browser.
+    contents.on('will-navigate', (event, url) => {
+      event.preventDefault();
+      if (isExternalHttps(url)) {
+        setImmediate(() => void shell.openExternal(url));
+      }
+    });
+    // Server/redirect-driven navigations are never legitimate here and must not
+    // auto-launch the browser (a redirect chain could point anywhere): block.
     contents.on('will-redirect', (event) => event.preventDefault());
 
     contents.setWindowOpenHandler(({ url }) => {
-      if (isAllowlistedExternal(url)) {
-        // Open in the user's real browser, not an Electron window.
+      // target=_blank / window.open: open external https links (e.g. zondscan)
+      // in the user's real browser, never in an Electron window.
+      if (isExternalHttps(url)) {
         setImmediate(() => void shell.openExternal(url));
       }
       return { action: 'deny' };
@@ -141,18 +151,15 @@ export function lockDownNavigation(app: Electron.App): void {
   });
 }
 
-const EXTERNAL_ALLOWLIST = [
-  'https://qrlwallet.com/',
-  'https://zondscan.com/',
-  'https://www.theqrl.org/',
-  'https://theqrl.org/',
-];
-
-function isAllowlistedExternal(url: string): boolean {
+/**
+ * An external link we will hand to the OS browser. Restricted to `https:` so a
+ * compromised renderer cannot use `shell.openExternal` to launch a dangerous
+ * scheme (file:, a custom protocol handler, etc.); the app itself is file://,
+ * so any https URL is by definition external.
+ */
+function isExternalHttps(url: string): boolean {
   try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:') return false;
-    return EXTERNAL_ALLOWLIST.some((prefix) => url.startsWith(prefix));
+    return new URL(url).protocol === 'https:';
   } catch {
     return false;
   }
