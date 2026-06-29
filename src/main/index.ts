@@ -7,7 +7,7 @@
  * proxies RPC, and owns the encrypted seed file on disk.
  */
 import path from 'node:path';
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, Menu, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
 import { registerIpcHandlers } from './ipc';
 import {
@@ -56,6 +56,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0b0d12',
     title: 'MyQRLWallet',
+    autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preloadPath),
   });
 
@@ -76,6 +77,17 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   // chromium app user model id (Windows notifications / taskbar grouping).
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+
+  // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
+  // use for it. On macOS keep a minimal app + edit + window menu so the standard
+  // shortcuts (Cmd+Q, copy/paste, close) still work; elsewhere remove it entirely.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
+    );
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 
   // Strict CSP on the default session. In dev, also permit the Vite dev server
   // origin + its HMR websocket so the renderer can load with HMR.
