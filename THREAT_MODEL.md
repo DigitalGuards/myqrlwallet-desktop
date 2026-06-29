@@ -89,9 +89,17 @@ design).
   sender + schema validation, navigation lockdown, fuses, ASAR integrity.
 - Buys: a fully compromised renderer can request a signature, but only over a
   specific payload that the user must approve in the main-drawn confirmation
-  modal (`src/main/confirm.ts`). It cannot read the seed, reach the signer, touch
-  disk, or exfiltrate over the network beyond the CSP `connect-src` allowlist. It
-  yields no key material.
+  modal (`src/main/confirm.ts`). The two renderer-reachable DESTRUCTIVE
+  primitives are gated the same way: signing and wallet removal
+  (`REMOVE_WALLET`) each require a main-drawn confirmation (`confirmSignature` /
+  `confirmRemoveWallet`, `src/main/confirm.ts`), so a compromised renderer can
+  neither sign nor irreversibly wipe the encrypted seed without a trusted prompt
+  it cannot draw over. The unlock password is collected in a main-owned native
+  window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer, so a
+  compromised renderer cannot draw a fake unlock screen or keylog the real
+  password. The renderer cannot read the seed, reach the signer, touch disk, or
+  exfiltrate over the network beyond the CSP `connect-src` allowlist. It yields
+  no key material.
 - Limit: the renderer can still ask for signatures. The trusted confirmation
   modal is the backstop. If the user blindly approves a malicious payload, the
   signature is produced. Also, context isolation can be defeated by an unpatched
