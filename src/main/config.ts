@@ -32,15 +32,28 @@ export const FALLBACK_CHAIN_ID = Number(process.env.QRL_CHAIN_ID ?? 1337);
 export const AUTOLOCK_MS = Number(process.env.QRL_AUTOLOCK_MS ?? DEFAULT_AUTOLOCK_MS);
 
 /**
- * Origins the reused myqrlwallet-frontend talks to at runtime: the backend RPC
- * proxy + tx-history/token API + the dApp-connect relay (all on qrlwallet.com)
- * and the explorer. Override with QRL_FRONTEND_ORIGINS (space-separated) if a
- * build points the frontend elsewhere (e.g. dev.qrlwallet.com).
+ * Origins the reused myqrlwallet-frontend talks to at runtime: the backend
+ * tx-history/token API + the dApp-connect relay + the explorer. The desktop
+ * build is a STAGING build that targets the dev environment (dev.qrlwallet.com,
+ * which CICD auto-deploys on every push to the frontend `dev` branch); the
+ * bundled renderer is built with matching dev env vars (scripts/build-renderer.sh).
+ * Override with QRL_FRONTEND_ORIGINS (space-separated) to repoint at prod.
  */
 function frontendOrigins(): string[] {
   const fromEnv = process.env['QRL_FRONTEND_ORIGINS'];
   if (fromEnv) return fromEnv.split(/\s+/).filter(Boolean);
-  return ['https://qrlwallet.com', 'wss://qrlwallet.com', 'https://zondscan.com'];
+  return [
+    // dev backend: tx-history / token API and its websocket.
+    'https://dev.qrlwallet.com',
+    'wss://dev.qrlwallet.com',
+    // dApp-connect relay. The dev frontend talks to the qrlwallet.com relay
+    // (allowlisted, not proxied), so the desktop must reach it too or
+    // dApp-connect (the rerouted approval/sign path) is CSP-blocked.
+    'https://qrlwallet.com',
+    'wss://qrlwallet.com',
+    // block explorer API (token + NFT discovery).
+    'https://zondscan.com',
+  ];
 }
 
 /**

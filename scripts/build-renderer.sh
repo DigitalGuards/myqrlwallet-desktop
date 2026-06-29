@@ -18,6 +18,15 @@
 #      RUNTIME in the frontend (router.tsx detects window.qrlWallet), so no
 #      build flag and no post-build HTML surgery is needed.
 #
+# This is a STAGING build: the bundled renderer targets the dev environment
+# (dev.qrlwallet.com), which CICD auto-deploys on every push to the frontend
+# `dev` branch. The frontend picks its backend/RPC/explorer from VITE_NODE_ENV
+# + VITE_*_DEVELOPMENT/_PRODUCTION (frontend src/config/networks.ts), so the dev
+# vars are defaulted below. Each is overridable: a value already in the
+# environment wins, so a prod build just exports VITE_NODE_ENV=production and
+# the *_PRODUCTION vars before running this. Keep the desktop main-process CSP
+# allowlist (src/main/config.ts frontendOrigins) in sync with these origins.
+#
 # Exits 0 with guidance if the frontend dir is absent.
 
 set -euo pipefail
@@ -42,10 +51,19 @@ if [[ ! -d "${FRONTEND_DIR}/node_modules" ]]; then
   npm --prefix "${FRONTEND_DIR}" install
 fi
 
-echo "[build-renderer] building frontend (VITE_DESKTOP=1)..."
+# Dev-environment defaults for the staging build. ${VAR:-default} keeps any
+# value the caller already exported (so a prod build can override every one).
+export VITE_DESKTOP=1
+export VITE_NODE_ENV="${VITE_NODE_ENV:-development}"
+export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
+export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
+export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://zondscan.com}"
+
+echo "[build-renderer] building frontend (VITE_DESKTOP=1, VITE_NODE_ENV=${VITE_NODE_ENV})..."
+echo "[build-renderer]   server/RPC -> ${VITE_SERVER_URL_DEVELOPMENT}, explorer -> ${VITE_EXPLORER_URL_DEVELOPMENT}"
 # VITE_DESKTOP=1 -> base './' for file://. The router switches to hash routing
 # at runtime via window.qrlWallet, so nothing else is needed.
-VITE_DESKTOP=1 npm --prefix "${FRONTEND_DIR}" run build
+npm --prefix "${FRONTEND_DIR}" run build
 
 FRONTEND_DIST="${FRONTEND_DIR}/dist"
 if [[ ! -f "${FRONTEND_DIST}/index.html" ]]; then
