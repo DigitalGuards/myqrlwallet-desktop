@@ -1,6 +1,5 @@
 import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
-import react from '@vitejs/plugin-react';
 
 /**
  * electron-vite builds three targets into `out/`:
@@ -44,16 +43,7 @@ export default defineConfig({
       },
     },
   },
-  renderer: {
-    root: 'src/renderer',
-    plugins: [react()],
-    // Relative base so assets resolve under file:// (loadFile).
-    base: './',
-    build: {
-      outDir: resolve(__dirname, 'out/renderer'),
-      rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') },
-      },
-    },
-  },
+  // No `renderer` target here: the renderer is the real myqrlwallet-frontend,
+  // built by its own toolchain via scripts/build-renderer.sh into out/renderer
+  // (run by `npm run build`). electron-vite only builds main + preload.
 });

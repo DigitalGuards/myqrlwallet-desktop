@@ -6,8 +6,10 @@
  * plaintext key material; it brokers IPC, draws the trusted confirmation modal,
  * proxies RPC, and owns the encrypted seed file on disk.
  */
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, Menu, session } from 'electron';
+import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, Menu, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
 import { registerIpcHandlers } from './ipc';
 import {
@@ -41,9 +43,51 @@ app.on('second-instance', () => {
   }
 });
 
+const RENDERER_DIR = path.join(__dirname, '../renderer');
+
+/**
+ * The reused frontend references some assets by ROOT-absolute paths it authored
+ * for web hosting (e.g. the logo `/icons/theqrlwallet/192.png`, `/tree.svg`).
+ * Under loadFile (file://) those resolve to the filesystem root and 404. We
+ * intercept the file scheme and, when a requested path does not exist on disk,
+ * remap it under the renderer dir. A traversal guard keeps every served path
+ * inside RENDERER_DIR. Existing paths (the relative ./assets bundle) pass
+ * through untouched. No frontend change required.
+ */
+function installRendererAssetResolver(): void {
+  protocol.interceptFileProtocol('file', (request, callback) => {
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(request.url);
+    } catch {
+      callback({ statusCode: 400 });
+      return;
+    }
+    if (existsSync(filePath)) {
+      callback({ path: filePath });
+      return;
+    }
+    let urlPath = '/';
+    try {
+      urlPath = new URL(request.url).pathname.replace(/^\/+/, '');
+    } catch {
+      /* keep default */
+    }
+    const candidate = path.normalize(path.join(RENDERER_DIR, urlPath));
+    if (candidate.startsWith(RENDERER_DIR + path.sep) && existsSync(candidate)) {
+      callback({ path: candidate });
+      return;
+    }
+    callback({ path: filePath }); // let it 404 naturally
+  });
+}
+
 function rendererDevUrl(): string | undefined {
-  // electron-vite sets this only in `npm run dev`.
-  return !app.isPackaged ? process.env['ELECTRON_RENDERER_URL'] : undefined;
+  // The renderer is the real myqrlwallet-frontend (built into out/renderer by
+  // scripts/build-renderer.sh). For live frontend HMR, point QRL_RENDERER_DEV_URL
+  // at the frontend's Vite dev server (e.g. http://127.0.0.1:5173). Otherwise
+  // production-style loadFile of the built bundle is used.
+  return !app.isPackaged ? process.env['QRL_RENDERER_DEV_URL'] : undefined;
 }
 
 function createWindow(): void {
@@ -70,13 +114,26 @@ function createWindow(): void {
     // Development only. Production ALWAYS uses loadFile (the brief's mandate).
     void mainWindow.loadURL(devUrl);
   } else {
-    void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    void mainWindow.loadFile(path.join(RENDERER_DIR, 'index.html'));
   }
 }
 
 app.whenReady().then(async () => {
   // chromium app user model id (Windows notifications / taskbar grouping).
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+
+  // The reused frontend treats a userAgent containing "MyQRLWallet" as the
+  // MOBILE native-app host (it then shows the camera QR scanner, biometric
+  // bridge, etc. via isInNativeApp()). Electron's default UA appends the app
+  // name + version, which would falsely trip that mobile path. Strip the app
+  // (and Electron) token so the frontend runs as the desktop/web build, not the
+  // mobile webview. Desktop-specific behavior comes from window.qrlWallet.
+  app.userAgentFallback = app.userAgentFallback
+    .replace(/\s*MyQRLWallet\/[^\s]+/g, '')
+    .replace(/\s*Electron\/[^\s]+/g, '');
+
+  // Remap the frontend's root-absolute asset paths (logo, /tree.svg) under file://.
+  installRendererAssetResolver();
 
   // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
   // use for it. On macOS keep a minimal app + edit + window menu so the standard

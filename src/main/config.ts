@@ -32,9 +32,21 @@ export const FALLBACK_CHAIN_ID = Number(process.env.QRL_CHAIN_ID ?? 1337);
 export const AUTOLOCK_MS = Number(process.env.QRL_AUTOLOCK_MS ?? DEFAULT_AUTOLOCK_MS);
 
 /**
- * `connect-src` allowlist for the strict CSP. The renderer is permitted to
- * talk to the configured RPC origins (and `self`) and nothing else. When the
- * reused web frontend needs the backend proxy / relay, add those origins here.
+ * Origins the reused myqrlwallet-frontend talks to at runtime: the backend RPC
+ * proxy + tx-history/token API + the dApp-connect relay (all on qrlwallet.com)
+ * and the explorer. Override with QRL_FRONTEND_ORIGINS (space-separated) if a
+ * build points the frontend elsewhere (e.g. dev.qrlwallet.com).
+ */
+function frontendOrigins(): string[] {
+  const fromEnv = process.env['QRL_FRONTEND_ORIGINS'];
+  if (fromEnv) return fromEnv.split(/\s+/).filter(Boolean);
+  return ['https://qrlwallet.com', 'wss://qrlwallet.com', 'https://zondscan.com'];
+}
+
+/**
+ * `connect-src` allowlist for the renderer CSP: `self` plus the configured RPC
+ * origins plus the frontend's backend/relay/explorer origins. Nothing else is
+ * reachable from the renderer.
  */
 export function connectSrcOrigins(): string[] {
   const origins = new Set<string>();
@@ -45,6 +57,7 @@ export function connectSrcOrigins(): string[] {
       /* ignore malformed */
     }
   }
+  for (const o of frontendOrigins()) origins.add(o);
   return [...origins];
 }
 
