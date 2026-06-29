@@ -1,8 +1,8 @@
 /**
  * The typed surface the preload mounts at `window.qrlWallet`.
  *
- * This is the COMPLETE set of capabilities a renderer (the reused
- * myqrlwallet-frontend, or the bundled demo renderer) is given. There is no
+ * This is the COMPLETE set of capabilities the renderer (the reused
+ * myqrlwallet-frontend) is given. There is no
  * raw `ipcRenderer`, no `require`, no Node access: a fully compromised renderer
  * can do nothing here that these methods do not explicitly permit, and none of
  * them can return key material.
