@@ -40,6 +40,10 @@ export interface QrlWalletApi {
   /** Open a session. Omit `password` to unlock via the OS keychain (macOS). */
   unlock(req: UnlockRequest): Promise<WalletStatus>;
   lock(): Promise<WalletStatus>;
+  /** Destructively remove the wallet from this device: deletes the encrypted
+   * seed and clears the keychain entry. Requires re-import. Returns the
+   * post-wipe status (hasWallet === false). */
+  removeWallet(): Promise<WalletStatus>;
   getStatus(): Promise<WalletStatus>;
 
   // ---- provisioning -------------------------------------------------------

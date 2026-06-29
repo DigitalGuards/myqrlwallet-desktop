@@ -38,6 +38,10 @@ export const IPC = {
   GET_STATUS: 'wallet:getStatus',
   /** Zeroizes the signer session immediately. */
   LOCK: 'wallet:lock',
+  /** Destructively removes the wallet: drops the session, deletes the encrypted
+   * seed from disk, and clears the OS-keychain entry. Requires re-import
+   * (mirrors the mobile-app wipe). */
+  REMOVE_WALLET: 'wallet:removeWallet',
   /** Broadcasts a signed raw transaction via the RPC proxy. */
   SEND_RAW_TRANSACTION: 'wallet:sendRawTransaction',
 } as const;

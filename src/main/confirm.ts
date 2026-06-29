@@ -72,3 +72,25 @@ export async function confirmSignature(
   });
   return response === 0;
 }
+
+/**
+ * Trusted, main-drawn confirmation for the destructive wallet wipe. Like
+ * {@link confirmSignature}, this is deliberately NOT rendered by the renderer:
+ * removing the wallet irreversibly deletes the encrypted seed and is reachable
+ * from the renderer, so a compromised renderer must not be able to trigger it
+ * unprompted. The dialog defaults to Cancel.
+ */
+export async function confirmRemoveWallet(parent: BrowserWindow): Promise<boolean> {
+  const { response } = await dialog.showMessageBox(parent, {
+    type: 'warning',
+    buttons: ['Remove wallet', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Remove wallet from this device?',
+    message: 'Permanently remove this wallet from this device?',
+    detail:
+      'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+    noLink: true,
+  });
+  return response === 0;
+}

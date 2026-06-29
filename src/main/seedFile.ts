@@ -37,3 +37,13 @@ export async function writeSeed(enc: EncryptedSeed): Promise<void> {
   // 0600: owner read/write only.
   await fs.writeFile(p, JSON.stringify(enc, null, 2), { mode: 0o600 });
 }
+
+/**
+ * Delete the encrypted seed from disk (the destructive "remove wallet" path).
+ * Idempotent: succeeds whether or not the file exists. The blob is ciphertext,
+ * so unlinking it is sufficient to make the wallet unrecoverable without the
+ * recovery phrase.
+ */
+export async function deleteSeed(): Promise<void> {
+  await fs.rm(seedPath(), { force: true });
+}

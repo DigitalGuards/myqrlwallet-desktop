@@ -21,6 +21,7 @@ const api: QrlWalletApi = {
   requestSignature: (req) => ipcRenderer.invoke(IPC.REQUEST_SIGNATURE, req),
   unlock: (req) => ipcRenderer.invoke(IPC.UNLOCK, req),
   lock: () => ipcRenderer.invoke(IPC.LOCK),
+  removeWallet: () => ipcRenderer.invoke(IPC.REMOVE_WALLET),
   getStatus: () => ipcRenderer.invoke(IPC.GET_STATUS),
   hasWallet: () => ipcRenderer.invoke(IPC.HAS_WALLET),
   createWallet: (req) => ipcRenderer.invoke(IPC.CREATE_WALLET, req),
