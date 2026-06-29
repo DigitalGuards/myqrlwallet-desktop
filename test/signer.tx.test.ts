@@ -75,3 +75,35 @@ test('signTransaction refuses a tx whose `from` is not the unlocked account', as
     'mismatched from must throw',
   );
 });
+
+test('signTransaction carries calldata into the signed envelope', async () => {
+  const { hexSeed, address } = deriveSeedFromMnemonic(generateMnemonic());
+  // A contract-call tx needs gas above the 21000 native floor to cover the
+  // calldata's intrinsic gas (this is what buildTransaction's 90000 default is
+  // for); use the same gas on both so the only difference is the data field.
+  const gas = '90000';
+  const bare = await signTransaction(hexSeed, { ...unsignedTx(address, address), gas }, CHAIN_ID);
+  const withData = await signTransaction(
+    hexSeed,
+    { ...unsignedTx(address, address), gas, data: '0xabcd1234' },
+    CHAIN_ID,
+  );
+  assert.match(withData.rawTransaction!, /^0x[0-9a-fA-F]+$/);
+  // The calldata must be encoded into the signed tx, so it is strictly longer
+  // than the same transfer with no data.
+  assert.ok(
+    withData.rawTransaction!.length > bare.rawTransaction!.length,
+    'calldata must grow the raw tx',
+  );
+});
+
+test('signTransaction signs a zero-value transfer', async () => {
+  const { hexSeed, address } = deriveSeedFromMnemonic(generateMnemonic());
+  const result = await signTransaction(
+    hexSeed,
+    { ...unsignedTx(address, address), value: '0' },
+    CHAIN_ID,
+  );
+  assert.equal(result.kind, 'transaction');
+  assert.match(result.rawTransaction!, /^0x[0-9a-fA-F]+$/);
+});

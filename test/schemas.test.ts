@@ -127,3 +127,56 @@ test('Password + provisioning schemas bound their inputs', () => {
   assert.equal(create.success, true);
   assert.equal(create.success && create.data.useKeychain, false, 'useKeychain defaults to false');
 });
+
+test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payloads', () => {
+  // Strict discriminated union: a message arm carrying a tx field is rejected.
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', tx: validTx }).success,
+    false,
+    'arm-mixing rejected',
+  );
+  // .strict(): an extra key on the transaction arm is rejected.
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'transaction', tx: validTx, foo: 1 }).success,
+    false,
+    'extra key rejected',
+  );
+  // An empty message and an empty typedData payload are both valid.
+  assert.equal(SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' }).success, true);
+  assert.equal(SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {} }).success, true);
+  // The message bound is on the TOTAL string length (incl. the 0x prefix).
+  const maxLen = 2 * 64 * 1024;
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen - 2) }).success,
+    true,
+    'message at the length bound is accepted',
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen) }).success,
+    false,
+    'message over the length bound is rejected',
+  );
+});
+
+test('Decimal + hex + address boundary values', () => {
+  // Zero transfer and leading-zero decimals are valid amounts.
+  assert.equal(BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0' }).success, true);
+  assert.equal(BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0001' }).success, true);
+  // Mixed-case Q-address is accepted (EIP-55 casing is tolerated by the schema).
+  assert.equal(
+    GetBalanceRequestSchema.safeParse({ address: 'Q' + 'a'.repeat(20) + 'A'.repeat(20) }).success,
+    true,
+    'mixed-case address accepted',
+  );
+  // Calldata: bare even-length hex ok; odd-length (incl. 0x parity) rejected.
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: 'abcd' }).success,
+    true,
+    'bare even hex calldata accepted',
+  );
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: '0xabc' }).success,
+    false,
+    'odd-length hex calldata rejected',
+  );
+});
