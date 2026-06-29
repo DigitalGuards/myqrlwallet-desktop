@@ -14,6 +14,8 @@
 import type {
   BalanceResult,
   BuildTransactionRequest,
+  CreateWalletRequest,
+  CreateWalletResult,
   GetBalanceRequest,
   ImportWalletRequest,
   SendRawTransactionRequest,
@@ -42,6 +44,9 @@ export interface QrlWalletApi {
 
   // ---- provisioning -------------------------------------------------------
   hasWallet(): Promise<boolean>;
+  /** Generate a fresh wallet inside the signer; returns the one-time backup
+   * mnemonic plus the unlocked status. The hex seed never enters the renderer. */
+  createWallet(req: CreateWalletRequest): Promise<CreateWalletResult>;
   importWallet(req: ImportWalletRequest): Promise<WalletStatus>;
 
   // ---- broadcast ----------------------------------------------------------

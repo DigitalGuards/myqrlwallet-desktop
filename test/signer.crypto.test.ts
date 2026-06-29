@@ -23,7 +23,7 @@ import { shake256 } from '@noble/hashes/sha3.js';
 
 import { deriveKek } from '../src/signer/kdf';
 import { aesGcmEncrypt, aesGcmDecrypt, AeadAuthError } from '../src/signer/aead';
-import { deriveSeedFromMnemonic, signMessage } from '../src/signer/signing';
+import { deriveSeedFromMnemonic, generateMnemonic, signMessage } from '../src/signer/signing';
 import { KDF_DEFAULTS, MLDSA87 as SIZES, SCHEME } from '../src/shared/constants';
 import type { KdfParams } from '../src/shared/constants';
 
@@ -133,4 +133,27 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
     false,
     'verification must fail for a tampered digest',
   );
+});
+
+test('generateMnemonic (signer create op) yields a usable, signing wallet', () => {
+  // The desktop "create wallet" flow generates the seed inside the signer via
+  // generateMnemonic() and returns only the mnemonic. Verify the generated
+  // mnemonic is valid: it must derive a Q-address and a key that signs.
+  const m1 = generateMnemonic();
+  const m2 = generateMnemonic();
+  assert.ok(m1.trim().length > 0, 'mnemonic must be non-empty');
+  assert.notEqual(m1, m2, 'each generation must produce a fresh mnemonic');
+
+  const { hexSeed, address } = deriveSeedFromMnemonic(m1);
+  assert.ok(address.startsWith('Q'), 'generated wallet must derive a Q-address');
+
+  const messageHex = '0x' + Buffer.from('create-op smoke', 'utf8').toString('hex');
+  const result = signMessage(hexSeed, messageHex);
+  const ok = mldsa.cryptoSignVerify(
+    hexToBytes(result.signature),
+    shake256(concat(SCHEME_TAG_MSG, hexToBytes(messageHex)), { dkLen: SIZES.DIGEST_BYTES }),
+    hexToBytes(result.publicKey!),
+    SCHEME_TAG_MSG,
+  );
+  assert.equal(ok, true, 'a generated wallet must produce a verifiable signature');
 });

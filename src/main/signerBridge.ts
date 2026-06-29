@@ -9,6 +9,7 @@
 import path from 'node:path';
 import { utilityProcess, type UtilityProcess } from 'electron';
 import type {
+  CreateResult,
   EncryptedSeed,
   ImportResult,
   SignerOutbound,
@@ -172,6 +173,10 @@ export class SignerBridge {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       child.postMessage(full);
     });
+  }
+
+  create(password: string): Promise<CreateResult> {
+    return this.send<CreateResult>({ type: 'signer:create', password });
   }
 
   importWallet(mnemonic: string, password: string): Promise<ImportResult> {

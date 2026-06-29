@@ -53,6 +53,11 @@ interface BaseReq {
   id: number;
 }
 
+export interface CreateReq extends BaseReq {
+  type: 'signer:create';
+  password: string;
+}
+
 export interface ImportReq extends BaseReq {
   type: 'signer:import';
   mnemonic: string;
@@ -94,7 +99,8 @@ export interface ShutdownReq extends BaseReq {
   type: 'signer:shutdown';
 }
 
-export type SignerRequest = ImportReq | UnlockReq | SignReq | LockReq | StatusReq | ShutdownReq;
+export type SignerRequest =
+  CreateReq | ImportReq | UnlockReq | SignReq | LockReq | StatusReq | ShutdownReq;
 
 // ---- Responses (signer -> main) -------------------------------------------
 
@@ -105,6 +111,17 @@ export interface SignerReady {
 export interface ImportResult {
   address: string;
   encrypted: EncryptedSeed;
+}
+
+export interface CreateResult {
+  address: string;
+  encrypted: EncryptedSeed;
+  /**
+   * The freshly generated recovery mnemonic, surfaced ONCE so the user can back
+   * it up. This is the only time it crosses to main/renderer; it is never
+   * persisted in plaintext and the hex seed / secret key never leave the signer.
+   */
+  mnemonic: string;
 }
 
 export interface UnlockResult {
@@ -125,6 +142,7 @@ export interface SignerStatus {
 }
 
 export type SignerOk =
+  | { id: number; ok: true; type: 'signer:create'; result: CreateResult }
   | { id: number; ok: true; type: 'signer:import'; result: ImportResult }
   | { id: number; ok: true; type: 'signer:unlock'; result: UnlockResult }
   | { id: number; ok: true; type: 'signer:sign'; result: SignatureResult }

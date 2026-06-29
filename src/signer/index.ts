@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 import { aesGcmEncrypt } from './aead';
 import { deriveKek } from './kdf';
 import { SignerSession } from './session';
-import { deriveSeedFromMnemonic, signMessage, signTransaction } from './signing';
+import { deriveSeedFromMnemonic, generateMnemonic, signMessage, signTransaction } from './signing';
 import { wipe } from './zeroize';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../shared/constants';
 import type { EncryptedSeed, SignerOutbound, SignerRequest } from '../shared/protocol';
@@ -83,6 +83,19 @@ async function handle(req: SignerRequest): Promise<void> {
   const now = Date.now();
   try {
     switch (req.type) {
+      case 'signer:create': {
+        // Generate the seed INSIDE the signer (never in the renderer), encrypt
+        // + persist it, and return the mnemonic once for the user's backup.
+        const mnemonic = generateMnemonic();
+        const { address, encrypted } = await handleImport(mnemonic, req.password);
+        send({
+          id: req.id,
+          ok: true,
+          type: 'signer:create',
+          result: { address, encrypted, mnemonic },
+        });
+        return;
+      }
       case 'signer:import': {
         const result = await handleImport(req.mnemonic, req.password);
         send({ id: req.id, ok: true, type: 'signer:import', result });

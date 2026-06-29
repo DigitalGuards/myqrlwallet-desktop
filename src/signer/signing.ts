@@ -78,6 +78,21 @@ export function deriveSeedFromMnemonic(mnemonic: string): { hexSeed: string; add
   }
 }
 
+/**
+ * Generate a fresh wallet entirely inside the signer and return only its
+ * recovery mnemonic. The Wallet (seed + secret key) is created and zeroized
+ * here; the caller (handleCreate) re-derives from the mnemonic to encrypt it.
+ * The mnemonic is the only secret that leaves, and only once, for user backup.
+ */
+export function generateMnemonic(): string {
+  const wallet = MLDSA87.newWallet();
+  try {
+    return wallet.getMnemonic();
+  } finally {
+    wallet.zeroize();
+  }
+}
+
 /** Address for an already-derived extended seed (no signing). */
 export function addressFromHexSeed(hexSeed: string): string {
   const wallet = newWalletFromExtendedSeed(hexSeed);
