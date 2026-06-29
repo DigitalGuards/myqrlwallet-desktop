@@ -12,9 +12,9 @@
 import { type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { AUTOLOCK_MS } from './config';
-import { confirmSignature } from './confirm';
+import { confirmRemoveWallet, confirmSignature } from './confirm';
 import * as rpc from './rpc';
-import { hasSeed, readSeed, writeSeed } from './seedFile';
+import { deleteSeed, hasSeed, readSeed, writeSeed } from './seedFile';
 import { isTrustedSender } from './security';
 import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
@@ -141,6 +141,31 @@ export function registerIpcHandlers(deps: Deps): void {
     // Renderer-initiated lock (auto-lock timer / logout): surface the native
     // unlock window so the session can be reopened with a password.
     showUnlock();
+    return buildStatus();
+  });
+
+  // Destructive wallet removal (the "wipe", mirroring the mobile app): drop the
+  // session, delete the encrypted seed from disk, and clear the OS-keychain
+  // entry. After this hasWallet is false, so the renderer returns to the
+  // create/import flow; the unlock window is deliberately NOT shown (there is
+  // nothing to unlock). Reachable only behind the renderer's confirmation UI.
+  handle(IPC.REMOVE_WALLET, null, async () => {
+    // Irreversible + renderer-reachable, so it must be gated by a trusted
+    // main-drawn confirmation (default Cancel), exactly like the signing path.
+    // The renderer's own confirm UI is convenience, NOT the security gate.
+    const approved = await confirmRemoveWallet(requireWindow());
+    if (!approved) throw new Error('user rejected wallet removal');
+    const seed = await readSeed();
+    await signer.lock();
+    // Delete the security-relevant ciphertext FIRST so the wallet is
+    // unrecoverable even if the keychain clear then fails (a bare KEK with no
+    // matching ciphertext is useless). Log, do not swallow, a clear failure.
+    await deleteSeed();
+    if (seed) {
+      await keyVault
+        .delete(seed.address)
+        .catch((err) => console.error('removeWallet: keychain clear failed', err));
+    }
     return buildStatus();
   });
 
