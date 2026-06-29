@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Defense-in-depth mirror of the AUTHORITATIVE header CSP installed by the
+      main process (src/main/security.ts -> installContentSecurityPolicy), which
+      is what governs file:// loads and is the only place connect-src RPC
+      origins and frame-ancestors are expressed. This meta deliberately keeps
+      connect-src at 'self': the renderer makes NO direct network calls (all RPC
+      is proxied through main over IPC), so hardcoding RPC origins here would
+      only create an intersection mismatch with the env-configurable header. No
+      'unsafe-inline' / 'unsafe-eval': external stylesheet + module script only.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'"
+    />
+    <title>MyQRLWallet</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

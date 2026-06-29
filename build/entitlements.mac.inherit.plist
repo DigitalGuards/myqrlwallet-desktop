@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- allow-jit: the child processes (Electron GPU/renderer/network helpers and
+       our signer utilityProcess, which runs V8) also JIT-compile JavaScript and
+       need the same exception as the parent. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- inherit: child processes must inherit the parent's hardened-runtime
+       entitlements (including disable-library-validation) so that the signer
+       utilityProcess can load @node-rs/argon2 and @theqrl native/JS modules, and
+       so the standard Electron helper processes launch correctly under the
+       hardened runtime. This is the canonical entitlement for all inherited
+       child/helper binaries. -->
+  <key>com.apple.security.inherit</key>
+  <true/>
+</dict>
+</plist>

@@ -1,0 +1,179 @@
+/**
+ * The cryptographic spend path. This module is the ONLY place ML-DSA-87
+ * secret keys are materialised, and only inside synchronous, try/finally-wiped
+ * scopes. It mirrors the audited wallet path (myqrlwallet-frontend
+ * `src/utils/signing/sign.ts` + `qrlStore.sendTransaction`) byte-for-byte so a
+ * desktop-produced signature verifies identically to a web-wallet one.
+ *
+ *  - @theqrl/mldsa87 2.1.1 : Halborn/Trail-of-Bits-hardened FIPS-204 signer.
+ *  - @theqrl/wallet.js 6.1.0 : seed -> ML-DSA-87 keypair derivation + address.
+ *  - @theqrl/web3 1.0.1 : QRL v2 (type-2 / EIP-1559) transaction signing.
+ *
+ * All three are pure JavaScript and synchronous (the research confirmed no
+ * WASM init), so no async bootstrap is needed; the only runtime requirement is
+ * a WebCrypto RNG for hedged signing, which Node >= 20.19 provides globally.
+ */
+import * as mldsa from '@theqrl/mldsa87';
+import { MLDSA87, newWalletFromExtendedSeed } from '@theqrl/wallet.js';
+// Use web3's EIP-55 checksummer for the legacy-20 address, exactly as the web
+// wallet's src/utils/signing/sign.ts does. wallet.js's own toChecksumAddress
+// targets the 64-byte next-gen address (Q + 128 hex) and rejects a 20-byte one.
+import Web3, { utils as web3Utils } from '@theqrl/web3';
+import { shake256 } from '@noble/hashes/sha3.js';
+import { MLDSA87 as SIZES, SCHEME } from '../shared/constants';
+import type { SignatureResult, UnsignedTransaction } from '../shared/schemas';
+
+const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
+
+// legacy20 derivation slice (myqrlwallet-frontend src/config/addressFormat.ts).
+const IDENTITY_SLICE: readonly [number, number] = [1, 41];
+
+function bytesToHex(bytes: Uint8Array): string {
+  let s = '0x';
+  for (const v of bytes) s += v.toString(16).padStart(2, '0');
+  return s;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const body = hex.startsWith('0x') ? hex.slice(2) : hex;
+  if (body.length % 2 !== 0 || /[^0-9a-fA-F]/.test(body)) {
+    throw new Error('invalid hex');
+  }
+  const out = new Uint8Array(body.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(body.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+/** Derive the on-chain Q-address (EIP-55) from a wallet's full identity. */
+function addressOf(wallet: { getAddressStr(): string }): string {
+  const [start, end] = IDENTITY_SLICE;
+  return web3Utils.toChecksumAddress(`Q${wallet.getAddressStr().slice(start, end)}`);
+}
+
+/**
+ * Expand a mnemonic into the 51-byte extended seed (102 hex chars) and its
+ * address. The Wallet is zeroized before returning. The returned `hexSeed` is
+ * the secret the caller must encrypt and then wipe.
+ */
+export function deriveSeedFromMnemonic(mnemonic: string): { hexSeed: string; address: string } {
+  const wallet = MLDSA87.newWalletFromMnemonic(mnemonic.trim());
+  try {
+    const hexSeed = wallet.getHexExtendedSeed();
+    const address = addressOf(wallet);
+    if (hexSeed.replace(/^0x/, '').length !== SIZES.EXTENDED_SEED_BYTES * 2) {
+      throw new Error('unexpected extended-seed length');
+    }
+    return { hexSeed, address };
+  } finally {
+    wallet.zeroize();
+  }
+}
+
+/** Address for an already-derived extended seed (no signing). */
+export function addressFromHexSeed(hexSeed: string): string {
+  const wallet = newWalletFromExtendedSeed(hexSeed);
+  try {
+    return addressOf(wallet);
+  } finally {
+    wallet.zeroize();
+  }
+}
+
+/**
+ * `qrl_signMessage` v1, byte-faithful to the web wallet:
+ *   digest = SHAKE256("QRL-SIGN-MSG-v1" || messageBytes, 64)
+ *   sig    = ML-DSA-87.sign(digest, sk, hedged=true, ctx="QRL-SIGN-MSG-v1")
+ * The Wallet (and thus the 4896-byte secret key) is zeroized on every path.
+ */
+export function signMessage(hexSeed: string, messageHex: string): SignatureResult {
+  const messageBytes = hexToBytes(messageHex);
+  const digest = shake256(concat(SCHEME_TAG_MSG, messageBytes), { dkLen: SIZES.DIGEST_BYTES });
+  const wallet = newWalletFromExtendedSeed(hexSeed);
+  try {
+    if (wallet.sk.length !== SIZES.SECRET_KEY_BYTES) {
+      throw new Error('unexpected secret-key length');
+    }
+    const sig = new Uint8Array(mldsa.CryptoBytes);
+    const rc = mldsa.cryptoSignSignature(sig, digest, wallet.sk, true, SCHEME_TAG_MSG);
+    if (rc !== 0 || sig.length !== SIZES.SIGNATURE_BYTES) {
+      throw new Error('signing failed');
+    }
+    return {
+      kind: 'message',
+      signature: bytesToHex(sig),
+      publicKey: bytesToHex(wallet.pk),
+      signer: addressOf(wallet),
+      digest: bytesToHex(digest),
+    };
+  } finally {
+    wallet.zeroize();
+  }
+}
+
+/**
+ * Sign a QRL v2 type-2 transaction. Mirrors qrlStore.sendTransaction: build the
+ * web3 transaction object, then `web3.qrl.accounts.signTransaction(tx, hexSeed)`
+ * where the "private key" is the hex extended seed. Returns the 0x raw signed
+ * transaction ready for `qrl_sendRawTransaction`.
+ *
+ * Signing is fully LOCAL: we use a provider-less Web3 and pre-populate every
+ * field including `networkId` (= the authoritative chainId from main, read from
+ * the node by main's RPC proxy). Without networkId, web3's transaction builder
+ * issues a live `net_version` JSON-RPC call mid-sign, which would (a) fail
+ * whenever the node is unreachable and (b) hard-fail on a v2 node that exposes
+ * only the `qrl_*` namespace. Setting networkId removes that round-trip
+ * entirely (verified empirically), so the signer needs no network and no RPC
+ * env at all.
+ *
+ * `chainId` is the authoritative value main fetched from the node; we bind the
+ * signed transaction to it and ignore any renderer-supplied tx.chainId. We also
+ * assert that tx.from matches the unlocked seed's address, so a request cannot
+ * coax a signature attributed to a different account.
+ */
+export async function signTransaction(
+  hexSeed: string,
+  tx: UnsignedTransaction,
+  chainId: number,
+): Promise<SignatureResult> {
+  const derived = addressOf(newWalletFromExtendedSeed(hexSeed));
+  if (derived.toLowerCase() !== tx.from.toLowerCase()) {
+    throw new Error('tx.from does not match the unlocked account');
+  }
+  const web3 = new Web3();
+  const utils = web3.utils;
+  const transactionObject = {
+    from: tx.from,
+    to: tx.to,
+    value: utils.toHex(BigInt(tx.value)),
+    gas: utils.toHex(BigInt(tx.gas)),
+    maxFeePerGas: utils.toHex(BigInt(tx.maxFeePerGas)),
+    maxPriorityFeePerGas: utils.toHex(BigInt(tx.maxPriorityFeePerGas)),
+    nonce: tx.nonce,
+    chainId,
+    // networkId makes signing offline (see the doc comment); QRL uses chainId.
+    networkId: chainId,
+    type: tx.type,
+    ...(tx.data ? { data: tx.data.startsWith('0x') ? tx.data : `0x${tx.data}` } : {}),
+  };
+  // web3.qrl.accounts.signTransaction treats the extended hex seed as the key.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const signed = await (web3.qrl.accounts as any).signTransaction(transactionObject, hexSeed);
+  if (!signed || !signed.rawTransaction) {
+    throw new Error('transaction could not be signed');
+  }
+  return {
+    kind: 'transaction',
+    signature: signed.rawTransaction,
+    rawTransaction: signed.rawTransaction,
+    signer: derived,
+  };
+}

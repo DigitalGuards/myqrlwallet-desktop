@@ -1,0 +1,172 @@
+/**
+ * IPC handler registration: the renderer's entire reachable surface.
+ *
+ * Every handler enforces, in order:
+ *   1. sender validation (top frame of the wallet window, file: origin), then
+ *   2. zod parse of the argument (reject malformed/oversized/extra-keyed), then
+ *   3. the action, with key material confined to the signer.
+ *
+ * REQUEST_SIGNATURE additionally routes through the trusted main-drawn
+ * confirmation modal before any signing occurs.
+ */
+import { type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { z } from 'zod';
+import { AUTOLOCK_MS } from './config';
+import { confirmSignature } from './confirm';
+import * as rpc from './rpc';
+import { hasSeed, readSeed, writeSeed } from './seedFile';
+import { isTrustedSender } from './security';
+import type { SignerBridge } from './signerBridge';
+import { EVENTS, IPC } from '../shared/constants';
+import {
+  BuildTransactionRequestSchema,
+  GetBalanceRequestSchema,
+  ImportWalletRequestSchema,
+  SendRawTransactionRequestSchema,
+  SignatureRequestSchema,
+  UnlockRequestSchema,
+  type WalletStatus,
+} from '../shared/schemas';
+import type { KeyVault } from '../keyvault';
+
+interface Deps {
+  getWindow: () => BrowserWindow | null;
+  signer: SignerBridge;
+  keyVault: KeyVault;
+}
+
+let cachedChainId: number | null = null;
+async function chainId(): Promise<number> {
+  if (cachedChainId === null) cachedChainId = await rpc.getChainId();
+  return cachedChainId;
+}
+
+export function registerIpcHandlers(deps: Deps): void {
+  const { getWindow, signer, keyVault } = deps;
+
+  /** Wrap a handler with sender validation + (optional) schema parse. */
+  function handle<S extends z.ZodTypeAny, R>(
+    channel: string,
+    schema: S | null,
+    fn: (
+      arg: S extends z.ZodTypeAny ? z.infer<S> : undefined,
+      event: IpcMainInvokeEvent,
+    ) => Promise<R>,
+  ): void {
+    ipcMain.handle(channel, async (event, raw) => {
+      if (!isTrustedSender(event, getWindow())) {
+        throw new Error('unauthorized sender');
+      }
+      let arg: unknown;
+      if (schema) {
+        const parsed = schema.safeParse(raw);
+        if (!parsed.success) {
+          throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? 'schema'}`);
+        }
+        arg = parsed.data;
+      }
+      return fn(arg as never, event);
+    });
+  }
+
+  /** Return the live wallet window or throw (fail closed). */
+  function requireWindow(): BrowserWindow {
+    const win = getWindow();
+    if (!win || win.isDestroyed()) throw new Error('window unavailable');
+    return win;
+  }
+
+  function emitLockState(locked: boolean): void {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) win.webContents.send(EVENTS.LOCK_STATE_CHANGED, locked);
+  }
+
+  async function buildStatus(): Promise<WalletStatus> {
+    const present = await hasSeed();
+    const st = await signer.status();
+    const seed = present ? await readSeed() : null;
+    const keychainBacked = seed ? await keyVault.has(seed.address) : false;
+    return {
+      hasWallet: present,
+      locked: !st.unlocked,
+      address: st.address ?? seed?.address ?? null,
+      unlockExpiresAt: st.unlockExpiresAt,
+      keychainBacked,
+    };
+  }
+
+  // ---- read-only ----------------------------------------------------------
+  handle(IPC.GET_BALANCE, GetBalanceRequestSchema, async (req) => ({
+    address: req.address,
+    balance: await rpc.getBalance(req.address),
+  }));
+
+  handle(IPC.BUILD_TRANSACTION, BuildTransactionRequestSchema, (req) => rpc.buildTransaction(req));
+
+  // ---- spend path ---------------------------------------------------------
+  handle(IPC.REQUEST_SIGNATURE, SignatureRequestSchema, async (req) => {
+    // Fast-fail typed-data BEFORE drawing the modal: the signer does not yet
+    // implement the byte-exact typed-data hasher, so do not waste a user
+    // approval on something that cannot be signed.
+    if (req.kind === 'typedData') {
+      throw new Error('typed-data signing is not yet supported in the desktop signer');
+    }
+    const approved = await confirmSignature(requireWindow(), req);
+    if (!approved) throw new Error('user rejected signature');
+    return signer.sign(req, await chainId());
+  });
+
+  // ---- session ------------------------------------------------------------
+  handle(IPC.UNLOCK, UnlockRequestSchema, async (req) => {
+    const encrypted = await readSeed();
+    if (!encrypted) throw new Error('no wallet to unlock');
+    if (req.password) {
+      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password: req.password });
+    } else {
+      // No password: unlock via a KEK retrieved from the OS keychain.
+      const kekHex = await keyVault.retrieve(encrypted.address);
+      if (!kekHex) throw new Error('keychain unlock unavailable; password required');
+      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+    }
+    emitLockState(false);
+    return buildStatus();
+  });
+
+  handle(IPC.LOCK, null, async () => {
+    await signer.lock();
+    emitLockState(true);
+    return buildStatus();
+  });
+
+  handle(IPC.GET_STATUS, null, () => buildStatus());
+
+  handle(IPC.HAS_WALLET, null, () => hasSeed());
+
+  // ---- provisioning -------------------------------------------------------
+  handle(IPC.IMPORT_WALLET, ImportWalletRequestSchema, async (req) => {
+    if (await hasSeed()) throw new Error('a wallet already exists; remove it first');
+    const { encrypted } = await signer.importWallet(req.mnemonic, req.password);
+    await writeSeed(encrypted);
+    // Open a session immediately. If keychain was requested and is available,
+    // ask the signer for the KEK so we can stash it (defense-in-depth).
+    const wantKek = req.useKeychain && (await keyVault.isAvailable());
+    const result = await signer.unlock({
+      encrypted,
+      autolockMs: AUTOLOCK_MS,
+      password: req.password,
+      wantKek,
+    });
+    if (wantKek && result.kekHex) {
+      await keyVault.store(encrypted.address, result.kekHex);
+      // result.kekHex is a JS string and cannot be truly zeroized; minimise its
+      // lifetime by dropping the only reference now. See THREAT_MODEL.md.
+    }
+    emitLockState(false);
+    return buildStatus();
+  });
+
+  // ---- broadcast ----------------------------------------------------------
+  handle(IPC.SEND_RAW_TRANSACTION, SendRawTransactionRequestSchema, (req) =>
+    rpc.sendRawTransaction(req.rawTx),
+  );
+}
