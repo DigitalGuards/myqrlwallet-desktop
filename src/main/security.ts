@@ -28,32 +28,38 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
 }
 
 /**
- * Install a strict Content-Security-Policy on every response in `session`.
- * Delivered as a response header (authoritative for file://, and the only form
- * in which `frame-ancestors` is honored). `connectSrc` lists the explicit RPC
- * origins the renderer may reach.
+ * Install the renderer Content-Security-Policy on every response in `session`,
+ * as a response header (authoritative for file://, and the only form in which
+ * `frame-ancestors` is honored). `connectSrc` lists the origins the renderer
+ * may reach (self + RPC + the frontend's backend/relay/explorer).
  *
- * `style-src 'self'` is intentionally strict and works for a Vite+React+Tailwind
- * build, which extracts one static hashed stylesheet (no runtime <style>
- * injection). `img-src 'self' data:` is required so QR codes / data-URI assets
- * render. No 'unsafe-inline' or 'unsafe-eval' anywhere.
+ * The renderer is the real myqrlwallet-frontend, so the policy is tuned to what
+ * that app needs while preserving the property that matters most:
+ *   - script-src 'self': NO 'unsafe-inline', NO 'unsafe-eval'. A renderer RCE
+ *     cannot inject or eval script. This is the load-bearing control.
+ *   - style-src 'self' 'unsafe-inline': Radix UI sets inline style attributes
+ *     at runtime; inline STYLE cannot execute code, so this is an accepted,
+ *     much-lower-risk relaxation than inline script would be.
+ *   - img/media/font widened for token art, QR, data: assets.
+ *   - worker-src 'self' blob:: the frontend's MLDSA worker is a Vite worker.
+ * Keys never live in the renderer regardless, so even a CSP slip cannot leak
+ * key material (that invariant is enforced by the signer, not the CSP).
  */
 export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
   const connect = ["'self'", ...connectSrc].join(' ');
   const csp = [
     "default-src 'self'",
     "script-src 'self'",
-    "style-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
     `connect-src ${connect}`,
-    "img-src 'self' data:",
-    "font-src 'self'",
+    "img-src 'self' data: https:",
+    "media-src 'self' blob:",
+    "font-src 'self' data:",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    // No blob: (a script-src 'self' bypass primitive). Bundle workers as
-    // same-origin assets instead.
-    "worker-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "worker-src 'self' blob:",
   ].join('; ');
 
   session.webRequest.onHeadersReceived((details, callback) => {
