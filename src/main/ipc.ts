@@ -139,8 +139,10 @@ export function registerIpcHandlers(deps: Deps): void {
     await signer.lock();
     emitLockState(true);
     // Renderer-initiated lock (auto-lock timer / logout): surface the native
-    // unlock window so the session can be reopened with a password.
-    showUnlock();
+    // unlock window so the session can be reopened with a password. Only when a
+    // wallet actually exists, otherwise locking is a no-op and we must not show a
+    // dead-end "No wallet to unlock" screen (e.g. right after a wipe).
+    if (await hasSeed()) showUnlock();
     return buildStatus();
   });
 

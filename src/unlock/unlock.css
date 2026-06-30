@@ -1,8 +1,9 @@
 /*
  * Unlock-window styling, matched to the MyQRLWallet renderer's design language
  * (the frontend's shadcn slate-dark theme in myqrlwallet-frontend/src/index.css):
- * slate-dark background, near-white text, slate borders, 0.5rem radius, and the
- * QRL-orange brand accent (--secondary) on the primary action. This is NOT a
+ * slate-dark background, near-white text, slate borders, 0.5rem radius, the
+ * wallet's blue action accent (--blue-accent) on the primary button (as on the
+ * Transfer button), and the orange QRL logo as the brand mark. This is NOT a
  * generic/Proton look: it should read as the wallet itself, locked.
  */
 :root {
@@ -12,8 +13,8 @@
   --faint: hsl(215 20% 45%);
   --border: hsl(217.2 32.6% 17.5%); /* --border / --input */
   --panel: hsl(217.2 32.6% 12%); /* slightly elevated input surface */
-  --brand: hsl(25 95% 53%); /* --secondary: QRL orange */
-  --brand-hover: hsl(25 95% 58%);
+  --brand: hsl(199 89% 64%); /* --blue-accent (#4aafff): the wallet's action color, as on Transfer */
+  --brand-hover: hsl(199 89% 70%);
   --brand-fg: hsl(0 0% 100%);
   --error: hsl(0 84% 67%);
   --radius: 0.5rem;
@@ -49,7 +50,7 @@ body {
   justify-content: center;
   overflow: hidden;
   background:
-    radial-gradient(58% 38% at 50% 0%, hsl(25 95% 53% / 0.1), transparent 70%),
+    radial-gradient(58% 38% at 50% 0%, hsl(199 89% 64% / 0.1), transparent 70%),
     var(--bg);
 }
 
@@ -144,7 +145,7 @@ body {
 
 .unlock-input:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px hsl(25 95% 53% / 0.25);
+  box-shadow: 0 0 0 3px hsl(199 89% 64% / 0.25);
 }
 
 .unlock-input::placeholder {
@@ -215,7 +216,7 @@ body {
 
 .unlock-biometric:hover:not(:disabled) {
   border-color: var(--brand);
-  background: hsl(25 95% 53% / 0.08);
+  background: hsl(199 89% 64% / 0.08);
 }
 
 .unlock-error {
