@@ -55,7 +55,12 @@ fi
 # value the caller already exported (so a prod build can override every one).
 export VITE_DESKTOP=1
 export VITE_NODE_ENV="${VITE_NODE_ENV:-development}"
-export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
+# The RPC endpoint is the backend's JSON-RPC PROXY, not the bare host: the
+# frontend builds the provider URL as `${VITE_RPC_URL_DEVELOPMENT}/testnet`
+# (config/networks.ts), and the proxy lives at /api/qrl-rpc, so the live URL is
+# https://dev.qrlwallet.com/api/qrl-rpc/testnet. Pointing at the bare host makes
+# the frontend POST to /testnet, which the edge answers 405 ("Connection failed").
+export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwallet.com/api/qrl-rpc}"
 export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
 export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://zondscan.com}"
 
@@ -75,5 +80,24 @@ echo "[build-renderer] staging build into ${OUT_RENDERER}"
 rm -rf "${OUT_RENDERER}"
 mkdir -p "${OUT_RENDERER}"
 cp -R "${FRONTEND_DIST}/." "${OUT_RENDERER}/"
+
+# The reused frontend ships a <meta http-equiv="Content-Security-Policy"> tuned
+# for WEB hosting (prod qrlwallet.com + localhost). Under file:// that meta tag
+# is the EFFECTIVE policy: the main-process header CSP (src/main/security.ts) is
+# attached via webRequest.onHeadersReceived, which does not reliably fire for a
+# file:// document load, so the staging backend origin must be present in the
+# meta tag too or every request to it is CSP-blocked (the "Connection failed"
+# screen). Inject the configured server origin (https + wss) into connect-src so
+# the desktop's dev-staging backend is reachable. Idempotent, and portable sed
+# (no in-place -i, which differs on BSD/macOS). A prod build (VITE_NODE_ENV=
+# production + qrlwallet.com vars) already matches the meta tag, so this is a
+# no-op there.
+RENDER_HTML="${OUT_RENDERER}/index.html"
+SERVER_HOST="$(printf '%s' "${VITE_SERVER_URL_DEVELOPMENT}" | sed -E 's#^https?://##; s#/.*$##')"
+if [[ -n "${SERVER_HOST}" ]] && grep -q "Content-Security-Policy" "${RENDER_HTML}" && ! grep -q "wss://${SERVER_HOST}" "${RENDER_HTML}"; then
+  echo "[build-renderer] injecting https://${SERVER_HOST} + wss://${SERVER_HOST} into renderer meta CSP connect-src"
+  sed -E "s#(connect-src 'self')#\1 https://${SERVER_HOST} wss://${SERVER_HOST}#" "${RENDER_HTML}" > "${RENDER_HTML}.tmp" \
+    && mv "${RENDER_HTML}.tmp" "${RENDER_HTML}"
+fi
 
 echo "[build-renderer] done. Real frontend staged at ${OUT_RENDERER}/index.html"
