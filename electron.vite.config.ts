@@ -58,6 +58,10 @@ export default defineConfig({
     // Relative base so assets resolve under file:// (loadFile).
     base: './',
     build: {
+      // This output only ever runs in Electron 42's bundled Chromium 148, so pin
+      // the target there: vite 7 changed the default build target (from 'modules'
+      // to a broad browser baseline) and the explicit pin avoids that drift.
+      target: 'chrome148',
       outDir: resolve(__dirname, 'out/unlock'),
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/unlock/index.html') },
