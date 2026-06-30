@@ -37,7 +37,17 @@ function notifyMain(deps: UnlockDeps, locked: boolean): void {
 function finishUnlock(deps: UnlockDeps): void {
   notifyMain(deps, false);
   unlocked = true;
+  // Reveal the main wallet window (hidden while locked) BEFORE closing the
+  // unlock window, so a live window always exists (else window-all-closed could
+  // quit the app in the gap).
+  const main = deps.getMainWindow();
+  if (main && !main.isDestroyed()) main.show();
   if (unlockWin && !unlockWin.isDestroyed()) unlockWin.close();
+}
+
+/** True while the unlock window is open and the wallet is still locked. */
+export function isUnlockActive(): boolean {
+  return unlockWin !== null && !unlockWin.isDestroyed() && !unlocked;
 }
 
 /**
@@ -101,9 +111,14 @@ export function showUnlockWindow(deps: UnlockDeps): void {
   const parent = deps.getMainWindow() ?? undefined;
   const preload = path.join(__dirname, '../preload/unlock.js');
   unlocked = false;
+  // Cover the main window so the lock reads as the app's locked STATE (a
+  // full-bleed lock screen), not a small floating dialog. Match the parent's
+  // bounds when there is one; otherwise fall back to the default window size.
+  const cover = parent && !parent.isDestroyed() ? parent.getBounds() : null;
   unlockWin = new BrowserWindow({
-    width: 460,
-    height: 600,
+    width: cover?.width ?? 1100,
+    height: cover?.height ?? 800,
+    ...(cover ? { x: cover.x, y: cover.y } : {}),
     parent,
     modal: Boolean(parent),
     resizable: false,
@@ -112,12 +127,19 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     fullscreenable: false,
     show: false,
     backgroundColor: '#0b0d12',
-    title: 'Unlock MyQRLWallet',
+    title: 'Unlock MyQRLwallet',
     autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preload),
   });
 
-  unlockWin.once('ready-to-show', () => unlockWin?.show());
+  unlockWin.once('ready-to-show', () => {
+    // Single-window lock screen: hide the main wallet window while locked so the
+    // unlock window is the ONLY thing on screen (it reads as the app's locked
+    // state, not a second window beside the app). finishUnlock reveals main on
+    // success; createWindow's ready-to-show skips the initial show when locked.
+    if (parent && !parent.isDestroyed()) parent.hide();
+    unlockWin?.show();
+  });
 
   // The lock cannot be bypassed: dismissing the unlock window (its close button)
   // while still locked quits the app rather than revealing the wallet.

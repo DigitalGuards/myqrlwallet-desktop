@@ -1,13 +1,22 @@
+/*
+ * Unlock-window styling, matched to the MyQRLWallet renderer's design language
+ * (the frontend's shadcn slate-dark theme in myqrlwallet-frontend/src/index.css):
+ * slate-dark background, near-white text, slate borders, 0.5rem radius, and the
+ * QRL-orange brand accent (--secondary) on the primary action. This is NOT a
+ * generic/Proton look: it should read as the wallet itself, locked.
+ */
 :root {
-  --bg: #0b0d12;
-  --panel: #12151c;
-  --text: #e7e9ee;
-  --muted: #8b90a0;
-  --faint: #5b6072;
-  --accent: #7c5cff;
-  --accent2: #19b9b0;
-  --error: #ff6b6b;
-  --border: #232734;
+  --bg: hsl(222.2 84% 4.9%); /* --background */
+  --fg: hsl(210 40% 98%); /* --foreground */
+  --muted-fg: hsl(215 20.2% 65.1%); /* --muted-foreground */
+  --faint: hsl(215 20% 45%);
+  --border: hsl(217.2 32.6% 17.5%); /* --border / --input */
+  --panel: hsl(217.2 32.6% 12%); /* slightly elevated input surface */
+  --brand: hsl(25 95% 53%); /* --secondary: QRL orange */
+  --brand-hover: hsl(25 95% 58%);
+  --brand-fg: hsl(0 0% 100%);
+  --error: hsl(0 84% 67%);
+  --radius: 0.5rem;
 }
 
 * {
@@ -23,12 +32,15 @@ body,
 
 body {
   background: var(--bg);
-  color: var(--text);
+  color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
+/* Full-bleed lock screen: the wallet background fills the window with a centered
+ * prompt, so it reads as "the app is locked", not a small floating dialog. A very
+ * low-opacity brand wash at the top keeps it from looking dead-flat. */
 .unlock-root {
   position: relative;
   height: 100%;
@@ -36,42 +48,27 @@ body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-
-/* Soft brand-coloured glow at the top, echoing the Proton-style gradient. */
-.unlock-gradient {
-  position: absolute;
-  top: -45%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 150%;
-  height: 75%;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(124, 92, 255, 0.35),
-    rgba(25, 185, 176, 0.12) 45%,
-    transparent 70%
-  );
-  filter: blur(24px);
-  pointer-events: none;
+  background:
+    radial-gradient(58% 38% at 50% 0%, hsl(25 95% 53% / 0.1), transparent 70%),
+    var(--bg);
 }
 
 .unlock-card {
   position: relative;
-  width: 340px;
+  width: 360px;
   max-width: 88vw;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  animation: rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: rise 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -79,28 +76,23 @@ body {
   }
 }
 
-.unlock-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  margin-bottom: 4px;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  box-shadow: 0 12px 32px rgba(124, 92, 255, 0.35);
+.unlock-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  margin-bottom: 2px;
 }
 
-.unlock-title {
+.unlock-wordmark {
   font-size: 22px;
   font-weight: 700;
-  margin: 0;
   letter-spacing: -0.01em;
+  margin: 0;
 }
 
 .unlock-subtitle {
   font-size: 14px;
-  color: var(--muted);
+  color: var(--muted-fg);
   margin: 0;
 }
 
@@ -109,7 +101,7 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--muted-fg);
   background: var(--panel);
   border: 1px solid var(--border);
   padding: 6px 12px;
@@ -121,7 +113,7 @@ body {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  background: var(--brand);
 }
 
 .unlock-form {
@@ -138,12 +130,12 @@ body {
 
 .unlock-input {
   width: 100%;
-  padding: 13px 64px 13px 16px;
+  padding: 12px 64px 12px 14px;
   font-size: 15px;
-  color: var(--text);
+  color: var(--fg);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   outline: none;
   transition:
     border-color 140ms,
@@ -151,8 +143,8 @@ body {
 }
 
 .unlock-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px hsl(25 95% 53% / 0.25);
 }
 
 .unlock-input::placeholder {
@@ -161,12 +153,12 @@ body {
 
 .unlock-eye {
   position: absolute;
-  right: 8px;
+  right: 6px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: 0;
-  color: var(--muted);
+  color: var(--muted-fg);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -175,7 +167,7 @@ body {
 }
 
 .unlock-eye:hover {
-  color: var(--text);
+  color: var(--fg);
 }
 
 .unlock-button {
@@ -183,19 +175,19 @@ body {
   padding: 12px 16px;
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--brand-fg);
   cursor: pointer;
   border: 0;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: var(--radius);
+  background: var(--brand);
   transition:
-    filter 140ms,
+    background 140ms,
     transform 80ms,
     opacity 140ms;
 }
 
 .unlock-button:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--brand-hover);
 }
 
 .unlock-button:active:not(:disabled) {
@@ -211,19 +203,19 @@ body {
   width: 100%;
   padding: 11px 16px;
   font-size: 14px;
-  color: var(--text);
+  color: var(--fg);
   cursor: pointer;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   transition:
     border-color 140ms,
     background 140ms;
 }
 
 .unlock-biometric:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: rgba(124, 92, 255, 0.08);
+  border-color: var(--brand);
+  background: hsl(25 95% 53% / 0.08);
 }
 
 .unlock-error {
@@ -235,6 +227,6 @@ body {
 .unlock-hint {
   font-size: 12px;
   color: var(--faint);
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   line-height: 1.5;
 }

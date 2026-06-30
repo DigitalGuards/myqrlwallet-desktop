@@ -19,7 +19,12 @@ import {
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
-import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
+import {
+  registerUnlockIpc,
+  showUnlockWindow,
+  isUnlockActive,
+  type UnlockDeps,
+} from './unlockWindow';
 import { hasSeed } from './seedFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
@@ -118,7 +123,11 @@ function createWindow(): void {
     webPreferences: hardenedWebPreferences(preloadPath),
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    // Stay hidden if the wallet is locked at startup: the unlock window is the
+    // only thing shown until the user unlocks (single-window lock screen).
+    if (!isUnlockActive()) mainWindow?.show();
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
