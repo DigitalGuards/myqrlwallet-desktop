@@ -19,12 +19,7 @@ import {
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
-import {
-  registerUnlockIpc,
-  showUnlockWindow,
-  isUnlockActive,
-  type UnlockDeps,
-} from './unlockWindow';
+import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
 import { hasSeed } from './seedFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
@@ -109,7 +104,7 @@ function rendererDevUrl(): string | undefined {
   return !app.isPackaged ? process.env['QRL_RENDERER_DEV_URL'] : undefined;
 }
 
-function createWindow(): void {
+function createWindow(startLocked = false): void {
   const preloadPath = path.join(__dirname, '../preload/index.js');
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -125,8 +120,10 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     // Stay hidden if the wallet is locked at startup: the unlock window is the
-    // only thing shown until the user unlocks (single-window lock screen).
-    if (!isUnlockActive()) mainWindow?.show();
+    // only thing shown until the user unlocks (single-window lock screen). This
+    // is a deterministic flag resolved BEFORE the window was created, not a race
+    // against showUnlockWindow assigning its window.
+    if (!startLocked) mainWindow?.show();
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -210,11 +207,14 @@ app.whenReady().then(async () => {
     showUnlock: () => showUnlockWindow(unlockDeps),
   });
 
-  createWindow();
+  // Resolve the locked-at-startup decision BEFORE creating the window so its
+  // ready-to-show is gated deterministically (no race against showUnlockWindow).
+  const lockedAtStartup = await hasSeed();
+  createWindow(lockedAtStartup);
 
   // If a wallet already exists, the freshly-forked signer is locked: gate the
   // app behind the native unlock window before the wallet can be touched.
-  if (await hasSeed()) showUnlockWindow(unlockDeps);
+  if (lockedAtStartup) showUnlockWindow(unlockDeps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

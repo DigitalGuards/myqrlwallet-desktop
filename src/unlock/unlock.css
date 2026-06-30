@@ -13,7 +13,7 @@
   --faint: hsl(215 20% 45%);
   --border: hsl(217.2 32.6% 17.5%); /* --border / --input */
   --panel: hsl(217.2 32.6% 12%); /* slightly elevated input surface */
-  --brand: hsl(199 89% 64%); /* --blue-accent (#4aafff): the wallet's action color, as on Transfer */
+  --brand: hsl(199 89% 64%); /* --blue-accent: the wallet's action color, as on the Transfer button */
   --brand-hover: hsl(199 89% 70%);
   --brand-fg: hsl(0 0% 100%);
   --error: hsl(0 84% 67%);
