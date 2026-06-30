@@ -130,12 +130,20 @@ yields NO key material, because keys never live there.
    unlock window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer.
    Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/unlockWindow.ts`.
 
-6. **Strict CSP, no `unsafe-inline` / `unsafe-eval`.** `default-src 'self'`;
-   `script-src 'self'`; `style-src 'self'`; explicit `connect-src` from the
-   configured RPC origins only; `object-src 'none'`; `frame-ancestors 'none'`;
-   `base-uri 'none'`; `form-action 'none'`. Delivered as a response header.
-   Files: `src/main/security.ts` (`installContentSecurityPolicy`),
-   `src/main/config.ts` (`connectSrcOrigins`).
+6. **Strict CSP: `script-src 'self'`, no script `unsafe-inline` / `unsafe-eval`.**
+   The load-bearing control is `script-src 'self'`: a renderer RCE can neither
+   inject nor `eval` script. Full policy: `default-src 'self'`;
+   `script-src 'self'`; `style-src 'self' 'unsafe-inline'` (the reused frontend's
+   Radix UI sets inline STYLE attributes at runtime; inline style cannot execute
+   code, so this is an accepted, much-lower-risk relaxation than inline script);
+   explicit `connect-src` from the configured RPC/backend origins only;
+   `img-src 'self' data: https:`; `media-src 'self' blob:`; `font-src 'self' data:`;
+   `object-src 'none'`; `frame-ancestors 'none'`; `base-uri 'self'`;
+   `form-action 'self'` (`'self'` resolves to `file://` here, so effectively
+   `'none'`); `worker-src 'self' blob:`. Delivered as a response header. Files:
+   `src/main/security.ts` (`installContentSecurityPolicy`), `src/main/config.ts`
+   (`connectSrcOrigins`). Renderer permissions are deny-by-default except
+   clipboard write (`src/main/permissions.ts`, `installPermissionHandlers`).
 
 7. **KDF params are frozen once seeds exist.** `KDF_DEFAULTS` and `AEAD` in
    `src/shared/constants.ts` are persisted with every encrypted seed; changing

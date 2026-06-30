@@ -225,3 +225,29 @@ to hardware binding (TPM / Secure Enclave, DBSC).
 - Steering: high-value Linux users should use full-disk encryption plus a
   hardware wallet; hardware-wallet / air-gapped signing is a planned stage for
   all platforms.
+
+### (f) The renderer is served from `file://`, so the file-protocol fuse stays at its permissive default
+
+The packaged renderer loads via `loadFile` (`src/main/index.ts`), and a
+`file`-scheme interceptor remaps the frontend's root-absolute asset paths
+(`installRendererAssetResolver`). Because the app legitimately depends on
+`file://`, the `afterPack` hook leaves `GrantFileProtocolExtraPrivileges` at
+Electron's default (enabled): it sets the six security-relevant fuses explicitly
+but does not flip this one. That default grants `file://` pages extra powers
+(fetch over `file://`, service-worker registration, broad child-frame access)
+that Electron recommends disabling in favor of a registered custom scheme.
+
+- Why it is accepted for now: this is NOT a regression from the Electron 42 bump
+  (the fuse defaulted enabled on the prior major too), and disabling it while the
+  renderer is still served from `file://` would break asset loading. The
+  load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'`
+  with no inline/eval, navigation lockdown, deny-by-default permissions) are
+  unaffected and still contain a renderer compromise.
+- Residual risk: an in-origin renderer RCE has the broader `file://` capability
+  surface available rather than a minimal custom-scheme one.
+- Hardening follow-up: migrate the renderer to a registered privileged custom
+  scheme (`protocol.handle` / `registerSchemesAsPrivileged`), then flip
+  `GrantFileProtocolExtraPrivileges: false` in `scripts/afterPack.cjs` (the two
+  must land together). Consider `strictlyRequireAllFuses: true` so a future
+  Electron major that lengthens the fuse wire fails the build loudly instead of
+  silently leaving a new fuse at its default.

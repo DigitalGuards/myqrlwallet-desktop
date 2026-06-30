@@ -17,6 +17,7 @@ import {
   installContentSecurityPolicy,
   lockDownNavigation,
 } from './security';
+import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
 import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
 import { hasSeed } from './seedFile';
@@ -167,6 +168,12 @@ app.whenReady().then(async () => {
     }
   }
   installContentSecurityPolicy(session.defaultSession, connect);
+
+  // Deny-by-default for every web permission (camera, mic, geolocation,
+  // notifications, WebUSB/HID/Serial/Bluetooth, fileSystem); only clipboard
+  // write is allowed. Covers the main window and the modal unlock window, which
+  // share the default session.
+  installPermissionHandlers(session.defaultSession);
 
   lockDownNavigation(app);
 
