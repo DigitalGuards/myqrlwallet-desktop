@@ -70,8 +70,8 @@ npm run build          # electron-vite build (out/main, out/preload, out/rendere
 | `src/main/` | The broker (lowest-but-trusted). `index.ts` (window + lifecycle), `ipc.ts` (the renderer's entire reachable surface), `security.ts` (CSP, sender validation, navigation lockdown, hardened webPreferences), `config.ts` (RPC defaults, autolock), `confirm.ts` (trusted signature modal), `rpc.ts`, `seedFile.ts` (owns the encrypted seed on disk), `signerBridge.ts` (parent side of the signer channel). Holds NO plaintext keys. |
 | `src/signer/` | The isolated `utilityProcess`, the ONLY holder of plaintext key material. `index.ts` (entry, speaks only over `process.parentPort`), `kdf.ts` (Argon2id KEK), `aead.ts` (AES-256-GCM envelope), `signing.ts` (seed derivation + ML-DSA-87), `session.ts` (in-memory unlock + autolock), `zeroize.ts`. |
 | `src/keyvault/` | OS-keychain KEK storage. `factory.ts`/`index.ts` (resolution), `macKeychainVault.ts` (Touch-ID/keychain helper), `safeStorageVault.ts` (opt-in, no presence gate), `nullVault.ts`. |
-| `src/preload/` | `index.ts`: sandboxed contextBridge. Exposes ONLY the narrow named `window.qrlWallet` wrappers; never raw `ipcRenderer`. |
-| `src/renderer/` | Sandboxed React app (no Node). May only call `window.qrlWallet`. Styling via an EXTERNAL `.css` file (strict CSP forbids inline style/script/handlers). |
+| `src/preload/` | `index.ts` (the `window.qrlWallet` contextBridge for the wallet window) and `preload.ts` for the unlock window (built to `out/preload/unlock.js`). Exposes ONLY narrow named wrappers; never raw `ipcRenderer`. |
+| `src/unlock/` | The native, app-owned UNLOCK window: its own small React renderer (`index.html` + `main.tsx` + `unlock.css`) and preload, shown by main (`src/main/unlockWindow.ts`) whenever the signer is locked. The MAIN wallet renderer is NOT here: it is the external `myqrlwallet-frontend`, built in by `scripts/build-renderer.sh` into `out/renderer`. There is no `src/renderer/` demo any more (deleted). |
 | `scripts/` | `calibrate-kdf.ts`, `build-renderer.sh`, build hooks (`afterPack.cjs`, `notarize.cjs`, `pgp-sign.cjs`). |
 | `native/macos-keychain/` | Swift keychain helper sources; `build.sh` emits the signed binary into `resources/`. |
 | `test/` | `node --test` suites over the contract and signer logic. |
@@ -106,10 +106,13 @@ yields NO key material, because keys never live there.
 
 3. **Preload exposes only the narrow API.** The contextBridge mounts ONLY the
    named `window.qrlWallet` wrappers (`getBalance`, `buildTransaction`,
-   `requestSignature`, `unlock`, `lock`, `getStatus`, `hasWallet`,
-   `importWallet`, `sendRawTransaction`, `onLockStateChanged`). Never expose raw
+   `requestSignature`, `unlock`, `lock`, `removeWallet`, `getStatus`,
+   `hasWallet`, `createWallet`, `importWallet`, `sendRawTransaction`,
+   `onLockStateChanged`). The unlock window's preload exposes only
+   `window.unlockBridge` (`getInfo`/`submit`/`biometric`). Never expose raw
    `ipcRenderer`, `invoke`, channel strings, or Node primitives. Files:
-   `src/preload/index.ts`, `src/shared/bridge.ts`, `src/shared/constants.ts`.
+   `src/preload/index.ts`, `src/unlock/preload.ts`, `src/shared/bridge.ts`,
+   `src/shared/constants.ts`.
 
 4. **Every IPC handler validates sender AND argument.** Each `ipcMain.handle`
    first calls `isTrustedSender` (top frame of the wallet window + `file:`
@@ -118,10 +121,14 @@ yields NO key material, because keys never live there.
    `src/main/ipc.ts`, `src/main/security.ts` (`isTrustedSender`),
    `src/shared/schemas.ts`.
 
-5. **Signing requires the trusted confirmation modal.** `REQUEST_SIGNATURE`
-   proceeds only after the main-drawn confirmation modal returns approved; a
-   rejection throws and nothing is signed. Files: `src/main/ipc.ts`,
-   `src/main/confirm.ts`.
+5. **Destructive renderer-reachable ops require the trusted main-drawn
+   confirmation.** `REQUEST_SIGNATURE` (signing) and `REMOVE_WALLET` (the
+   irreversible wipe) each proceed only after a main-drawn confirmation
+   (`confirmSignature` / `confirmRemoveWallet`) returns approved; a rejection
+   throws and nothing is signed or deleted. The renderer's own confirm UI is
+   convenience, never the gate. The unlock password is collected in the native
+   unlock window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer.
+   Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/unlockWindow.ts`.
 
 6. **Strict CSP, no `unsafe-inline` / `unsafe-eval`.** `default-src 'self'`;
    `script-src 'self'`; `style-src 'self'`; explicit `connect-src` from the
@@ -154,8 +161,11 @@ electron-builder is **26.x GA**: top-level `mac.*` keys and `win.signtoolOptions
 (NOT the v27 `.sign` object shape). Hooks: `afterPack` (fuses), `afterSign`
 (notarize), `afterAllArtifactBuild` (PGP detach-sign).
 
-- **Renderer**: `npm run build:renderer:frontend` builds the reused frontend
-  into the renderer bundle. CSP requires an external `.css`; no inline assets.
+- **Renderer**: `npm run build:renderer:frontend` (run by `npm run build`)
+  builds the reused `myqrlwallet-frontend` into `out/renderer`; electron-vite
+  additionally builds the native unlock window into `out/unlock`. This is a
+  dev.qrlwallet.com STAGING build by default (env-overridable; see
+  `scripts/build-renderer.sh`).
 - **macOS**: run `npm run build:keychain-helper` BEFORE `dist:mac`, otherwise
   `resources/` is empty and the app silently falls back to password-only unlock
   (no Touch-ID). Signing identity from `CSC_NAME` / login keychain;
@@ -182,6 +192,12 @@ Exercise these (test or manual) for any change to `src/main/ipc.ts`,
   `sendRawTransaction` broadcasts the signed raw tx.
 - Message / typed-data sign: `requestSignature` over the message/typedData arm
   of the discriminated union, with the correct SCHEME context tag.
+- Lock + native unlock: a lock (sidebar Lock, autolock, or startup-if-locked)
+  raises the native unlock window; a password (or keychain) unlock closes it and
+  reopens the session.
+- Remove wallet (wipe): `removeWallet` drops the session, deletes the seed file,
+  and clears the keychain ONLY after the trusted main-drawn confirmation; the
+  unlock window is NOT shown afterward (no wallet remains).
 - Locked-state rejection: signing/spend calls fail cleanly when no session is open.
 - Malformed IPC rejection: a payload that fails zod parse is rejected before any action.
 - Sub-frame sender rejection: an IPC event from a non-top frame or non-`file:`
