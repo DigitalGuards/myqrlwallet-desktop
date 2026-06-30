@@ -9,6 +9,7 @@
  * these controls keep the renderer from escalating beyond its sandbox.
  */
 import { app, type BrowserWindow, type Session, shell, type WebPreferences } from 'electron';
+import { isAllowedExternalUrl } from './externalLinks';
 
 /** webPreferences for the single wallet window. */
 export function hardenedWebPreferences(preloadPath: string): WebPreferences {
@@ -120,10 +121,10 @@ export function lockDownNavigation(app: Electron.App): void {
     // So the renderer is never steered to new in-app content. But an external
     // link (the explorer, theqrl.org, a token's site) clicked as a plain
     // <a href> DOES fire will-navigate; rather than dead-ending it (the links
-    // would appear broken), hand any external https URL to the OS browser.
+    // would appear broken), hand an allowlisted external link to the OS browser.
     contents.on('will-navigate', (event, url) => {
       event.preventDefault();
-      if (isExternalHttps(url)) {
+      if (isAllowedExternalUrl(url)) {
         setImmediate(() => void shell.openExternal(url));
       }
     });
@@ -132,9 +133,10 @@ export function lockDownNavigation(app: Electron.App): void {
     contents.on('will-redirect', (event) => event.preventDefault());
 
     contents.setWindowOpenHandler(({ url }) => {
-      // target=_blank / window.open: open external https links (e.g. zondscan)
-      // in the user's real browser, never in an Electron window.
-      if (isExternalHttps(url)) {
+      // target=_blank / window.open: open allowlisted external links (e.g.
+      // zondscan) in the user's real browser, never in an Electron window. A
+      // non-allowlisted URL is dropped (not opened): see externalLinks.ts.
+      if (isAllowedExternalUrl(url)) {
         setImmediate(() => void shell.openExternal(url));
       }
       return { action: 'deny' };
@@ -149,18 +151,4 @@ export function lockDownNavigation(app: Electron.App): void {
       void params;
     });
   });
-}
-
-/**
- * An external link we will hand to the OS browser. Restricted to `https:` so a
- * compromised renderer cannot use `shell.openExternal` to launch a dangerous
- * scheme (file:, a custom protocol handler, etc.); the app itself is file://,
- * so any https URL is by definition external.
- */
-function isExternalHttps(url: string): boolean {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
 }

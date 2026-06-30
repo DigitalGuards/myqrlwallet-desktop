@@ -102,11 +102,16 @@ compromised renderer cannot address an arbitrary IPC channel.
 `lockDownNavigation()` in `src/main/security.ts`, attached to every
 `web-contents-created`:
 
-- `will-navigate`: `preventDefault` for any non-`file:` target. A `file://` SPA
-  never legitimately navigates the top document away.
-- `setWindowOpenHandler`: deny by default. Allowlisted external `https://` links
-  (`EXTERNAL_ALLOWLIST`: qrlwallet.com, zondscan.com, theqrl.org) are opened in
-  the user's real browser via `shell.openExternal`, never in an Electron window.
+- `will-navigate`: `preventDefault` always (a `file://` SPA never legitimately
+  navigates the top document away); an allowlisted external link is handed to the
+  OS browser instead of dead-ending.
+- `setWindowOpenHandler`: deny the Electron window unconditionally; an allowlisted
+  external link is opened in the user's REAL browser via `shell.openExternal`. The
+  allowlist (`EXTERNAL_ALLOWLIST` in `src/main/externalLinks.ts`; https-only,
+  exact host or subdomain on a dot boundary) is: qrlwallet.com, zondscan.com,
+  theqrl.org, github.com, t.me. Arbitrary token / NFT / dApp-supplied URLs are NOT
+  allowlisted and are intentionally dropped (a no-op) rather than launched. Unit
+  tested in `test/externalLinks.test.ts`.
 - `will-attach-webview`: deny outright, and strip `preload` / force
   `nodeIntegration: false` + `contextIsolation: true` defensively. There is no
   legitimate `<webview>` in this app.
