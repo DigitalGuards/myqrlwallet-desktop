@@ -78,11 +78,16 @@ npm run build          # electron-vite build (out/main, out/preload, out/rendere
 
 ## 3. Git discipline
 
+- **Branching: `dev` is the integration branch (and GitHub default); `main` is
+  stable/release.** Do code work on short-lived feature branches and open a PR to
+  `dev`; process PR and bot review comments (REST: `gh api
+  repos/DigitalGuards/myqrlwallet-desktop/pulls/{n}/comments`) before merge. Cut
+  `dev` -> `main` PRs for releases. Do not push code straight to `main`.
 - Never revert user changes you did not author unless explicitly asked.
 - Avoid destructive commands (`reset --hard`, `checkout --`) unless requested.
 - Use non-interactive git. Keep commits scoped and descriptive.
-- Docs-only prose changes may be committed directly; code changes follow the
-  workspace PR convention.
+- Docs-only prose changes may be committed directly to `dev`; code changes follow
+  the PR-to-`dev` flow above.
 
 ## 4. Canonical security invariants (do not regress)
 
