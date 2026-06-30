@@ -15,7 +15,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 33 + electron-vite + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged.
+- **Stack:** Electron 42 (latest stable; bundled Node 24 + Chromium 148) + electron-vite + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged.
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded over `file://`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** every key-touching operation (wallet generation, seed encrypt/decrypt, ML-DSA-87 signing) runs in the isolated signer. The renderer routes those through `window.qrlWallet`; its in-page seed/signing primitives are neutered (throw) under desktop, as defense-in-depth.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -24,8 +24,9 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## Prerequisites
 
-- Node `>=20.19.0`. The repo pins `20.19.0` in `.nvmrc`; run `nvm use`.
-  (Node 20.19 is required because the signer relies on a global WebCrypto RNG.)
+- Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
+  `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
+  currently 24; this floor is only for building, testing, and packaging locally.)
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
   sit side by side, both as submodules of the parent workspace. Initialise it
@@ -37,7 +38,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 ## Quick start
 
 ```bash
-nvm use                         # Node 20.19.0 (.nvmrc)
+nvm use                         # Node 22 LTS (.nvmrc)
 npm install                     # legacy-peer-deps is preconfigured
 npm run build:renderer:frontend # build the real frontend into out/renderer
 npm run dev                     # launch the hardened shell against it

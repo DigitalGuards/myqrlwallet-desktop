@@ -47,24 +47,30 @@ in which `frame-ancestors` is honored), installed on the default session in
 ```
 default-src 'self';
 script-src 'self';
-style-src 'self';
-connect-src 'self' <configured RPC origins>;
-img-src 'self' data:;
-font-src 'self';
+style-src 'self' 'unsafe-inline';
+connect-src 'self' <configured RPC/backend origins>;
+img-src 'self' data: https:;
+media-src 'self' blob:;
+font-src 'self' data:;
 object-src 'none';
 frame-ancestors 'none';
-base-uri 'none';
-form-action 'none';
+base-uri 'self';
+form-action 'self';
 worker-src 'self' blob:
 ```
 
-No `unsafe-inline` and no `unsafe-eval` anywhere. The `connect-src` origins are
-derived from the configured RPC endpoints in `src/main/config.ts`
-(`connectSrcOrigins()`); the renderer can reach those and nothing else. Because
-`style-src` is `'self'`, the renderer must use an external `.css` file: no inline
-`<style>`, no inline event handlers, no inline `<script>`. In `npm run dev` the
-Vite dev-server origin and its HMR websocket are appended to `connect-src` only
-(see `src/main/index.ts`); production is never widened.
+The load-bearing control is `script-src 'self'`: no `unsafe-inline` and no
+`unsafe-eval` for SCRIPT, so a renderer compromise can neither inject nor `eval`
+executable code. `style-src` allows `'unsafe-inline'` because the reused frontend
+(Radix UI) sets inline STYLE attributes at runtime; inline style cannot execute
+code, so this is a much-lower-risk relaxation than inline script would be.
+`base-uri`/`form-action` are `'self'`, which resolves to `file://` for the
+packaged renderer and is therefore effectively as tight as `'none'`. The
+`connect-src` origins are derived from the configured RPC/backend endpoints in
+`src/main/config.ts` (`connectSrcOrigins()`); the renderer can reach those and
+nothing else. In `npm run dev` the Vite dev-server origin and its HMR websocket
+are appended to `connect-src` only (see `src/main/index.ts`); production is never
+widened.
 
 `X-Content-Type-Options: nosniff` is set on the same response.
 
@@ -108,7 +114,23 @@ compromised renderer cannot address an arbitrary IPC channel.
 A single-instance lock (`app.requestSingleInstanceLock()` in
 `src/main/index.ts`) prevents a second process from racing the seed file.
 
-### 5. `@electron/fuses`
+### 5. Renderer permissions (deny-by-default)
+
+`installPermissionHandlers()` in `src/main/permissions.ts`, installed on the
+default session in `src/main/index.ts` before any window opens (so it covers both
+the wallet window and the modal unlock window, which share the session). Electron
+auto-grants permissions when no handler is set, and Chromium keeps widening the
+device/media surface reachable by default, so the wallet refuses everything:
+
+- `setPermissionRequestHandler` / `setPermissionCheckHandler`: grant ONLY
+  `clipboard-sanitized-write` (used by "copy address"); deny camera, microphone,
+  geolocation, notifications, `clipboard-read`, `fileSystem`, MIDI, and the rest.
+- `setDevicePermissionHandler`: deny every WebUSB / HID / Serial / Bluetooth
+  device-selection prompt. The wallet talks to no such device.
+
+Covered by `test/security.permissions.test.ts`.
+
+### 6. `@electron/fuses`
 
 Compile-time fuses are flipped on the packaged binary in the `afterPack` hook
 (`scripts/afterPack.cjs`, declared in `electron-builder.yml`), before signing, so
@@ -123,7 +145,7 @@ they are covered by the code signature. Intended settings:
 
 Verify on a built app with `npm run fuses:read`.
 
-### 6. ASAR integrity
+### 7. ASAR integrity
 
 `asar: true` in `electron-builder.yml`, with `OnlyLoadAppFromAsar` and
 `EnableEmbeddedAsarIntegrityValidation` fuses on, so the app only loads code from
@@ -132,7 +154,7 @@ the signed `app.asar` and the runtime validates its integrity. Native binaries
 `asarUnpack: ['**/*.node']` extracts them to `app.asar.unpacked`; everything else
 stays in the integrity-checked archive.
 
-### 7. Supply chain and distribution
+### 8. Supply chain and distribution
 
 - Lockfile-pinned dependencies; pure-NAPI/JS crypto deps (no native build step,
   no `electron-rebuild`).
