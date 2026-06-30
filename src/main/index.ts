@@ -78,7 +78,12 @@ function installRendererAssetResolver(): void {
     }
     let urlPath = '/';
     try {
-      urlPath = new URL(request.url).pathname.replace(/^\/+/, '');
+      // A root-absolute web path (e.g. /assets/x.js, /tree.svg) resolves under
+      // the file: scheme to the drive/filesystem root. On Windows that yields a
+      // pathname of /C:/assets/x.js, so we strip the leading slash(es) AND an
+      // optional <drive>: prefix; on POSIX only the leading slash is present.
+      // The path then remaps under RENDERER_DIR on every platform.
+      urlPath = new URL(request.url).pathname.replace(/^\/+/, '').replace(/^[A-Za-z]:\//, '');
     } catch {
       /* keep default */
     }
