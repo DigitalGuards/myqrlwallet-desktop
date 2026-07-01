@@ -20,6 +20,12 @@ function seedPath(): string {
   return path.join(app.getPath('userData'), 'wallet', 'seed.json');
 }
 
+// Monotonic per-process sequence for unique temp-file names (see writeSeed).
+let tmpSeq = 0;
+function nextTmpSeq(): number {
+  return tmpSeq++;
+}
+
 function isAeadFields(v: unknown): boolean {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
@@ -81,8 +87,12 @@ export async function writeSeed(enc: EncryptedSeed): Promise<void> {
     await fs.rename(p, quarantine);
     console.error(`writeSeed: quarantined unreadable seed file to ${quarantine}`);
   }
-  // Atomic replace: write + fsync a temp file, then rename over the target.
-  const tmp = `${p}.tmp`;
+  // Atomic replace: write + fsync a UNIQUE temp file, then rename over the
+  // target. The unique suffix (pid + a per-process counter) keeps two
+  // concurrent writeSeed calls from clobbering a shared `${p}.tmp` and renaming
+  // a half-written file into place; the single-instance lock guarantees one
+  // process, so pid+counter is collision-free. The final rename is atomic.
+  const tmp = `${p}.${process.pid}.${nextTmpSeq()}.tmp`;
   const handle = await fs.open(tmp, 'w', 0o600); // 0600: owner read/write only
   try {
     await handle.writeFile(JSON.stringify(enc, null, 2), 'utf8');
