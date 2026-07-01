@@ -20,8 +20,13 @@ import {
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
-import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
-import { hasSeed } from './seedFile';
+import {
+  notifyUnlockedExternally,
+  registerUnlockIpc,
+  showUnlockWindow,
+  type UnlockDeps,
+} from './unlockWindow';
+import { hasAnySeed, migrateLegacySeed } from './seedFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
 
@@ -229,6 +234,10 @@ app.whenReady().then(async () => {
 
   lockDownNavigation(app);
 
+  // One-shot migration of the legacy single-wallet seed.json into the
+  // per-address multi-wallet store, BEFORE anything reads the store.
+  await migrateLegacySeed();
+
   // Fork the signer and resolve the keyvault before exposing IPC.
   await signer.start();
   const keyVault = await createKeyVault({
@@ -246,11 +255,12 @@ app.whenReady().then(async () => {
     signer,
     keyVault,
     showUnlock: () => showUnlockWindow(unlockDeps),
+    notifyUnlocked: () => notifyUnlockedExternally(unlockDeps),
   });
 
   // Resolve the locked-at-startup decision BEFORE creating the window so its
   // ready-to-show is gated deterministically (no race against showUnlockWindow).
-  const lockedAtStartup = await hasSeed();
+  const lockedAtStartup = await hasAnySeed();
   createWindow(lockedAtStartup);
 
   // If a wallet already exists, the freshly-forked signer is locked: gate the
