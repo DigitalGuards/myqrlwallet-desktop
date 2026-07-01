@@ -93,6 +93,39 @@ The signer reproduces the audited path byte-for-byte: it shares the same
 `src/utils/signing/sign.ts` + `qrlStore.sendTransaction`, so a desktop-produced
 signature verifies identically to a web-wallet one.
 
+## Multi-wallet + import routes (bridge contract v2)
+
+The desktop stores any number of wallets (one encrypted envelope per address,
+each under its own password, in `userData/wallet/seeds/<address>.json`) with a
+single ACTIVE account and at most one unlocked signer session. The bridge
+surface for the frontend:
+
+- `importWallet({ mnemonic, password, useKeychain? })` OR
+  `importWallet({ hexSeed, password, useKeychain? })`: exactly one source. The
+  hex seed is the web wallet's 51-byte "hex seed" import; the signer
+  regenerates the canonical mnemonic so both routes store an identical
+  envelope. Importing/creating no longer requires removing the previous wallet:
+  a new account is ADDED and becomes active. A duplicate address is rejected
+  with "this account is already on this device".
+- `listWallets(): { wallets: [{ address, keychainBacked }], active }`.
+- `setActiveWallet({ address })`: switches the active account. When the session
+  belongs to a different account it is dropped and the NATIVE unlock window is
+  raised (with an account picker when more than one wallet exists); each wallet
+  unlocks with its own password.
+- `removeWallet({ address }?)`: removes ONE wallet (the active one when
+  argless, back-compat). Gated by the trusted main-drawn confirmation, which
+  names the address.
+- `getStatus()` now also carries `wallets` and `activeAddress`.
+- Encrypted-wallet-file restore needs NO desktop intake: decrypt the file in
+  the import form exactly as the web build does (import-time secrets pass
+  through the renderer on every route, including typed mnemonics), then hand
+  the recovered mnemonic or hexSeed to `importWallet`.
+
+Frontend wiring expected on desktop: un-hide the hex-seed and encrypted-wallet
+import tabs, route `setActiveAccount` through `setActiveWallet`, drive the
+account list from `listWallets`, and pass the removed address to
+`removeWallet`.
+
 ### Caveat: typed-data is not wired yet
 
 `window.qrlWallet.requestSignature({ kind: 'typedData', ... })` currently fails

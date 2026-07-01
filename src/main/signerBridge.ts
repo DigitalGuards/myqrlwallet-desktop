@@ -179,8 +179,12 @@ export class SignerBridge {
     return this.send<CreateResult>({ type: 'signer:create', password });
   }
 
-  importWallet(mnemonic: string, password: string): Promise<ImportResult> {
-    return this.send<ImportResult>({ type: 'signer:import', mnemonic, password });
+  /** Import from a mnemonic OR a hex extended seed (exactly one). */
+  importWallet(
+    source: { mnemonic?: string; hexSeed?: string },
+    password: string,
+  ): Promise<ImportResult> {
+    return this.send<ImportResult>({ type: 'signer:import', ...source, password });
   }
 
   unlock(args: {
