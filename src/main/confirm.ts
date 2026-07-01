@@ -80,7 +80,10 @@ export async function confirmSignature(
  * from the renderer, so a compromised renderer must not be able to trigger it
  * unprompted. The dialog defaults to Cancel.
  */
-export async function confirmRemoveWallet(parent: BrowserWindow): Promise<boolean> {
+export async function confirmRemoveWallet(
+  parent: BrowserWindow,
+  address: string,
+): Promise<boolean> {
   const { response } = await dialog.showMessageBox(parent, {
     type: 'warning',
     buttons: ['Remove wallet', 'Cancel'],
@@ -89,6 +92,7 @@ export async function confirmRemoveWallet(parent: BrowserWindow): Promise<boolea
     title: 'Remove wallet from this device?',
     message: 'Permanently remove this wallet from this device?',
     detail:
+      `Account: ${address}\n\n` +
       'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
     noLink: true,
   });
