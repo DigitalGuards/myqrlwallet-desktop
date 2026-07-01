@@ -29,10 +29,9 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
 }
 
 /**
- * Install the renderer Content-Security-Policy on every response in `session`,
- * as a response header (authoritative for file://, and the only form in which
- * `frame-ancestors` is honored). `connectSrc` lists the origins the renderer
- * may reach (self + RPC + the frontend's backend/relay/explorer).
+ * Build the renderer Content-Security-Policy string. `connectSrc` lists the
+ * origins the renderer may reach (self + RPC + the frontend's backend/relay/
+ * explorer).
  *
  * The renderer is the real myqrlwallet-frontend, so the policy is tuned to what
  * that app needs while preserving the property that matters most:
@@ -45,10 +44,18 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  *   - worker-src 'self' blob:: the frontend's MLDSA worker is a Vite worker.
  * Keys never live in the renderer regardless, so even a CSP slip cannot leak
  * key material (that invariant is enforced by the signer, not the CSP).
+ *
+ * DELIVERY (both paths are needed; see the file-protocol handler in
+ * src/main/index.ts): webRequest.onHeadersReceived does NOT reliably fire for
+ * file:// document loads, so for the packaged file:// renderer this policy is
+ * attached as a real response header by the protocol.handle('file') handler.
+ * The webRequest install below still covers http(s) responses (the dev-server
+ * case) and is harmless where both apply (identical policies intersect to
+ * themselves).
  */
-export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
+export function buildContentSecurityPolicy(connectSrc: string[]): string {
   const connect = ["'self'", ...connectSrc].join(' ');
-  const csp = [
+  return [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
@@ -62,6 +69,11 @@ export function installContentSecurityPolicy(session: Session, connectSrc: strin
     "form-action 'self'",
     "worker-src 'self' blob:",
   ].join('; ');
+}
+
+/** Install the CSP as a response header on every webRequest-visible response. */
+export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
+  const csp = buildContentSecurityPolicy(connectSrc);
 
   session.webRequest.onHeadersReceived((details, callback) => {
     callback({
