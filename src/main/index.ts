@@ -8,19 +8,25 @@
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, Menu, protocol, session } from 'electron';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { app, BrowserWindow, Menu, net, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
 import { registerIpcHandlers } from './ipc';
 import {
+  buildContentSecurityPolicy,
   hardenedWebPreferences,
   installContentSecurityPolicy,
   lockDownNavigation,
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
-import { registerUnlockIpc, showUnlockWindow, type UnlockDeps } from './unlockWindow';
-import { hasSeed } from './seedFile';
+import {
+  notifyUnlockedExternally,
+  registerUnlockIpc,
+  showUnlockWindow,
+  type UnlockDeps,
+} from './unlockWindow';
+import { hasAnySeed, migrateLegacySeed } from './seedFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
 
@@ -55,39 +61,82 @@ app.on('second-instance', () => {
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 
 /**
- * The reused frontend references some assets by ROOT-absolute paths it authored
- * for web hosting (e.g. the logo `/icons/theqrlwallet/192.png`, `/tree.svg`).
- * Under loadFile (file://) those resolve to the filesystem root and 404. We
- * intercept the file scheme and, when a requested path does not exist on disk,
- * remap it under the renderer dir. A traversal guard keeps every served path
- * inside RENDERER_DIR. Existing paths (the relative ./assets bundle) pass
- * through untouched. No frontend change required.
+ * The file-protocol handler does two jobs:
+ *
+ * 1. Asset remapping. The reused frontend references some assets by
+ *    ROOT-absolute paths it authored for web hosting (e.g. the logo
+ *    `/icons/theqrlwallet/192.png`, `/tree.svg`). Under loadFile (file://)
+ *    those resolve to the filesystem root and 404, so when a requested path
+ *    does not exist on disk we remap it under the renderer dir. A traversal
+ *    guard keeps every remapped path inside RENDERER_DIR; existing paths (the
+ *    relative ./assets bundle) pass through untouched.
+ *
+ * 2. CSP delivery. webRequest.onHeadersReceived does NOT reliably fire for
+ *    file:// document loads (empirically: the frontend's meta CSP, not the
+ *    header, was the effective policy; see scripts/build-renderer.sh), which
+ *    silently dropped the strict header policy in the packaged app. Serving
+ *    file: through protocol.handle lets us attach the CSP as a REAL response
+ *    header, restoring `script-src 'self'` as the enforced, load-bearing
+ *    control on every platform. The rewritten meta tag in the built renderer
+ *    (build-renderer.sh) remains as defense-in-depth.
  */
-function installRendererAssetResolver(): void {
-  protocol.interceptFileProtocol('file', (request, callback) => {
+function installFileProtocolHandler(): void {
+  const csp = buildContentSecurityPolicy(connectSrcOrigins());
+
+  protocol.handle('file', async (request) => {
     let filePath: string;
     try {
       filePath = fileURLToPath(request.url);
     } catch {
-      callback({ statusCode: 400 });
-      return;
+      return new Response('bad request', { status: 400 });
     }
-    if (existsSync(filePath)) {
-      callback({ path: filePath });
-      return;
+    if (!existsSync(filePath)) {
+      let urlPath = '/';
+      try {
+        // A root-absolute web path (e.g. /assets/x.js, /tree.svg) resolves under
+        // the file: scheme to the drive/filesystem root. On Windows that yields a
+        // pathname of /C:/assets/x.js, so we strip the leading slash(es) AND an
+        // optional <drive>: prefix; on POSIX only the leading slash is present.
+        // The path then remaps under RENDERER_DIR on every platform.
+        urlPath = new URL(request.url).pathname.replace(/^\/+/, '').replace(/^[A-Za-z]:\//, '');
+      } catch {
+        /* keep default */
+      }
+      const candidate = path.normalize(path.join(RENDERER_DIR, urlPath));
+      if (candidate.startsWith(RENDERER_DIR + path.sep) && existsSync(candidate)) {
+        filePath = candidate;
+      }
     }
-    let urlPath = '/';
+    // Containment: this handler intercepts EVERY file:// request, so a
+    // compromised renderer must not be able to read arbitrary host files (e.g.
+    // /etc/passwd) by requesting them directly. Only files inside the app
+    // bundle (the built renderer + the native unlock window, both under
+    // app.getAppPath()) are ever served; anything else is a hard 403. The
+    // remap branch above already constrains to RENDERER_DIR, which is inside
+    // this root; this guard also covers the direct existsSync(filePath) case.
+    const appRoot = path.normalize(app.getAppPath());
+    const resolved = path.normalize(filePath);
+    if (resolved !== appRoot && !resolved.startsWith(appRoot + path.sep)) {
+      return new Response('forbidden', { status: 403 });
+    }
+    let served: Response;
     try {
-      urlPath = new URL(request.url).pathname.replace(/^\/+/, '');
+      // bypassCustomProtocolHandlers avoids recursing into this handler; the
+      // default loader supplies MIME detection and range/stream handling.
+      served = await net.fetch(pathToFileURL(resolved).toString(), {
+        bypassCustomProtocolHandlers: true,
+      });
     } catch {
-      /* keep default */
+      return new Response('not found', { status: 404 });
     }
-    const candidate = path.normalize(path.join(RENDERER_DIR, urlPath));
-    if (candidate.startsWith(RENDERER_DIR + path.sep) && existsSync(candidate)) {
-      callback({ path: candidate });
-      return;
-    }
-    callback({ path: filePath }); // let it 404 naturally
+    const headers = new Headers(served.headers);
+    headers.set('Content-Security-Policy', csp);
+    headers.set('X-Content-Type-Options', 'nosniff');
+    return new Response(served.body, {
+      status: served.status,
+      statusText: served.statusText,
+      headers,
+    });
   });
 }
 
@@ -99,7 +148,7 @@ function rendererDevUrl(): string | undefined {
   return !app.isPackaged ? process.env['QRL_RENDERER_DEV_URL'] : undefined;
 }
 
-function createWindow(): void {
+function createWindow(startLocked = false): void {
   const preloadPath = path.join(__dirname, '../preload/index.js');
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -113,7 +162,13 @@ function createWindow(): void {
     webPreferences: hardenedWebPreferences(preloadPath),
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    // Stay hidden if the wallet is locked at startup: the unlock window is the
+    // only thing shown until the user unlocks (single-window lock screen). This
+    // is a deterministic flag resolved BEFORE the window was created, not a race
+    // against showUnlockWindow assigning its window.
+    if (!startLocked) mainWindow?.show();
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -141,8 +196,10 @@ app.whenReady().then(async () => {
     .replace(/\s*MyQRLWallet\/[^\s]+/g, '')
     .replace(/\s*Electron\/[^\s]+/g, '');
 
-  // Remap the frontend's root-absolute asset paths (logo, /tree.svg) under file://.
-  installRendererAssetResolver();
+  // Serve file:// through protocol.handle: remaps the frontend's root-absolute
+  // asset paths (logo, /tree.svg) AND attaches the strict CSP as a response
+  // header (webRequest does not reliably cover file:// document loads).
+  installFileProtocolHandler();
 
   // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
   // use for it. On macOS keep a minimal app + edit + window menu so the standard
@@ -177,6 +234,10 @@ app.whenReady().then(async () => {
 
   lockDownNavigation(app);
 
+  // One-shot migration of the legacy single-wallet seed.json into the
+  // per-address multi-wallet store, BEFORE anything reads the store.
+  await migrateLegacySeed();
+
   // Fork the signer and resolve the keyvault before exposing IPC.
   await signer.start();
   const keyVault = await createKeyVault({
@@ -194,13 +255,17 @@ app.whenReady().then(async () => {
     signer,
     keyVault,
     showUnlock: () => showUnlockWindow(unlockDeps),
+    notifyUnlocked: () => notifyUnlockedExternally(unlockDeps),
   });
 
-  createWindow();
+  // Resolve the locked-at-startup decision BEFORE creating the window so its
+  // ready-to-show is gated deterministically (no race against showUnlockWindow).
+  const lockedAtStartup = await hasAnySeed();
+  createWindow(lockedAtStartup);
 
   // If a wallet already exists, the freshly-forked signer is locked: gate the
   // app behind the native unlock window before the wallet can be touched.
-  if (await hasSeed()) showUnlockWindow(unlockDeps);
+  if (lockedAtStartup) showUnlockWindow(unlockDeps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
