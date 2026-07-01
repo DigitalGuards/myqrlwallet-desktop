@@ -20,7 +20,13 @@ import { randomBytes } from 'node:crypto';
 import { aesGcmEncrypt } from './aead';
 import { deriveKek } from './kdf';
 import { SignerSession } from './session';
-import { deriveSeedFromMnemonic, generateMnemonic, signMessage, signTransaction } from './signing';
+import {
+  deriveSeedFromHexSeed,
+  deriveSeedFromMnemonic,
+  generateMnemonic,
+  signMessage,
+  signTransaction,
+} from './signing';
 import { wipe } from './zeroize';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../shared/constants';
 import type { EncryptedSeed, SignerOutbound, SignerRequest } from '../shared/protocol';
@@ -39,12 +45,24 @@ function send(msg: SignerOutbound): void {
 
 const session = new SignerSession(() => send({ type: 'signer:autolock' }));
 
-/** Provision a fresh encrypted-seed envelope from a mnemonic + password. */
+/**
+ * Provision a fresh encrypted-seed envelope from EITHER a mnemonic or a raw
+ * hex extended seed, plus a password. The two encode the same 51 bytes, so the
+ * canonical mnemonic is regenerated and the envelope is identical either way.
+ */
 async function handleImport(
-  mnemonic: string,
+  source: { mnemonic?: string; hexSeed?: string },
   password: string,
 ): Promise<{ address: string; encrypted: EncryptedSeed }> {
-  const { hexSeed, address } = deriveSeedFromMnemonic(mnemonic);
+  let derived;
+  if (typeof source.mnemonic === 'string') {
+    derived = deriveSeedFromMnemonic(source.mnemonic);
+  } else if (typeof source.hexSeed === 'string') {
+    derived = deriveSeedFromHexSeed(source.hexSeed);
+  } else {
+    throw new Error('import requires a mnemonic or a hex extended seed');
+  }
+  const { hexSeed, address, mnemonic } = derived;
   const salt = randomBytes(KDF_DEFAULTS.saltBytes);
   const kek = await deriveKek(password, salt, KDF_DEFAULTS);
   // Encrypt the hex seed and the mnemonic SEPARATELY under the same KEK, so the
@@ -87,7 +105,7 @@ async function handle(req: SignerRequest): Promise<void> {
         // Generate the seed INSIDE the signer (never in the renderer), encrypt
         // + persist it, and return the mnemonic once for the user's backup.
         const mnemonic = generateMnemonic();
-        const { address, encrypted } = await handleImport(mnemonic, req.password);
+        const { address, encrypted } = await handleImport({ mnemonic }, req.password);
         send({
           id: req.id,
           ok: true,
@@ -97,7 +115,10 @@ async function handle(req: SignerRequest): Promise<void> {
         return;
       }
       case 'signer:import': {
-        const result = await handleImport(req.mnemonic, req.password);
+        const result = await handleImport(
+          { mnemonic: req.mnemonic, hexSeed: req.hexSeed },
+          req.password,
+        );
         send({ id: req.id, ok: true, type: 'signer:import', result });
         return;
       }

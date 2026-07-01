@@ -18,11 +18,14 @@ import type {
   CreateWalletResult,
   GetBalanceRequest,
   ImportWalletRequest,
+  RemoveWalletRequest,
   SendRawTransactionRequest,
+  SetActiveWalletRequest,
   SignatureRequest,
   SignatureResult,
   UnlockRequest,
   UnsignedTransaction,
+  WalletListResult,
   WalletStatus,
 } from './schemas';
 
@@ -37,20 +40,29 @@ export interface QrlWalletApi {
   requestSignature(req: SignatureRequest): Promise<SignatureResult>;
 
   // ---- session ------------------------------------------------------------
-  /** Open a session. Omit `password` to unlock via the OS keychain (macOS). */
+  /** Open a session. Omit `password` to unlock via the OS keychain (macOS);
+   * omit `address` to unlock the active wallet. */
   unlock(req: UnlockRequest): Promise<WalletStatus>;
   lock(): Promise<WalletStatus>;
-  /** Destructively remove the wallet from this device: deletes the encrypted
-   * seed and clears the keychain entry. Requires re-import. Returns the
-   * post-wipe status (hasWallet === false). */
-  removeWallet(): Promise<WalletStatus>;
+  /** Destructively remove ONE wallet from this device (the active one when no
+   * address is given): deletes its encrypted seed and clears its keychain
+   * entry. Requires re-import. Returns the post-wipe status. */
+  removeWallet(req?: RemoveWalletRequest): Promise<WalletStatus>;
   getStatus(): Promise<WalletStatus>;
+
+  // ---- multi-wallet -------------------------------------------------------
+  /** Every provisioned wallet on this device + which one is active. */
+  listWallets(): Promise<WalletListResult>;
+  /** Switch the active wallet. Locks the session when it was open for a
+   * different account (each wallet unlocks with its own password). */
+  setActiveWallet(req: SetActiveWalletRequest): Promise<WalletStatus>;
 
   // ---- provisioning -------------------------------------------------------
   hasWallet(): Promise<boolean>;
   /** Generate a fresh wallet inside the signer; returns the one-time backup
    * mnemonic plus the unlocked status. The hex seed never enters the renderer. */
   createWallet(req: CreateWalletRequest): Promise<CreateWalletResult>;
+  /** Import from a mnemonic OR a hex extended seed (exactly one). */
   importWallet(req: ImportWalletRequest): Promise<WalletStatus>;
 
   // ---- broadcast ----------------------------------------------------------
