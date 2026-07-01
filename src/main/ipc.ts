@@ -38,6 +38,9 @@ interface Deps {
   showUnlock: () => void;
 }
 
+// Cache ONLY a successful read: rpc.getChainId now throws on an unreachable
+// node, so a transient RPC failure can no longer poison the signing chain id
+// for the rest of the process lifetime.
 let cachedChainId: number | null = null;
 async function chainId(): Promise<number> {
   if (cachedChainId === null) cachedChainId = await rpc.getChainId();
@@ -114,9 +117,21 @@ export function registerIpcHandlers(deps: Deps): void {
     if (req.kind === 'typedData') {
       throw new Error('typed-data signing is not yet supported in the desktop signer');
     }
+    // Transactions bind to the chain id: resolve it BEFORE the modal (fail fast
+    // when the node is unreachable) and require it to match the tx the user is
+    // shown, so the value confirmed in the dialog is exactly the value signed.
+    // Message signing is fully offline and must not depend on RPC reachability;
+    // the signer ignores the chain id on that arm.
+    let signingChainId = 0;
+    if (req.kind === 'transaction') {
+      signingChainId = await chainId();
+      if (req.tx.chainId !== signingChainId) {
+        throw new Error('transaction chain id does not match the node; rebuild the transaction');
+      }
+    }
     const approved = await confirmSignature(requireWindow(), req);
     if (!approved) throw new Error('user rejected signature');
-    return signer.sign(req, await chainId());
+    return signer.sign(req, signingChainId);
   });
 
   // ---- session ------------------------------------------------------------
