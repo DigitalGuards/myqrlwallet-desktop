@@ -113,12 +113,15 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   async function walletList(): Promise<WalletListResult> {
-    const seeds = await listSeeds();
-    const active = await getActiveAddress();
-    const wallets: WalletInfo[] = [];
-    for (const s of seeds) {
-      wallets.push({ address: s.address, keychainBacked: await keyVault.has(s.address) });
-    }
+    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    // keyVault.has shells out to the OS keychain helper on macOS, so resolve
+    // all wallets concurrently rather than one blocking call at a time.
+    const wallets: WalletInfo[] = await Promise.all(
+      seeds.map(async (s) => ({
+        address: s.address,
+        keychainBacked: await keyVault.has(s.address),
+      })),
+    );
     return { wallets, active };
   }
 
