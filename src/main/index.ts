@@ -102,11 +102,23 @@ function installFileProtocolHandler(): void {
         filePath = candidate;
       }
     }
+    // Containment: this handler intercepts EVERY file:// request, so a
+    // compromised renderer must not be able to read arbitrary host files (e.g.
+    // /etc/passwd) by requesting them directly. Only files inside the app
+    // bundle (the built renderer + the native unlock window, both under
+    // app.getAppPath()) are ever served; anything else is a hard 403. The
+    // remap branch above already constrains to RENDERER_DIR, which is inside
+    // this root; this guard also covers the direct existsSync(filePath) case.
+    const appRoot = path.normalize(app.getAppPath());
+    const resolved = path.normalize(filePath);
+    if (resolved !== appRoot && !resolved.startsWith(appRoot + path.sep)) {
+      return new Response('forbidden', { status: 403 });
+    }
     let served: Response;
     try {
       // bypassCustomProtocolHandlers avoids recursing into this handler; the
       // default loader supplies MIME detection and range/stream handling.
-      served = await net.fetch(pathToFileURL(filePath).toString(), {
+      served = await net.fetch(pathToFileURL(resolved).toString(), {
         bypassCustomProtocolHandlers: true,
       });
     } catch {
