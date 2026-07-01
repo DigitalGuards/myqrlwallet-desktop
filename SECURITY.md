@@ -38,9 +38,13 @@ Applied at window creation in `src/main/index.ts` (`createWindow`).
 
 ### 2. Strict Content-Security-Policy
 
-Delivered as a response header (authoritative for `file://`, and the only form
-in which `frame-ancestors` is honored), installed on the default session in
-`installContentSecurityPolicy()`.
+Delivered as a real response header on every `file://` response by the
+file-protocol handler in `src/main/index.ts` (`protocol.handle('file')`).
+`webRequest.onHeadersReceived` does not reliably fire for `file://` document
+loads, so the same policy is additionally installed there
+(`installContentSecurityPolicy()`) only to cover http(s) responses (the dev
+server), and `scripts/build-renderer.sh` rewrites the built renderer's meta CSP
+to the same policy as defense-in-depth.
 
 `src/main/security.ts`:
 

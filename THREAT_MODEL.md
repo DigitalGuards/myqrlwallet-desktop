@@ -229,8 +229,9 @@ to hardware binding (TPM / Secure Enclave, DBSC).
 ### (f) The renderer is served from `file://`, so the file-protocol fuse stays at its permissive default
 
 The packaged renderer loads via `loadFile` (`src/main/index.ts`), and a
-`file`-scheme interceptor remaps the frontend's root-absolute asset paths
-(`installRendererAssetResolver`). Because the app legitimately depends on
+`file`-scheme handler remaps the frontend's root-absolute asset paths and
+attaches the strict CSP header (`installFileProtocolHandler`). Because the app
+legitimately depends on
 `file://`, the `afterPack` hook leaves `GrantFileProtocolExtraPrivileges` at
 Electron's default (enabled): it sets the six security-relevant fuses explicitly
 but does not flip this one. That default grants `file://` pages extra powers
