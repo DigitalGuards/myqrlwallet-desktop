@@ -58,9 +58,16 @@ export interface CreateReq extends BaseReq {
   password: string;
 }
 
+/**
+ * Import from EITHER a mnemonic or a 51-byte hex extended seed (exactly one;
+ * schema-enforced in main, re-checked by the signer). The two encode the same
+ * bytes, so the signer regenerates the mnemonic from a hex-seed import and the
+ * resulting envelope is identical either way.
+ */
 export interface ImportReq extends BaseReq {
   type: 'signer:import';
-  mnemonic: string;
+  mnemonic?: string;
+  hexSeed?: string;
   password: string;
 }
 

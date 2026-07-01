@@ -23,7 +23,12 @@ import { shake256 } from '@noble/hashes/sha3.js';
 
 import { deriveKek } from '../src/signer/kdf';
 import { aesGcmEncrypt, aesGcmDecrypt, AeadAuthError } from '../src/signer/aead';
-import { deriveSeedFromMnemonic, generateMnemonic, signMessage } from '../src/signer/signing';
+import {
+  deriveSeedFromHexSeed,
+  deriveSeedFromMnemonic,
+  generateMnemonic,
+  signMessage,
+} from '../src/signer/signing';
 import { KDF_DEFAULTS, MLDSA87 as SIZES, SCHEME } from '../src/shared/constants';
 import type { KdfParams } from '../src/shared/constants';
 
@@ -156,4 +161,26 @@ test('generateMnemonic (signer create op) yields a usable, signing wallet', () =
     SCHEME_TAG_MSG,
   );
   assert.equal(ok, true, 'a generated wallet must produce a verifiable signature');
+});
+
+test('hex-seed import derives the same identity as the mnemonic (two encodings, one wallet)', () => {
+  // The mnemonic and the 51-byte extended seed encode the same bytes, so the
+  // desktop's hex-seed import route must land on the identical account AND
+  // regenerate the canonical recovery phrase for the stored envelope.
+  const mnemonic = generateMnemonic();
+  const fromMnemonic = deriveSeedFromMnemonic(mnemonic);
+  const fromHex = deriveSeedFromHexSeed(fromMnemonic.hexSeed);
+
+  assert.equal(fromHex.address, fromMnemonic.address, 'same address from either encoding');
+  assert.equal(fromHex.hexSeed, fromMnemonic.hexSeed, 'seed round-trips unchanged');
+  assert.equal(fromHex.mnemonic, fromMnemonic.mnemonic, 'canonical mnemonic regenerated');
+
+  // The bare (un-prefixed) hex form must be accepted too: the web wallet's
+  // hex-seed import field is typically pasted without 0x.
+  const bare = fromMnemonic.hexSeed.replace(/^0x/, '');
+  assert.equal(deriveSeedFromHexSeed(bare).address, fromMnemonic.address);
+
+  // Malformed input fails loudly rather than deriving a garbage wallet.
+  assert.throws(() => deriveSeedFromHexSeed('0x' + 'ab'.repeat(50)), /invalid hex extended seed/);
+  assert.throws(() => deriveSeedFromHexSeed('zz'.repeat(51)), /invalid hex extended seed/);
 });

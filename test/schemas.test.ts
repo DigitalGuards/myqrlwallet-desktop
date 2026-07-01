@@ -12,9 +12,13 @@ import {
   BuildTransactionRequestSchema,
   CreateWalletRequestSchema,
   GetBalanceRequestSchema,
+  ImportWalletRequestSchema,
   PasswordSchema,
+  RemoveWalletRequestSchema,
   SendRawTransactionRequestSchema,
+  SetActiveWalletRequestSchema,
   SignatureRequestSchema,
+  UnlockRequestSchema,
   UnsignedTransactionSchema,
 } from '../src/shared/schemas';
 
@@ -126,6 +130,75 @@ test('Password + provisioning schemas bound their inputs', () => {
   const create = CreateWalletRequestSchema.safeParse({ password: 'pw' });
   assert.equal(create.success, true);
   assert.equal(create.success && create.data.useKeychain, false, 'useKeychain defaults to false');
+});
+
+test('ImportWalletRequest takes exactly one of mnemonic or hexSeed', () => {
+  const hexSeed = '0x' + 'ab'.repeat(51);
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ mnemonic: 'word '.repeat(31) + 'word', password: 'pw' })
+      .success,
+    true,
+    'mnemonic-only accepted',
+  );
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ hexSeed, password: 'pw' }).success,
+    true,
+    'hexSeed-only accepted',
+  );
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ password: 'pw' }).success,
+    false,
+    'neither source rejected',
+  );
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ mnemonic: 'words', hexSeed, password: 'pw' }).success,
+    false,
+    'both sources rejected',
+  );
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ hexSeed: '0x' + 'ab'.repeat(50), password: 'pw' })
+      .success,
+    false,
+    'wrong-length hexSeed rejected',
+  );
+  assert.equal(
+    ImportWalletRequestSchema.safeParse({ hexSeed: 'zz'.repeat(51), password: 'pw' }).success,
+    false,
+    'non-hex hexSeed rejected',
+  );
+});
+
+test('Unlock / removeWallet / setActiveWallet multi-wallet arguments', () => {
+  assert.equal(UnlockRequestSchema.safeParse({}).success, true, 'bare unlock (keychain) accepted');
+  assert.equal(
+    UnlockRequestSchema.safeParse({ password: 'pw', address: ADDR }).success,
+    true,
+    'unlock with target address accepted',
+  );
+  assert.equal(
+    UnlockRequestSchema.safeParse({ address: 'not-an-address' }).success,
+    false,
+    'malformed unlock address rejected',
+  );
+
+  assert.equal(
+    RemoveWalletRequestSchema.safeParse(undefined).success,
+    true,
+    'argless removeWallet (active wallet) accepted for back-compat',
+  );
+  assert.equal(RemoveWalletRequestSchema.safeParse({ address: ADDR }).success, true);
+  assert.equal(
+    RemoveWalletRequestSchema.safeParse({ address: ADDR, extra: 1 }).success,
+    false,
+    'extra keys rejected',
+  );
+
+  assert.equal(SetActiveWalletRequestSchema.safeParse({ address: ADDR }).success, true);
+  assert.equal(
+    SetActiveWalletRequestSchema.safeParse({}).success,
+    false,
+    'setActiveWallet requires an address',
+  );
 });
 
 test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payloads', () => {

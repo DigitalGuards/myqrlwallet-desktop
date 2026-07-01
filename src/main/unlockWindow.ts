@@ -13,9 +13,16 @@
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { AUTOLOCK_MS } from './config';
-import { hasSeed, readSeed } from './seedFile';
+import {
+  getActiveAddress,
+  listSeeds,
+  readActiveSeed,
+  readSeedByAddress,
+  setActiveAddress,
+} from './seedFile';
 import { hardenedWebPreferences } from './security';
 import { EVENTS } from '../shared/constants';
+import type { EncryptedSeed } from '../shared/protocol';
 import type { SignerBridge } from './signerBridge';
 import type { KeyVault } from '../keyvault';
 
@@ -48,6 +55,27 @@ function finishUnlock(deps: UnlockDeps): void {
 }
 
 /**
+ * A renderer-driven unlock succeeded while this native window may be up: tear
+ * it down through the same finishUnlock path so the two unlock flows cannot
+ * desync (an unlock window lingering over an already-unlocked wallet, whose
+ * dismissal would quit the app).
+ */
+export function notifyUnlockedExternally(deps: UnlockDeps): void {
+  if (unlockWin && !unlockWin.isDestroyed() && !unlocked) {
+    finishUnlock(deps);
+  }
+}
+
+/** Resolve which wallet an unlock attempt targets: an explicit address from
+ * the picker, else the active wallet. */
+async function resolveTarget(address: unknown): Promise<EncryptedSeed | null> {
+  if (typeof address === 'string' && address.length > 0) {
+    return readSeedByAddress(address);
+  }
+  return readActiveSeed();
+}
+
+/**
  * Register the unlock-window IPC once. Every handler accepts ONLY events whose
  * sender is the live unlock window, so no other web contents can drive unlock.
  */
@@ -60,21 +88,31 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const seed = (await hasSeed()) ? await readSeed() : null;
-    const address = seed?.address ?? null;
-    const keychainBacked = address ? await deps.keyVault.has(address) : false;
-    return { address, keychainBacked };
+    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    // Resolve keychain backing for all wallets concurrently (keyVault.has
+    // shells out to the OS helper on macOS).
+    const wallets = await Promise.all(
+      seeds.map(async (s) => ({
+        address: s.address,
+        keychainBacked: await deps.keyVault.has(s.address),
+      })),
+    );
+    return { wallets, active };
   });
 
-  ipcMain.handle('unlock:submit', async (event, password: unknown) => {
+  ipcMain.handle('unlock:submit', async (event, arg: unknown) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
+    const { password, address } = (arg ?? {}) as { password?: unknown; address?: unknown };
     if (typeof password !== 'string' || password.length === 0 || password.length > 1024) {
       return { ok: false, error: 'Enter your password.' };
     }
-    const encrypted = await readSeed();
+    const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     try {
       await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password });
+      // Unlocking an account selects it (the picker may have chosen a
+      // different wallet than the previously active one).
+      await setActiveAddress(encrypted.address);
       finishUnlock(deps);
       return { ok: true };
     } catch {
@@ -83,14 +121,16 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     }
   });
 
-  ipcMain.handle('unlock:biometric', async (event) => {
+  ipcMain.handle('unlock:biometric', async (event, arg: unknown) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const encrypted = await readSeed();
+    const { address } = (arg ?? {}) as { address?: unknown };
+    const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     const kekHex = await deps.keyVault.retrieve(encrypted.address);
     if (!kekHex) return { ok: false, error: 'Biometric unlock is unavailable. Use your password.' };
     try {
       await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+      await setActiveAddress(encrypted.address);
       finishUnlock(deps);
       return { ok: true };
     } catch {
