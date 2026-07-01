@@ -49,25 +49,25 @@ const router = createHashRouter([ /* routes unchanged */ ]);
 
 The route table itself does not change.
 
-## CSP: drop the renderer's permissive meta tag, rely on the main-process header
+## CSP: strict header from the file-protocol handler, meta tag rewritten at build
 
-The frontend's `index.html` currently ships a meta CSP that includes
-`'unsafe-inline'` for `script-src` and `style-src` (needed for its web hosting).
-The desktop's main process installs a strict header CSP on every response
-(`src/main/security.ts` `installContentSecurityPolicy`) with NO `unsafe-inline`
-and NO `unsafe-eval`. The header is authoritative for `file://`, and a meta CSP
-can only ever tighten, never loosen, the header.
+The frontend's `index.html` ships a meta CSP tuned for its web hosting
+(`script-src` includes `'unsafe-inline'`, `connect-src` allows
+`http://localhost:*`); on the web, nginx's strict header is the real control.
+On the desktop, `webRequest.onHeadersReceived` does not reliably fire for
+`file://` document loads, so the strict policy is delivered as a REAL response
+header by the file-protocol handler (`protocol.handle('file')` in
+`src/main/index.ts`, policy built by `src/main/security.ts`
+`buildContentSecurityPolicy`) with NO script `unsafe-inline` and NO
+`unsafe-eval`. As defense-in-depth, `scripts/build-renderer.sh` rewrites the
+staged renderer's meta CSP to the same desktop policy, so both the header and
+the meta tag enforce `script-src 'self'`.
 
-Two options:
-
-- Preferred: remove the meta CSP from the frontend's `index.html` for the desktop
-  build and rely entirely on the main-process header. This keeps a single source
-  of truth and the strict policy wins.
-- If the frontend must keep one meta CSP for both web and desktop, ensure it does
-  not depend on `'unsafe-inline'` at runtime, because the header CSP forbids it.
-  In practice a Vite + React build emits a single hashed external stylesheet and
-  external script chunks, so `style-src 'self'` and `script-src 'self'` are
-  satisfiable: no inline `<style>`, no inline event handlers, no inline `<script>`.
+This works because a Vite + React build emits a single hashed external
+stylesheet and external script chunks, so `script-src 'self'` is satisfiable:
+no inline event handlers, no inline `<script>`. (`style-src` keeps
+`'unsafe-inline'` for Radix's runtime style attributes; inline style cannot
+execute code.)
 
 Any RPC / relay / backend origins the frontend needs at runtime must be added to
 `connect-src` in `src/main/config.ts` (`connectSrcOrigins()`), since the strict

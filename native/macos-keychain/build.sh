@@ -19,8 +19,12 @@ if [ "$(uname)" != "Darwin" ]; then
   exit 0
 fi
 
-OUT="/home/waterfall/myqrlwallet/myqrlwallet-desktop/resources/qrl-keychain-helper"
-SRC="native/macos-keychain/KeychainHelper.swift"
+# Derive every path from this script's own location so the build works from
+# any CWD on any host (never hardcode a machine-specific absolute path here).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+OUT="${REPO_DIR}/resources/qrl-keychain-helper"
+SRC="${SCRIPT_DIR}/KeychainHelper.swift"
 
 mkdir -p "$(dirname "$OUT")"
 

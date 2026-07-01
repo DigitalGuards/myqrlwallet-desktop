@@ -145,10 +145,18 @@ yields NO key material, because keys never live there.
    `img-src 'self' data: https:`; `media-src 'self' blob:`; `font-src 'self' data:`;
    `object-src 'none'`; `frame-ancestors 'none'`; `base-uri 'self'`;
    `form-action 'self'` (`'self'` resolves to `file://` here, so effectively
-   `'none'`); `worker-src 'self' blob:`. Delivered as a response header. Files:
-   `src/main/security.ts` (`installContentSecurityPolicy`), `src/main/config.ts`
-   (`connectSrcOrigins`). Renderer permissions are deny-by-default except
-   clipboard write (`src/main/permissions.ts`, `installPermissionHandlers`).
+   `'none'`); `worker-src 'self' blob:`. Delivered as a REAL response header on
+   every `file://` response by the file-protocol handler
+   (`protocol.handle('file')` in `src/main/index.ts`), because
+   `webRequest.onHeadersReceived` does not reliably fire for `file://` document
+   loads; the webRequest install covers http(s) (dev server) responses, and
+   `scripts/build-renderer.sh` rewrites the built renderer's meta CSP to the
+   same policy as defense-in-depth. Files: `src/main/security.ts`
+   (`buildContentSecurityPolicy`, `installContentSecurityPolicy`),
+   `src/main/index.ts` (`installFileProtocolHandler`), `src/main/config.ts`
+   (`connectSrcOrigins`), `scripts/build-renderer.sh`. Renderer permissions are
+   deny-by-default except clipboard write (`src/main/permissions.ts`,
+   `installPermissionHandlers`).
 
 7. **KDF params are frozen once seeds exist.** `KDF_DEFAULTS` and `AEAD` in
    `src/shared/constants.ts` are persisted with every encrypted seed; changing
