@@ -126,13 +126,15 @@ export async function listSeeds(): Promise<EncryptedSeed[]> {
   } catch {
     return [];
   }
-  const seeds: EncryptedSeed[] = [];
-  for (const name of names) {
-    if (!name.endsWith('.json')) continue;
-    const seed = await readEnvelopeFile(path.join(seedsDir(), name));
-    if (seed) seeds.push(seed);
-  }
-  return seeds.sort((a, b) => a.createdAt - b.createdAt);
+  // Read every envelope concurrently rather than serially.
+  const jsonNames = names.filter((name) => name.endsWith('.json'));
+  const read = await Promise.all(
+    jsonNames.map((name) => readEnvelopeFile(path.join(seedsDir(), name))),
+  );
+  const seeds = read.filter((s): s is EncryptedSeed => s !== null);
+  // Fall back to 0 for a missing createdAt so the comparator never returns NaN
+  // (a legacy/hand-edited envelope could lack it), keeping the sort stable.
+  return seeds.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 }
 
 export async function readSeedByAddress(address: string): Promise<EncryptedSeed | null> {

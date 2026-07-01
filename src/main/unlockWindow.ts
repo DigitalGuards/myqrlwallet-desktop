@@ -88,12 +88,15 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const seeds = await listSeeds();
-    const wallets = [];
-    for (const s of seeds) {
-      wallets.push({ address: s.address, keychainBacked: await deps.keyVault.has(s.address) });
-    }
-    const active = await getActiveAddress();
+    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    // Resolve keychain backing for all wallets concurrently (keyVault.has
+    // shells out to the OS helper on macOS).
+    const wallets = await Promise.all(
+      seeds.map(async (s) => ({
+        address: s.address,
+        keychainBacked: await deps.keyVault.has(s.address),
+      })),
+    );
     return { wallets, active };
   });
 
