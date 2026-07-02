@@ -1,16 +1,22 @@
 import { StrictMode, useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import './unlock.css';
+import logoUrl from './logo.png';
 
 interface UnlockResult {
   ok: boolean;
   error?: string;
 }
 
+interface UnlockWalletInfo {
+  address: string;
+  keychainBacked: boolean;
+}
+
 interface UnlockBridge {
-  getInfo(): Promise<{ address: string | null; keychainBacked: boolean }>;
-  submit(password: string): Promise<UnlockResult>;
-  biometric(): Promise<UnlockResult>;
+  getInfo(): Promise<{ wallets: UnlockWalletInfo[]; active: string | null }>;
+  submit(password: string, address?: string): Promise<UnlockResult>;
+  biometric(address?: string): Promise<UnlockResult>;
 }
 
 declare global {
@@ -25,12 +31,15 @@ function shortAddress(address: string | null): string {
 }
 
 function UnlockApp() {
-  const [address, setAddress] = useState<string | null>(null);
-  const [keychain, setKeychain] = useState(false);
+  const [wallets, setWallets] = useState<UnlockWalletInfo[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const selectedWallet = wallets.find((w) => w.address === selected) ?? null;
+  const keychain = selectedWallet?.keychainBacked ?? false;
 
   useEffect(() => {
     let cancelled = false;
@@ -38,8 +47,8 @@ function UnlockApp() {
       .getInfo()
       .then((info) => {
         if (cancelled) return;
-        setAddress(info.address);
-        setKeychain(info.keychainBacked);
+        setWallets(info.wallets);
+        setSelected(info.active ?? info.wallets[0]?.address ?? null);
       })
       .catch(() => {
         /* best-effort: the password field still works without the account chip */
@@ -55,7 +64,7 @@ function UnlockApp() {
     setBusy(true);
     setError(null);
     try {
-      const result = await window.unlockBridge.submit(password);
+      const result = await window.unlockBridge.submit(password, selected ?? undefined);
       if (!result.ok) {
         setError(result.error ?? 'Incorrect password. Please try again.');
         setPassword('');
@@ -73,7 +82,7 @@ function UnlockApp() {
     setBusy(true);
     setError(null);
     try {
-      const result = await window.unlockBridge.biometric();
+      const result = await window.unlockBridge.biometric(selected ?? undefined);
       if (!result.ok) {
         setError(result.error ?? 'Biometric unlock failed.');
         setBusy(false);
@@ -86,29 +95,33 @@ function UnlockApp() {
 
   return (
     <div className="unlock-root">
-      <div className="unlock-gradient" aria-hidden="true" />
       <main className="unlock-card">
-        <div className="unlock-mark" aria-hidden="true">
-          <svg
-            width="26"
-            height="26"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <img className="unlock-logo" src={logoUrl} alt="" aria-hidden="true" />
+        <h1 className="unlock-wordmark">MyQRLwallet</h1>
+        <p className="unlock-subtitle">Enter your password to unlock</p>
+        {wallets.length > 1 ? (
+          <select
+            className="unlock-account-select"
+            aria-label="Account to unlock"
+            value={selected ?? ''}
+            disabled={busy}
+            onChange={(event) => {
+              setSelected(event.target.value);
+              if (error) setError(null);
+            }}
           >
-            <rect x="3" y="11" width="18" height="11" rx="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-        </div>
-        <h1 className="unlock-title">Unlock MyQRLWallet</h1>
-        <p className="unlock-subtitle">Enter your password</p>
-        <div className="unlock-account">
-          <span className="unlock-dot" />
-          {shortAddress(address)}
-        </div>
+            {wallets.map((w) => (
+              <option key={w.address} value={w.address}>
+                {shortAddress(w.address)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="unlock-account">
+            <span className="unlock-dot" />
+            {shortAddress(selected)}
+          </div>
+        )}
         <form className="unlock-form" onSubmit={(event) => void submit(event)}>
           <div className="unlock-input-wrap">
             <input

@@ -9,6 +9,7 @@
  * these controls keep the renderer from escalating beyond its sandbox.
  */
 import { app, type BrowserWindow, type Session, shell, type WebPreferences } from 'electron';
+import { isAllowedExternalUrl } from './externalLinks';
 
 /** webPreferences for the single wallet window. */
 export function hardenedWebPreferences(preloadPath: string): WebPreferences {
@@ -28,10 +29,9 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
 }
 
 /**
- * Install the renderer Content-Security-Policy on every response in `session`,
- * as a response header (authoritative for file://, and the only form in which
- * `frame-ancestors` is honored). `connectSrc` lists the origins the renderer
- * may reach (self + RPC + the frontend's backend/relay/explorer).
+ * Build the renderer Content-Security-Policy string. `connectSrc` lists the
+ * origins the renderer may reach (self + RPC + the frontend's backend/relay/
+ * explorer).
  *
  * The renderer is the real myqrlwallet-frontend, so the policy is tuned to what
  * that app needs while preserving the property that matters most:
@@ -44,10 +44,18 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  *   - worker-src 'self' blob:: the frontend's MLDSA worker is a Vite worker.
  * Keys never live in the renderer regardless, so even a CSP slip cannot leak
  * key material (that invariant is enforced by the signer, not the CSP).
+ *
+ * DELIVERY (both paths are needed; see the file-protocol handler in
+ * src/main/index.ts): webRequest.onHeadersReceived does NOT reliably fire for
+ * file:// document loads, so for the packaged file:// renderer this policy is
+ * attached as a real response header by the protocol.handle('file') handler.
+ * The webRequest install below still covers http(s) responses (the dev-server
+ * case) and is harmless where both apply (identical policies intersect to
+ * themselves).
  */
-export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
+export function buildContentSecurityPolicy(connectSrc: string[]): string {
   const connect = ["'self'", ...connectSrc].join(' ');
-  const csp = [
+  return [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
@@ -61,6 +69,11 @@ export function installContentSecurityPolicy(session: Session, connectSrc: strin
     "form-action 'self'",
     "worker-src 'self' blob:",
   ].join('; ');
+}
+
+/** Install the CSP as a response header on every webRequest-visible response. */
+export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
+  const csp = buildContentSecurityPolicy(connectSrc);
 
   session.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -120,10 +133,10 @@ export function lockDownNavigation(app: Electron.App): void {
     // So the renderer is never steered to new in-app content. But an external
     // link (the explorer, theqrl.org, a token's site) clicked as a plain
     // <a href> DOES fire will-navigate; rather than dead-ending it (the links
-    // would appear broken), hand any external https URL to the OS browser.
+    // would appear broken), hand an allowlisted external link to the OS browser.
     contents.on('will-navigate', (event, url) => {
       event.preventDefault();
-      if (isExternalHttps(url)) {
+      if (isAllowedExternalUrl(url)) {
         setImmediate(() => void shell.openExternal(url));
       }
     });
@@ -132,9 +145,10 @@ export function lockDownNavigation(app: Electron.App): void {
     contents.on('will-redirect', (event) => event.preventDefault());
 
     contents.setWindowOpenHandler(({ url }) => {
-      // target=_blank / window.open: open external https links (e.g. zondscan)
-      // in the user's real browser, never in an Electron window.
-      if (isExternalHttps(url)) {
+      // target=_blank / window.open: open allowlisted external links (e.g.
+      // zondscan) in the user's real browser, never in an Electron window. A
+      // non-allowlisted URL is dropped (not opened): see externalLinks.ts.
+      if (isAllowedExternalUrl(url)) {
         setImmediate(() => void shell.openExternal(url));
       }
       return { action: 'deny' };
@@ -149,18 +163,4 @@ export function lockDownNavigation(app: Electron.App): void {
       void params;
     });
   });
-}
-
-/**
- * An external link we will hand to the OS browser. Restricted to `https:` so a
- * compromised renderer cannot use `shell.openExternal` to launch a dangerous
- * scheme (file:, a custom protocol handler, etc.); the app itself is file://,
- * so any https URL is by definition external.
- */
-function isExternalHttps(url: string): boolean {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
 }
