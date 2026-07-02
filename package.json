@@ -29,7 +29,8 @@
     "dist:win": "npm run build && electron-builder --win --x64 --arm64",
     "dist:linux": "npm run build && electron-builder --linux --x64",
     "rebuild:native": "electron-builder install-app-deps",
-    "fuses:read": "electron-fuses read --app"
+    "fuses:read": "electron-fuses read --app",
+    "predist:win": "node scripts/ensure-win-napi.cjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",

@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, Menu, net, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
 import { registerIpcHandlers } from './ipc';
 import {
@@ -182,95 +182,111 @@ function createWindow(startLocked = false): void {
   }
 }
 
-app.whenReady().then(async () => {
-  // chromium app user model id (Windows notifications / taskbar grouping).
-  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+app
+  .whenReady()
+  .then(async () => {
+    // chromium app user model id (Windows notifications / taskbar grouping).
+    if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
-  // The reused frontend treats a userAgent containing "MyQRLWallet" as the
-  // MOBILE native-app host (it then shows the camera QR scanner, biometric
-  // bridge, etc. via isInNativeApp()). Electron's default UA appends the app
-  // name + version, which would falsely trip that mobile path. Strip the app
-  // (and Electron) token so the frontend runs as the desktop/web build, not the
-  // mobile webview. Desktop-specific behavior comes from window.qrlWallet.
-  app.userAgentFallback = app.userAgentFallback
-    .replace(/\s*MyQRLWallet\/[^\s]+/g, '')
-    .replace(/\s*Electron\/[^\s]+/g, '');
+    // The reused frontend treats a userAgent containing "MyQRLWallet" as the
+    // MOBILE native-app host (it then shows the camera QR scanner, biometric
+    // bridge, etc. via isInNativeApp()). Electron's default UA appends the app
+    // name + version, which would falsely trip that mobile path. Strip the app
+    // (and Electron) token so the frontend runs as the desktop/web build, not the
+    // mobile webview. Desktop-specific behavior comes from window.qrlWallet.
+    app.userAgentFallback = app.userAgentFallback
+      .replace(/\s*MyQRLWallet\/[^\s]+/g, '')
+      .replace(/\s*Electron\/[^\s]+/g, '');
 
-  // Serve file:// through protocol.handle: remaps the frontend's root-absolute
-  // asset paths (logo, /tree.svg) AND attaches the strict CSP as a response
-  // header (webRequest does not reliably cover file:// document loads).
-  installFileProtocolHandler();
+    // Serve file:// through protocol.handle: remaps the frontend's root-absolute
+    // asset paths (logo, /tree.svg) AND attaches the strict CSP as a response
+    // header (webRequest does not reliably cover file:// document loads).
+    installFileProtocolHandler();
 
-  // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
-  // use for it. On macOS keep a minimal app + edit + window menu so the standard
-  // shortcuts (Cmd+Q, copy/paste, close) still work; elsewhere remove it entirely.
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
-    );
-  } else {
-    Menu.setApplicationMenu(null);
-  }
-
-  // Strict CSP on the default session. In dev, also permit the Vite dev server
-  // origin + its HMR websocket so the renderer can load with HMR.
-  const connect = connectSrcOrigins();
-  const devUrl = rendererDevUrl();
-  if (devUrl) {
-    try {
-      const u = new URL(devUrl);
-      connect.push(u.origin, `ws://${u.host}`);
-    } catch {
-      /* ignore */
+    // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
+    // use for it. On macOS keep a minimal app + edit + window menu so the standard
+    // shortcuts (Cmd+Q, copy/paste, close) still work; elsewhere remove it entirely.
+    if (process.platform === 'darwin') {
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
+      );
+    } else {
+      Menu.setApplicationMenu(null);
     }
-  }
-  installContentSecurityPolicy(session.defaultSession, connect);
 
-  // Deny-by-default for every web permission (camera, mic, geolocation,
-  // notifications, WebUSB/HID/Serial/Bluetooth, fileSystem); only clipboard
-  // write is allowed. Covers the main window and the modal unlock window, which
-  // share the default session.
-  installPermissionHandlers(session.defaultSession);
+    // Strict CSP on the default session. In dev, also permit the Vite dev server
+    // origin + its HMR websocket so the renderer can load with HMR.
+    const connect = connectSrcOrigins();
+    const devUrl = rendererDevUrl();
+    if (devUrl) {
+      try {
+        const u = new URL(devUrl);
+        connect.push(u.origin, `ws://${u.host}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    installContentSecurityPolicy(session.defaultSession, connect);
 
-  lockDownNavigation(app);
+    // Deny-by-default for every web permission (camera, mic, geolocation,
+    // notifications, WebUSB/HID/Serial/Bluetooth, fileSystem); only clipboard
+    // write is allowed. Covers the main window and the modal unlock window, which
+    // share the default session.
+    installPermissionHandlers(session.defaultSession);
 
-  // One-shot migration of the legacy single-wallet seed.json into the
-  // per-address multi-wallet store, BEFORE anything reads the store.
-  await migrateLegacySeed();
+    lockDownNavigation(app);
 
-  // Fork the signer and resolve the keyvault before exposing IPC.
-  await signer.start();
-  const keyVault = await createKeyVault({
-    // Off by default: the safeStorage convenience layer has no user-presence
-    // gate and is same-user readable. Opt in per build if you want it on
-    // Windows/Linux; macOS uses the Touch-ID vault regardless.
-    allowSafeStorageFallback: process.env.QRL_ALLOW_SAFESTORAGE === '1',
-  }).resolve();
-  keyVaultRef = keyVault;
+    // One-shot migration of the legacy single-wallet seed.json into the
+    // per-address multi-wallet store, BEFORE anything reads the store.
+    await migrateLegacySeed();
 
-  const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
-  registerUnlockIpc(unlockDeps);
-  registerIpcHandlers({
-    getWindow: () => mainWindow,
-    signer,
-    keyVault,
-    showUnlock: () => showUnlockWindow(unlockDeps),
-    notifyUnlocked: () => notifyUnlockedExternally(unlockDeps),
+    // Fork the signer and resolve the keyvault before exposing IPC.
+    await signer.start();
+    const keyVault = await createKeyVault({
+      // Off by default: the safeStorage convenience layer has no user-presence
+      // gate and is same-user readable. Opt in per build if you want it on
+      // Windows/Linux; macOS uses the Touch-ID vault regardless.
+      allowSafeStorageFallback: process.env.QRL_ALLOW_SAFESTORAGE === '1',
+    }).resolve();
+    keyVaultRef = keyVault;
+
+    const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
+    registerUnlockIpc(unlockDeps);
+    registerIpcHandlers({
+      getWindow: () => mainWindow,
+      signer,
+      keyVault,
+      showUnlock: () => showUnlockWindow(unlockDeps),
+      notifyUnlocked: () => notifyUnlockedExternally(unlockDeps),
+    });
+
+    // Resolve the locked-at-startup decision BEFORE creating the window so its
+    // ready-to-show is gated deterministically (no race against showUnlockWindow).
+    const lockedAtStartup = await hasAnySeed();
+    createWindow(lockedAtStartup);
+
+    // If a wallet already exists, the freshly-forked signer is locked: gate the
+    // app behind the native unlock window before the wallet can be touched.
+    if (lockedAtStartup) showUnlockWindow(unlockDeps);
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  })
+  .catch((err: unknown) => {
+    // Without this catch a startup failure (e.g. the signer utilityProcess
+    // dying before ready: seen in the wild when a cross-built package missed
+    // the platform's argon2 binding) leaves a HEADLESS zombie: processes run,
+    // no window ever appears, and the only trace is an unhandled-rejection
+    // warning nobody sees. Fail loudly instead: native error box, then exit
+    // non-zero. showErrorBox is safe before any window exists.
+    const message = err instanceof Error ? err.message : String(err);
+    dialog.showErrorBox(
+      'MyQRLWallet failed to start',
+      `${message}\n\nThe app cannot continue and will close. If this keeps happening, reinstall MyQRLWallet.`,
+    );
+    app.exit(1);
   });
-
-  // Resolve the locked-at-startup decision BEFORE creating the window so its
-  // ready-to-show is gated deterministically (no race against showUnlockWindow).
-  const lockedAtStartup = await hasAnySeed();
-  createWindow(lockedAtStartup);
-
-  // If a wallet already exists, the freshly-forked signer is locked: gate the
-  // app behind the native unlock window before the wallet can be touched.
-  if (lockedAtStartup) showUnlockWindow(unlockDeps);
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
