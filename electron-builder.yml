@@ -32,9 +32,16 @@ asar: true
 asarUnpack:
   - '**/*.node'
 
+# App icon. electron-builder auto-detects build/icon.* from buildResources, but
+# set it explicitly per platform so a future buildResources change cannot
+# silently drop the icon (and to fix the Linux "application icon is not set"
+# warning). Source: the MyQRLWallet brand mark, build/icon.png (1024) +
+# build/icon.ico (multi-size, 16-256) for Windows.
+
 # --- macOS: sign + notarize + staple, app-bound keychain helper -------------
 mac:
   category: public.app-category.finance
+  icon: build/icon.png
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -64,6 +71,7 @@ dmg:
 
 # --- Windows: Authenticode -------------------------------------------------
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64, arm64]
@@ -82,6 +90,7 @@ nsis:
 
 # --- Linux ------------------------------------------------------------------
 linux:
+  icon: build/icon.png
   category: Finance
   synopsis: Post-quantum QRL desktop wallet
   description: >-
