@@ -6,7 +6,7 @@
  * from the validated request, and only then does main ask the signer to sign.
  */
 import { type BrowserWindow, dialog } from 'electron';
-import type { SignatureRequest } from '../shared/schemas';
+import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
 
 /** Format a smallest-unit integer string as QUANTA (18 decimals), trimmed. */
 function formatQuanta(smallestUnit: string): string {
@@ -18,6 +18,26 @@ function formatQuanta(smallestUnit: string): string {
   if (frac === 0n) return `${whole.toString()} QUANTA`;
   const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
   return `${whole.toString()}.${fracStr} QUANTA`;
+}
+
+/**
+ * Render the dApp provenance block for a request that arrived over a
+ * dApp-connect session. The values are renderer-supplied (ultimately from the
+ * dApp's ORIGINATOR_INFO), so they are labelled unverified: they tell the
+ * user WHO CLAIMS to be asking, while the amounts/addresses above remain
+ * main-computed facts. Schema-bounded upstream (length caps, no control
+ * chars), so they are safe to render verbatim.
+ */
+function originDetail(origin: DAppOrigin | undefined): string {
+  if (!origin) return '';
+  return [
+    '',
+    'Requested by dApp (unverified, dApp-supplied):',
+    `  Name:    ${origin.name}`,
+    `  URL:     ${origin.url || '(not provided)'}`,
+    `  Channel: ${origin.channelId}`,
+    'Only approve if you initiated this action in that dApp.',
+  ].join('\n');
 }
 
 function summarise(req: SignatureRequest): { title: string; message: string; detail: string } {
@@ -34,19 +54,25 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
         `Chain id: ${tx.chainId}`,
         tx.data && tx.data !== '0x' ? `Data:     ${tx.data.slice(0, 66)}…` : 'Data:     (none)',
       ].join('\n');
-      return { title: 'Confirm transaction', message: `Send ${formatQuanta(tx.value)}?`, detail };
+      return {
+        title: 'Confirm transaction',
+        message: `Send ${formatQuanta(tx.value)}?`,
+        detail: detail + originDetail(req.origin),
+      };
     }
     case 'message':
       return {
         title: 'Confirm message signature',
         message: 'Sign this message with your wallet key?',
-        detail: `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}`,
+        detail:
+          `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
+          originDetail(req.origin),
       };
     case 'typedData':
       return {
         title: 'Confirm typed-data signature',
         message: 'Sign this structured data with your wallet key?',
-        detail: `Payload keys: ${Object.keys(req.payload).join(', ')}`,
+        detail: `Payload keys: ${Object.keys(req.payload).join(', ')}` + originDetail(req.origin),
       };
   }
 }

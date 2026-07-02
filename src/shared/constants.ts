@@ -44,6 +44,11 @@ export const IPC = {
   REMOVE_WALLET: 'wallet:removeWallet',
   /** Broadcasts a signed raw transaction via the RPC proxy. */
   SEND_RAW_TRANSACTION: 'wallet:sendRawTransaction',
+  /** Renderer asks main to surface the window because a dApp-connect request
+   * needs the user's attention (desktop analogue of the mobile
+   * DAPP_SHOW_WEBVIEW contract). Rate-limited in main; can only raise/flash
+   * the window, never anything else. */
+  DAPP_REQUEST_ATTENTION: 'wallet:dappRequestAttention',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -52,6 +57,11 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 export const EVENTS = {
   /** Emitted with a boolean `locked` whenever the signer session changes. */
   LOCK_STATE_CHANGED: 'wallet:lockStateChanged',
+  /** Emitted with a raw qrlconnect:// URI string that arrived via the OS
+   * protocol handler (cold or warm start). Main validates only the shape
+   * (scheme/length/charset); parsing the payload stays in the renderer's
+   * audited dApp-connect stack, behind its consent modal. */
+  DAPP_CONNECT_URI: 'wallet:dappConnectUri',
 } as const;
 
 /** The global the preload mounts on `window`. */

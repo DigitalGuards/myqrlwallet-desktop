@@ -141,6 +141,32 @@ A malicious dependency or a tampered build artifact.
   commit. Dependency review and reproducible builds (a Stage 3 goal) are the
   real defenses against a compromised upstream.
 
+### E. Hostile qrlconnect:// protocol launch (drive-by pairing)
+
+The app registers the OS-wide `qrlconnect://` scheme (dApp-connect ingress), so
+ANY webpage or same-user process can fire connection URIs at the wallet without
+the physical-scan consent the mobile flow gets for free. The attacker's goals:
+pair silently (learn the active account address via the handshake's
+WALLET_INFO), or spam the wallet with pairing prompts.
+
+- Control, layered (`src/main/dappUri.ts`, `src/main/index.ts`): the browser's
+  own "open MyQRLWallet?" prompt; main shape-validates the URI (scheme, 4KB
+  cap, visible-ASCII only) and never parses the payload; a 2s rate limit drops
+  launch floods (buffer depth 1); the renderer then shows an explicit consent
+  modal BEFORE any relay contact. Only after consent does the audited
+  dApp-connect stack (fingerprint pinning, ML-KEM handshake) run.
+- Buys: no silent pairing, no address disclosure without a user click, no
+  consent-modal spam, and main cannot be crashed by a malformed URI (parsing
+  stays in the renderer's single hostile-input parser).
+- Limit: the consent modal cannot verify WHO is asking (dApp identity arrives
+  only after the handshake, in ORIGINATOR_INFO), so it shows the relay origin
+  and asks "did you just click Connect in a dApp?". A user who consents to an
+  unexpected prompt has paired with the attacker's channel; the signature
+  confirm modal (which shows the dApp-supplied identity and main-computed tx
+  facts) remains the gate for anything that spends. Signature-request
+  provenance is renderer-supplied and labelled unverified in the confirm
+  dialog (`DAppOriginSchema`, `src/main/confirm.ts`).
+
 ## Honest tradeoffs already noted in the code
 
 These are the specific, acknowledged weaknesses. Each maps to a code path.
