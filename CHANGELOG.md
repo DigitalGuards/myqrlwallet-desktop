@@ -2,6 +2,15 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 0.2.1
+
+### Added
+
+- App icon (the MyQRLWallet brand mark) baked into the installer, the executable,
+  and the created shortcuts. Earlier builds used the default Electron icon.
+  `build/icon.png` (1024) + a multi-size `build/icon.ico` (16-256), wired via
+  explicit `mac`/`win`/`linux` icon keys.
+
 ## 0.2.0
 
 First public release of the hardened desktop wallet. Staging build: the bundled
