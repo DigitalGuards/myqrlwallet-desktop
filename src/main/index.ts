@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, Menu, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
+import { DappUriIngress, extractDappUriFromArgv } from './dappUri';
 import { registerIpcHandlers } from './ipc';
 import {
   hardenedWebPreferences,
@@ -37,6 +38,24 @@ const signer = new SignerBridge(() => {
   }
 });
 
+/**
+ * dApp-connect URI ingress (OS qrlconnect:// protocol handler). Delivery
+ * surfaces the window and forwards the shape-validated URI to the renderer,
+ * whose consent modal gates any relay contact. Focusing here is correct: the
+ * user just clicked a connect link intending to open the wallet.
+ */
+const dappIngress = new DappUriIngress({
+  deliver: (uri) => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return false;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send(EVENTS.DAPP_CONNECT_URI, uri);
+    return true;
+  },
+});
+
 app.setName('MyQRLWallet');
 // Hardening: a single instance, and no remote-content surprises.
 const gotLock = app.requestSingleInstanceLock();
@@ -44,11 +63,32 @@ if (!gotLock) {
   app.quit();
 }
 
-app.on('second-instance', () => {
+// Register as the qrlconnect:// handler so dApp "open in desktop wallet"
+// links reach us. Packaged builds register the bare exe; unpackaged dev runs
+// must pin execPath + the app path or Windows would launch a bare electron.
+if (process.defaultApp) {
+  if (process.argv.length >= 2 && process.argv[1]) {
+    app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('qrlconnect');
+}
+
+app.on('second-instance', (_event, argv) => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+  // Windows/Linux: a protocol launch while we are running lands in the second
+  // instance's argv. Only the first qrlconnect: argument is treated as data.
+  const uri = extractDappUriFromArgv(argv);
+  if (uri) dappIngress.offer(uri);
+});
+
+// macOS: protocol launches arrive via open-url (register before 'ready').
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  dappIngress.offer(url);
 });
 
 const RENDERER_DIR = path.join(__dirname, '../renderer');
@@ -115,7 +155,14 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => {
     mainWindow = null;
+    dappIngress.rendererGone();
   });
+
+  // A cold-start protocol launch reaches us before the renderer exists; the
+  // ingress buffers it and flushes here. Reloads re-fire both events, so the
+  // buffer never delivers into a half-loaded document.
+  mainWindow.webContents.on('did-start-loading', () => dappIngress.rendererGone());
+  mainWindow.webContents.on('did-finish-load', () => dappIngress.rendererReady());
 
   const devUrl = rendererDevUrl();
   if (devUrl) {
@@ -190,6 +237,11 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  // Cold start via a protocol click (Windows/Linux): the URI is in OUR argv.
+  // Buffered by the ingress until the renderer finishes loading.
+  const coldStartUri = extractDappUriFromArgv(process.argv.slice(1));
+  if (coldStartUri) dappIngress.offer(coldStartUri);
 
   // If a wallet already exists, the freshly-forked signer is locked: gate the
   // app behind the native unlock window before the wallet can be touched.

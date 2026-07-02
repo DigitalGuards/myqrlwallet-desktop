@@ -9,7 +9,7 @@
  * REQUEST_SIGNATURE additionally routes through the trusted main-drawn
  * confirmation modal before any signing occurs.
  */
-import { type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { AUTOLOCK_MS } from './config';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
@@ -211,4 +211,25 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.SEND_RAW_TRANSACTION, SendRawTransactionRequestSchema, (req) =>
     rpc.sendRawTransaction(req.rawTx),
   );
+
+  // ---- dApp-connect attention ---------------------------------------------
+  // A restricted dApp request arrived while the window is unfocused/minimised:
+  // surface it WITHOUT stealing focus (taskbar flash / dock bounce, and
+  // showInactive when hidden). Rate-limited so a compromised renderer can
+  // annoy, not strobe; it grants nothing else. Takes no argument.
+  let lastAttentionAt = Number.NEGATIVE_INFINITY;
+  const ATTENTION_RATE_LIMIT_MS = 5000;
+  handle(IPC.DAPP_REQUEST_ATTENTION, null, async () => {
+    const now = Date.now();
+    if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
+    lastAttentionAt = now;
+    const win = requireWindow();
+    if (!win.isVisible()) win.showInactive();
+    if (process.platform === 'darwin') {
+      app.dock?.bounce('informational');
+    } else {
+      // Windows/Linux: flash the taskbar entry; stops on focus.
+      win.flashFrame(true);
+    }
+  });
 }

@@ -68,19 +68,74 @@ export const UnsignedTransactionSchema = z
   .strict();
 
 /**
+ * Optional dApp-connect provenance attached to a signature request by the
+ * renderer when the request originated from a connected dApp session. It is
+ * renderer-supplied and therefore UNTRUSTED display metadata: the trusted
+ * confirm modal renders it under an explicit "unverified, dApp-supplied"
+ * label so the user knows which dApp asked, while the tx facts themselves
+ * stay main-computed. Strictly bounded so it cannot smuggle bulk data.
+ */
+export const DAppOriginSchema = z
+  .object({
+    via: z.literal('dapp'),
+    /** dApp display name from ORIGINATOR_INFO; control chars rejected. */
+    name: z
+      .string()
+      .min(1)
+      .max(64)
+      // eslint-disable-next-line no-control-regex -- rejecting control chars is the point
+      .regex(/^[^\u0000-\u001f\u007f]+$/, 'control characters not allowed'),
+    /** dApp URL from ORIGINATOR_INFO; a plain http(s) URL, or empty when the
+     * dApp supplied something unusable (the renderer sanitiser maps a
+     * non-http(s)/unparseable URL to '' rather than dropping provenance). */
+    url: z
+      .string()
+      .max(256)
+      .refine((s) => {
+        if (s === '') return true;
+        try {
+          const u = new URL(s);
+          return u.protocol === 'https:' || u.protocol === 'http:';
+        } catch {
+          return false;
+        }
+      }, 'must be an http(s) URL or empty'),
+    /** Relay channel id of the session the request arrived on. */
+    channelId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[0-9a-fA-F-]+$/, 'must be a hex/uuid channel id'),
+  })
+  .strict();
+
+/**
  * The discriminated signing request. Transactions are the spend path; message
  * and typed-data mirror the wallet's `qrl_signMessage` / `qrl_signTypedData`.
  */
 export const SignatureRequestSchema = z
   .discriminatedUnion('kind', [
-    z.object({ kind: z.literal('transaction'), tx: UnsignedTransactionSchema }).strict(),
-    z.object({ kind: z.literal('message'), messageHex: HexSchema.max(2 * 64 * 1024) }).strict(),
+    z
+      .object({
+        kind: z.literal('transaction'),
+        tx: UnsignedTransactionSchema,
+        origin: DAppOriginSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('message'),
+        messageHex: HexSchema.max(2 * 64 * 1024),
+        origin: DAppOriginSchema.optional(),
+      })
+      .strict(),
     z
       .object({
         kind: z.literal('typedData'),
         // The wallet computes the digest; we keep the payload opaque here and
         // let the signer's typed-data hasher validate structure. Bounded below.
         payload: z.record(z.string(), z.unknown()),
+        origin: DAppOriginSchema.optional(),
       })
       .strict(),
   ])
@@ -134,6 +189,7 @@ export type GetBalanceRequest = z.infer<typeof GetBalanceRequestSchema>;
 export type BuildTransactionRequest = z.infer<typeof BuildTransactionRequestSchema>;
 export type UnsignedTransaction = z.infer<typeof UnsignedTransactionSchema>;
 export type SignatureRequest = z.infer<typeof SignatureRequestSchema>;
+export type DAppOrigin = z.infer<typeof DAppOriginSchema>;
 export type UnlockRequest = z.infer<typeof UnlockRequestSchema>;
 export type ImportWalletRequest = z.infer<typeof ImportWalletRequestSchema>;
 export type CreateWalletRequest = z.infer<typeof CreateWalletRequestSchema>;
