@@ -6,15 +6,22 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 
+export interface UnlockWalletInfo {
+  address: string;
+  keychainBacked: boolean;
+}
+
 const api = {
-  /** Wallet address + whether an OS-keychain (Touch ID) unlock is available. */
-  getInfo: (): Promise<{ address: string | null; keychainBacked: boolean }> =>
+  /** Every wallet on this device + the active one (drives the account picker). */
+  getInfo: (): Promise<{ wallets: UnlockWalletInfo[]; active: string | null }> =>
     ipcRenderer.invoke('unlock:getInfo'),
-  /** Attempt a password unlock. Resolves `{ ok }` so the UI shows errors inline. */
-  submit: (password: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('unlock:submit', password),
-  /** Attempt an OS-keychain (Touch ID / device) unlock. */
-  biometric: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('unlock:biometric'),
+  /** Attempt a password unlock of `address` (or the active wallet when omitted).
+   * Resolves `{ ok }` so the UI shows errors inline. */
+  submit: (password: string, address?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('unlock:submit', { password, address }),
+  /** Attempt an OS-keychain (Touch ID / device) unlock of `address`. */
+  biometric: (address?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('unlock:biometric', { address }),
 };
 
 contextBridge.exposeInMainWorld('unlockBridge', api);

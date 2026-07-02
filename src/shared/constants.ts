@@ -38,10 +38,16 @@ export const IPC = {
   GET_STATUS: 'wallet:getStatus',
   /** Zeroizes the signer session immediately. */
   LOCK: 'wallet:lock',
-  /** Destructively removes the wallet: drops the session, deletes the encrypted
-   * seed from disk, and clears the OS-keychain entry. Requires re-import
+  /** Destructively removes ONE wallet (the active one, or an explicit address):
+   * deletes its encrypted seed from disk and clears its OS-keychain entry;
+   * drops the session when it was the unlocked account. Requires re-import
    * (mirrors the mobile-app wipe). */
   REMOVE_WALLET: 'wallet:removeWallet',
+  /** Lists every provisioned wallet (address + keychain backing) + the active one. */
+  LIST_WALLETS: 'wallet:listWallets',
+  /** Switches the active wallet. Locks the session when it was open for a
+   * different account (the new account needs its own unlock). */
+  SET_ACTIVE_WALLET: 'wallet:setActiveWallet',
   /** Broadcasts a signed raw transaction via the RPC proxy. */
   SEND_RAW_TRANSACTION: 'wallet:sendRawTransaction',
   /** Renderer asks main to surface the window because a dApp-connect request

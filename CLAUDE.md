@@ -78,11 +78,16 @@ npm run build          # electron-vite build (out/main, out/preload, out/rendere
 
 ## 3. Git discipline
 
+- **Branching: `dev` is the integration branch (and GitHub default); `main` is
+  stable/release.** Do code work on short-lived feature branches and open a PR to
+  `dev`; process PR and bot review comments (REST: `gh api
+  repos/DigitalGuards/myqrlwallet-desktop/pulls/{n}/comments`) before merge. Cut
+  `dev` -> `main` PRs for releases. Do not push code straight to `main`.
 - Never revert user changes you did not author unless explicitly asked.
 - Avoid destructive commands (`reset --hard`, `checkout --`) unless requested.
 - Use non-interactive git. Keep commits scoped and descriptive.
-- Docs-only prose changes may be committed directly; code changes follow the
-  workspace PR convention.
+- Docs-only prose changes may be committed directly to `dev`; code changes follow
+  the PR-to-`dev` flow above.
 
 ## 4. Canonical security invariants (do not regress)
 
@@ -107,13 +112,13 @@ yields NO key material, because keys never live there.
 3. **Preload exposes only the narrow API.** The contextBridge mounts ONLY the
    named `window.qrlWallet` wrappers (`getBalance`, `buildTransaction`,
    `requestSignature`, `unlock`, `lock`, `removeWallet`, `getStatus`,
-   `hasWallet`, `createWallet`, `importWallet`, `sendRawTransaction`,
-   `dappRequestAttention`, `onLockStateChanged`, `onDAppConnectUri`).
-   The unlock window's preload exposes only
-   `window.unlockBridge` (`getInfo`/`submit`/`biometric`). Never expose raw
-   `ipcRenderer`, `invoke`, channel strings, or Node primitives. Files:
-   `src/preload/index.ts`, `src/unlock/preload.ts`, `src/shared/bridge.ts`,
-   `src/shared/constants.ts`.
+   `hasWallet`, `createWallet`, `importWallet`, `listWallets`,
+   `setActiveWallet`, `sendRawTransaction`, `dappRequestAttention`,
+   `onLockStateChanged`, `onDAppConnectUri`). The unlock window's preload
+   exposes only `window.unlockBridge` (`getInfo`/`submit`/`biometric`). Never
+   expose raw `ipcRenderer`, `invoke`, channel strings, or Node primitives.
+   Files: `src/preload/index.ts`, `src/unlock/preload.ts`,
+   `src/shared/bridge.ts`, `src/shared/constants.ts`.
 
 4. **Every IPC handler validates sender AND argument.** Each `ipcMain.handle`
    first calls `isTrustedSender` (top frame of the wallet window + `file:`
@@ -131,12 +136,28 @@ yields NO key material, because keys never live there.
    unlock window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer.
    Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/unlockWindow.ts`.
 
-6. **Strict CSP, no `unsafe-inline` / `unsafe-eval`.** `default-src 'self'`;
-   `script-src 'self'`; `style-src 'self'`; explicit `connect-src` from the
-   configured RPC origins only; `object-src 'none'`; `frame-ancestors 'none'`;
-   `base-uri 'none'`; `form-action 'none'`. Delivered as a response header.
-   Files: `src/main/security.ts` (`installContentSecurityPolicy`),
-   `src/main/config.ts` (`connectSrcOrigins`).
+6. **Strict CSP: `script-src 'self'`, no script `unsafe-inline` / `unsafe-eval`.**
+   The load-bearing control is `script-src 'self'`: a renderer RCE can neither
+   inject nor `eval` script. Full policy: `default-src 'self'`;
+   `script-src 'self'`; `style-src 'self' 'unsafe-inline'` (the reused frontend's
+   Radix UI sets inline STYLE attributes at runtime; inline style cannot execute
+   code, so this is an accepted, much-lower-risk relaxation than inline script);
+   explicit `connect-src` from the configured RPC/backend origins only;
+   `img-src 'self' data: https:`; `media-src 'self' blob:`; `font-src 'self' data:`;
+   `object-src 'none'`; `frame-ancestors 'none'`; `base-uri 'self'`;
+   `form-action 'self'` (`'self'` resolves to `file://` here, so effectively
+   `'none'`); `worker-src 'self' blob:`. Delivered as a REAL response header on
+   every `file://` response by the file-protocol handler
+   (`protocol.handle('file')` in `src/main/index.ts`), because
+   `webRequest.onHeadersReceived` does not reliably fire for `file://` document
+   loads; the webRequest install covers http(s) (dev server) responses, and
+   `scripts/build-renderer.sh` rewrites the built renderer's meta CSP to the
+   same policy as defense-in-depth. Files: `src/main/security.ts`
+   (`buildContentSecurityPolicy`, `installContentSecurityPolicy`),
+   `src/main/index.ts` (`installFileProtocolHandler`), `src/main/config.ts`
+   (`connectSrcOrigins`), `scripts/build-renderer.sh`. Renderer permissions are
+   deny-by-default except clipboard write (`src/main/permissions.ts`,
+   `installPermissionHandlers`).
 
 7. **KDF params are frozen once seeds exist.** `KDF_DEFAULTS` and `AEAD` in
    `src/shared/constants.ts` are persisted with every encrypted seed; changing
@@ -183,7 +204,14 @@ electron-builder is **26.x GA**: top-level `mac.*` keys and `win.signtoolOptions
 Exercise these (test or manual) for any change to `src/main/ipc.ts`,
 `src/preload/`, `src/signer/`, `src/keyvault/`, or `src/main/security.ts`:
 
-- Fresh import: `importWallet` encrypts the seed, persists it, opens a session.
+- Fresh import: `importWallet` (mnemonic OR hex extended seed) encrypts the
+  seed, persists it under `wallet/seeds/<address>.json`, makes it active, opens
+  a session.
+- Second wallet: importing/creating another account keeps the first on disk,
+  switches the active pointer, and `listWallets` reports both.
+- Account switch: `setActiveWallet` to a different account drops the session
+  and raises the native unlock window (with the account picker when more than
+  one wallet exists); unlocking the picked account selects it.
 - Password unlock: `unlock` with a password derives the KEK and opens a session.
 - Keychain / Touch-ID unlock: `unlock` with no password retrieves the KEK from
   the OS vault; missing/declined vault falls back to requiring a password.
@@ -196,9 +224,11 @@ Exercise these (test or manual) for any change to `src/main/ipc.ts`,
 - Lock + native unlock: a lock (sidebar Lock, autolock, or startup-if-locked)
   raises the native unlock window; a password (or keychain) unlock closes it and
   reopens the session.
-- Remove wallet (wipe): `removeWallet` drops the session, deletes the seed file,
-  and clears the keychain ONLY after the trusted main-drawn confirmation; the
-  unlock window is NOT shown afterward (no wallet remains).
+- Remove wallet (wipe): `removeWallet` deletes that wallet's seed file and
+  clears its keychain entry ONLY after the trusted main-drawn confirmation
+  (which names the address). Removing the unlocked account drops the session
+  and raises the unlock window when other wallets remain; after removing the
+  LAST wallet the unlock window is NOT shown (nothing left to unlock).
 - Locked-state rejection: signing/spend calls fail cleanly when no session is open.
 - Malformed IPC rejection: a payload that fails zod parse is rejected before any action.
 - Sub-frame sender rejection: an IPC event from a non-top frame or non-`file:`

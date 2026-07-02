@@ -25,9 +25,6 @@ export const RPC_URL = envUrl('QRL_RPC_URL', 'http://78.47.166.153:8545');
 /** Optional secondary endpoint (foundation public RPC) for read failover. */
 export const RPC_URL_SECONDARY = envUrl('QRL_RPC_URL_SECONDARY', 'http://209.250.255.226:8545');
 
-/** Fallback chain id if `qrl_chainId` cannot be read (testnet-v2 = 1337). */
-export const FALLBACK_CHAIN_ID = Number(process.env.QRL_CHAIN_ID ?? 1337);
-
 /** Idle timeout before the signer auto-locks. */
 export const AUTOLOCK_MS = Number(process.env.QRL_AUTOLOCK_MS ?? DEFAULT_AUTOLOCK_MS);
 

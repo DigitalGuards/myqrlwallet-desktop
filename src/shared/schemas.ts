@@ -16,6 +16,11 @@ export const AddressSchema = z
   .string()
   .regex(/^Q[0-9a-fA-F]{40}$/, 'must be a Q-prefixed 20-byte hex address');
 
+/** A wallet.js 51-byte hex extended seed (3-byte descriptor || 48-byte seed). */
+export const HexSeedSchema = z
+  .string()
+  .regex(/^(0x)?[0-9a-fA-F]{102}$/, 'must be a 51-byte hex extended seed');
+
 /** Bare or 0x-prefixed hex of even length. */
 const HexSchema = z
   .string()
@@ -156,18 +161,40 @@ export const PasswordSchema = z.string().min(1).max(1024);
 /**
  * `password` is optional: omitting it asks main to unlock via a KEK retrieved
  * from the OS keychain (macOS Touch ID / passcode), the defense-in-depth path.
+ * `address` selects which wallet to unlock (multi-wallet); omitted = active.
  */
-export const UnlockRequestSchema = z.object({ password: PasswordSchema.optional() }).strict();
+export const UnlockRequestSchema = z
+  .object({ password: PasswordSchema.optional(), address: AddressSchema.optional() })
+  .strict();
 
+/**
+ * Import from EITHER a mnemonic or a raw hex extended seed (exactly one).
+ * The two are equivalent encodings of the same 51 bytes, so the signer
+ * regenerates the mnemonic from a hex-seed import and the stored envelope is
+ * identical either way.
+ */
 export const ImportWalletRequestSchema = z
   .object({
     /** BIP39-style mnemonic; word count validated downstream by wallet.js. */
-    mnemonic: z.string().min(1).max(4096),
+    mnemonic: z.string().min(1).max(4096).optional(),
+    /** Raw 51-byte hex extended seed (the web wallet's "hex seed" import). */
+    hexSeed: HexSeedSchema.optional(),
     password: PasswordSchema,
     /** Opt-in: also stash the KEK in the OS keychain (macOS user-presence). */
     useKeychain: z.boolean().optional().default(false),
   })
-  .strict();
+  .strict()
+  .refine((r) => (r.mnemonic === undefined) !== (r.hexSeed === undefined), {
+    message: 'provide exactly one of mnemonic or hexSeed',
+  });
+
+/** Remove one wallet. Omitted address = the active wallet (back-compat). */
+export const RemoveWalletRequestSchema = z
+  .object({ address: AddressSchema.optional() })
+  .strict()
+  .optional();
+
+export const SetActiveWalletRequestSchema = z.object({ address: AddressSchema }).strict();
 
 /** Generate a brand-new wallet inside the signer (no mnemonic supplied). */
 export const CreateWalletRequestSchema = z
@@ -193,8 +220,23 @@ export type DAppOrigin = z.infer<typeof DAppOriginSchema>;
 export type UnlockRequest = z.infer<typeof UnlockRequestSchema>;
 export type ImportWalletRequest = z.infer<typeof ImportWalletRequestSchema>;
 export type CreateWalletRequest = z.infer<typeof CreateWalletRequestSchema>;
+export type RemoveWalletRequest = z.infer<typeof RemoveWalletRequestSchema>;
+export type SetActiveWalletRequest = z.infer<typeof SetActiveWalletRequestSchema>;
 export type SendRawTransactionRequest = z.infer<typeof SendRawTransactionRequestSchema>;
 export type FeeLevel = z.infer<typeof FeeLevelSchema>;
+
+/** One provisioned wallet as reported to the renderer (public data only). */
+export interface WalletInfo {
+  address: string;
+  /** Whether this wallet's KEK is currently backed by the OS keychain. */
+  keychainBacked: boolean;
+}
+
+export interface WalletListResult {
+  wallets: WalletInfo[];
+  /** The active wallet's address, or null when no wallet exists. */
+  active: string | null;
+}
 
 export interface BalanceResult {
   address: string;
@@ -205,11 +247,16 @@ export interface BalanceResult {
 export interface WalletStatus {
   hasWallet: boolean;
   locked: boolean;
+  /** The unlocked session's address, else the active wallet's address. */
   address: string | null;
   /** Epoch ms when the current session auto-locks, or null if locked. */
   unlockExpiresAt: number | null;
-  /** Whether the KEK is currently backed by the OS keychain. */
+  /** Whether the active wallet's KEK is currently backed by the OS keychain. */
   keychainBacked: boolean;
+  /** Every provisioned wallet on this device (public data only). */
+  wallets: WalletInfo[];
+  /** The active wallet's address, or null when no wallet exists. */
+  activeAddress: string | null;
 }
 
 export interface CreateWalletResult {

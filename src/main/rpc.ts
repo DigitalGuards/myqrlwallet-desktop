@@ -7,7 +7,7 @@
  *
  * No secrets pass through this module.
  */
-import { FALLBACK_CHAIN_ID, RPC_URL, RPC_URL_SECONDARY } from './config';
+import { RPC_URL, RPC_URL_SECONDARY } from './config';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
 
 interface JsonRpcResponse<T> {
@@ -52,12 +52,13 @@ async function rpcRead<T>(method: string, params: unknown[]): Promise<T> {
 
 const hexToBigInt = (h: string): bigint => BigInt(h);
 
+/**
+ * Read the chain id from the node. Deliberately NO silent fallback: the chain
+ * id is a signature-binding, replay-safety value, so an unreachable node must
+ * fail the build/sign loudly rather than bind transactions to a guessed chain.
+ */
 export async function getChainId(): Promise<number> {
-  try {
-    return Number(hexToBigInt(await rpcRead<string>('qrl_chainId', [])));
-  } catch {
-    return FALLBACK_CHAIN_ID;
-  }
+  return Number(hexToBigInt(await rpcRead<string>('qrl_chainId', [])));
 }
 
 export async function getBalance(address: string): Promise<string> {
