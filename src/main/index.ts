@@ -24,6 +24,8 @@ import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
 import {
   closeSettingsWindow,
+  focusSettingsWindow,
+  isSettingsWindowShown,
   registerSettingsIpc,
   showSettingsWindow,
   type SettingsDeps,
@@ -86,6 +88,10 @@ const dappIngress = new DappUriIngress({
       logMain('[ingress] deliver deferred: wallet locked (buffered until unlock)');
       return false;
     }
+    // The settings window may be the visible surface (wallet hidden behind
+    // it). A connect link needs the wallet's consent modal on screen, so give
+    // the surface back before revealing the wallet window below.
+    closeSettingsWindow();
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -134,8 +140,12 @@ registerQrlconnectProtocol();
 app.on('second-instance', (_event, argv) => {
   // While locked, the unlock window is the only surface allowed on screen:
   // focusing the hidden main window here could reveal it on some platforms.
+  // While settings is the visible surface (wallet hidden behind it), focus
+  // that instead for the same reason; a URI in argv closes it via deliver().
   if (isUnlockWindowShown()) {
     focusUnlockWindow();
+  } else if (isSettingsWindowShown()) {
+    focusSettingsWindow();
   } else if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();

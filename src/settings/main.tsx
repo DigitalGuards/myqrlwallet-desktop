@@ -63,6 +63,18 @@ function SettingsApp() {
   const [removing, setRemoving] = useState(false);
   const [removeStatus, setRemoveStatus] = useState<ActionState | null>(null);
 
+  // The window takes over the wallet's bounds, so give it the native-screen
+  // escape hatch: Esc closes it (main restores the wallet window underneath).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') window.close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     window.settingsBridge

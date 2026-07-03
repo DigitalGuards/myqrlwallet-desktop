@@ -47,6 +47,18 @@ body {
     radial-gradient(58% 30% at 50% 0%, hsl(199 89% 64% / 0.08), transparent 70%), var(--bg);
 }
 
+/* The window covers the wallet window's full bounds (the unlock-window
+   takeover pattern), so constrain the content to a comfortable column and
+   center it; the gradient canvas stays full-bleed. */
+.settings-header,
+.settings-body,
+.settings-footer {
+  width: 100%;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
