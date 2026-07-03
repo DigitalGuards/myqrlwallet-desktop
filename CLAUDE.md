@@ -114,11 +114,13 @@ yields NO key material, because keys never live there.
    `requestSignature`, `unlock`, `lock`, `removeWallet`, `getStatus`,
    `hasWallet`, `createWallet`, `importWallet`, `listWallets`,
    `setActiveWallet`, `sendRawTransaction`, `dappRequestAttention`,
-   `onLockStateChanged`, `onDAppConnectUri`). The unlock window's preload
-   exposes only `window.unlockBridge` (`getInfo`/`submit`/`biometric`). Never
-   expose raw `ipcRenderer`, `invoke`, channel strings, or Node primitives.
+   `openDesktopSettings`, `onLockStateChanged`, `onDAppConnectUri`). The unlock
+   window's preload exposes only `window.unlockBridge`
+   (`getInfo`/`submit`/`biometric`); the settings window's preload exposes only
+   `window.settingsBridge` (`get`/`set`/`action`). Never expose raw
+   `ipcRenderer`, `invoke`, channel strings, or Node primitives.
    Files: `src/preload/index.ts`, `src/unlock/preload.ts`,
-   `src/shared/bridge.ts`, `src/shared/constants.ts`.
+   `src/settings/preload.ts`, `src/shared/bridge.ts`, `src/shared/constants.ts`.
 
 4. **Every IPC handler validates sender AND argument.** Each `ipcMain.handle`
    first calls `isTrustedSender` (top frame of the wallet window + `file:`
