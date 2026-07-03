@@ -197,6 +197,12 @@ quick-unlock) live outside the renderer's reach, in a second app-owned surface:
   `showUnlockWindow` call fires the `setOnUnlockShown` hook, which closes a
   live settings window: the lock screen is the ONLY surface while locked, and
   no settings action (autolock change, wallet removal) stays reachable.
+  Settings itself uses the unlock-window takeover pattern (covers the wallet
+  window's bounds, hides it underneath); its close handler restores the wallet
+  window ONLY when the lock screen is not up, so a lock-triggered close never
+  reveals the hidden wallet. A qrlconnect:// delivery or a dApp
+  attention request closes settings first, so the consent/approval UI is never
+  hidden behind it.
 - **Wallet removal from settings uses the same trusted gate**: the settings
   window's remove-account action runs the identical flow as the renderer's
   `REMOVE_WALLET` (`src/main/walletRemoval.ts`): a main-drawn confirmation

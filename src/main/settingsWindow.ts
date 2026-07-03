@@ -214,9 +214,26 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
   });
 }
 
-/** Close the settings window (lock screen takeover). Safe to call anytime. */
+/** Close the settings window (lock screen takeover, or a dApp URI arriving
+ * that needs the wallet surface back). Safe to call anytime; the window's
+ * closed handler restores the wallet window when appropriate. */
 export function closeSettingsWindow(): void {
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close();
+}
+
+/** True while the settings window is the visible app surface (the wallet
+ * window is hidden behind it). */
+export function isSettingsWindowShown(): boolean {
+  return settingsWin !== null && !settingsWin.isDestroyed();
+}
+
+/** Bring the settings window to the front (duplicate app launches while it is
+ * the visible surface). */
+export function focusSettingsWindow(): void {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    settingsWin.focus();
+  }
 }
 
 /**
@@ -238,12 +255,16 @@ export function showSettingsWindow(deps: SettingsDeps): void {
 
   const preload = path.join(__dirname, '../preload/settings.js');
   const main = deps.getMainWindow();
-  // Parent to the main window when it is up and visible so the settings window
-  // stays associated with the wallet; non-modal (it gates nothing).
-  const parent = main && !main.isDestroyed() && main.isVisible() ? main : undefined;
+  // The unlock-window takeover pattern: snapshot the wallet window's bounds so
+  // settings appears exactly where the wallet is (a full-bleed screen of the
+  // app, not a small floating dialog stacked over it), then hide the wallet
+  // underneath once settings has painted. Parentless + non-modal like the
+  // unlock window: hiding a modal child's parent is platform-dependent.
+  const cover = main && !main.isDestroyed() ? main.getBounds() : null;
   const win = new BrowserWindow({
-    width: 520,
-    height: 720,
+    width: cover?.width ?? 900,
+    height: cover?.height ?? 720,
+    ...(cover ? { x: cover.x, y: cover.y } : {}),
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -254,15 +275,32 @@ export function showSettingsWindow(deps: SettingsDeps): void {
     backgroundColor: '#020817',
     title: 'MyQRLWallet Settings',
     autoHideMenuBar: true,
-    ...(parent ? { parent } : {}),
     webPreferences: hardenedWebPreferences(preload),
   });
   settingsWin = win;
 
-  win.once('ready-to-show', () => win.show());
-  // Only clear the module ref if THIS window is still current.
+  win.once('ready-to-show', () => {
+    // Show first, hide second: settings covers the wallet exactly, so the
+    // swap underneath is invisible and the app reads as ONE surface that
+    // switched to its settings screen.
+    win.show();
+    const m = deps.getMainWindow();
+    if (m && !m.isDestroyed()) m.hide();
+  });
   win.on('closed', () => {
+    // Only clear the module ref if THIS window is still current.
     if (settingsWin === win) settingsWin = null;
+    // Restore the wallet window, UNLESS the lock screen owns the display:
+    // settings may have been closed BY the unlock takeover (setOnUnlockShown),
+    // and revealing the hidden wallet while locked would break the
+    // single-window lock invariant. finishUnlock re-shows it after a real
+    // unlock. Skip when something else (URI delivery) already restored it.
+    if (isUnlockWindowShown()) return;
+    const m = deps.getMainWindow();
+    if (m && !m.isDestroyed() && !m.isVisible()) {
+      m.show();
+      m.focus();
+    }
   });
 
   void win.loadFile(path.join(__dirname, '../settings/index.html'));

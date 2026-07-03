@@ -31,6 +31,7 @@ import {
   writeSeed,
 } from './seedFile';
 import { isTrustedSender } from './security';
+import { closeSettingsWindow } from './settingsWindow';
 import { isUnlockWindowShown } from './unlockWindow';
 import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
@@ -347,6 +348,12 @@ export function registerIpcHandlers(deps: Deps): void {
     const now = Date.now();
     if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
     lastAttentionAt = now;
+    // The dApp approval modal lives in the wallet renderer: if the settings
+    // window is the visible surface (wallet hidden behind it), give the
+    // surface back so the request is actually seeable. Worst case for a
+    // malicious renderer spamming this: the user's settings window closes,
+    // rate-limited; same nuisance tier as the flash itself.
+    closeSettingsWindow();
     const win = requireWindow();
     if (!win.isVisible()) win.showInactive();
     if (process.platform === 'darwin') {
