@@ -205,6 +205,12 @@ export class SignerBridge {
     return this.send<null>({ type: 'signer:lock' });
   }
 
+  /** Re-arm the open session's autolock timer with a new bound (no-op success
+   * while locked). Main <-> signer private; never reachable from the renderer. */
+  setAutolock(autolockMs: number): Promise<null> {
+    return this.send<null>({ type: 'signer:setAutolock', autolockMs });
+  }
+
   status(): Promise<SignerStatus> {
     return this.send<SignerStatus>({ type: 'signer:status' });
   }

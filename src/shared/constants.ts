@@ -84,6 +84,10 @@ export const SIGNER_MSG = {
   UNLOCK: 'signer:unlock',
   SIGN: 'signer:sign',
   LOCK: 'signer:lock',
+  /** Re-arm the idle autolock timer of an OPEN session with a new bound
+   * (no-op success while locked). Main <-> signer private, like every other
+   * SIGNER_MSG: never exposed on the renderer bridge. */
+  SET_AUTOLOCK: 'signer:setAutolock',
   STATUS: 'signer:status',
   SHUTDOWN: 'signer:shutdown',
 } as const;

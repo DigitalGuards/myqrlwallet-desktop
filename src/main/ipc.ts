@@ -17,9 +17,9 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
-import { AUTOLOCK_MS } from './config';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import * as rpc from './rpc';
+import { getBiometricUnlockEnabled, getEffectiveAutolockMs } from './settingsFile';
 import {
   deleteSeed,
   getActiveAddress,
@@ -191,13 +191,14 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.UNLOCK, UnlockRequestSchema, async (req) => {
     const encrypted = req.address ? await readSeedByAddress(req.address) : await readActiveSeed();
     if (!encrypted) throw new Error('no wallet to unlock');
+    const autolockMs = await getEffectiveAutolockMs();
     if (req.password) {
-      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password: req.password });
+      await signer.unlock({ encrypted, autolockMs, password: req.password });
     } else {
       // No password: unlock via a KEK retrieved from the OS keychain.
       const kekHex = await keyVault.retrieve(encrypted.address);
       if (!kekHex) throw new Error('keychain unlock unavailable; password required');
-      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+      await signer.unlock({ encrypted, autolockMs, kekHex });
     }
     // Unlocking an account selects it.
     await setActiveAddress(encrypted.address);
@@ -286,8 +287,12 @@ export function registerIpcHandlers(deps: Deps): void {
   ): Promise<WalletStatus> {
     await writeSeed(encrypted);
     await setActiveAddress(encrypted.address);
-    const wantKek = useKeychain && (await keyVault.isAvailable());
-    const result = await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password, wantKek });
+    // Keychain provisioning is gated on the renderer's opt-in AND the settings
+    // preference (biometricUnlock, default on) AND platform availability.
+    const wantKek =
+      useKeychain && (await getBiometricUnlockEnabled()) && (await keyVault.isAvailable());
+    const autolockMs = await getEffectiveAutolockMs();
+    const result = await signer.unlock({ encrypted, autolockMs, password, wantKek });
     if (wantKek && result.kekHex) {
       await keyVault.store(encrypted.address, result.kekHex);
       // result.kekHex is a JS string and cannot be truly zeroized; minimise its
