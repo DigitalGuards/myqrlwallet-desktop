@@ -7,21 +7,25 @@
  *
  * Lock interaction: while the lock screen owns the display
  * (isUnlockWindowShown()), this window refuses to open and instead focuses the
- * unlock window; it never reveals the hidden main window. Closing it is
- * unrestricted: it gates nothing.
+ * unlock window; it never reveals the hidden main window. Conversely, when the
+ * lock screen takes over, index.ts closes this window (setOnUnlockShown ->
+ * closeSettingsWindow): its actions must not be reachable while locked.
+ * Closing it is unrestricted: it gates nothing.
  *
  * Every IPC handler accepts ONLY events whose sender is the live settings
  * window (fromSettingsWindow), then zod-parses its argument. No secrets ever
  * cross this surface: the store holds a timeout preference and a biometric
- * toggle, and the two actions (re-register protocol handler, open logs folder)
- * carry no data.
+ * toggle, the actions (re-register protocol handler, open logs folder) carry
+ * no data, and wallet removal runs the same trusted-confirmed flow as the
+ * renderer path (src/main/walletRemoval.ts), parented to this window.
  */
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
+import { confirmRemoveWallet } from './confirm';
 import { logMain, logsDir } from './log';
-import { listSeeds } from './seedFile';
+import { deleteSeed, getActiveAddress, hasAnySeed, listSeeds, readSeedByAddress } from './seedFile';
 import { hardenedWebPreferences } from './security';
 import {
   getEffectiveAutolockMs,
@@ -31,7 +35,8 @@ import {
   type StoredSettings,
 } from './settingsFile';
 import { focusUnlockWindow, isUnlockWindowShown } from './unlockWindow';
-import { DEFAULT_AUTOLOCK_MS } from '../shared/constants';
+import { removeWalletFlow } from './walletRemoval';
+import { DEFAULT_AUTOLOCK_MS, EVENTS } from '../shared/constants';
 import type { SignerBridge } from './signerBridge';
 import type { KeyVault } from '../keyvault';
 
@@ -41,6 +46,8 @@ export interface SettingsDeps {
   keyVault: KeyVault;
   /** Re-invoke the qrlconnect:// protocol registration (owned by index.ts). */
   reregisterProtocol: () => boolean;
+  /** Raise the native unlock window (removal of the unlocked account). */
+  showUnlock: () => void;
 }
 
 let settingsWin: BrowserWindow | null = null;
@@ -76,13 +83,17 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
 
   ipcMain.handle('settings:get', async (event) => {
     if (!fromSettingsWindow(event)) throw new Error('unauthorized');
-    const [stored, biometricsAvailable, effectiveAutolockMs] = await Promise.all([
+    const [stored, biometricsAvailable, effectiveAutolockMs, activeAddress] = await Promise.all([
       readSettings(),
       deps.keyVault.isAvailable(),
       getEffectiveAutolockMs(),
+      getActiveAddress(),
     ]);
     return {
       settings: toUiSettings(stored),
+      // Which account the destructive Remove action targets. A public address,
+      // not a secret; the wallet renderer displays it freely.
+      wallet: { activeAddress },
       capabilities: {
         biometricsAvailable,
         platform: process.platform,
@@ -163,6 +174,49 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
       }
     }
   });
+
+  // Destructive removal of the ACTIVE wallet, from the settings window. Runs
+  // the exact flow the renderer's IPC.REMOVE_WALLET runs (same trusted
+  // main-drawn confirmation, default Cancel), parented to this window. The
+  // wallet renderer had no hand in the removal, so it is reloaded afterwards:
+  // its boot-time hydration reconciles the account list against the signer's
+  // seed files. If the removed account owned the open session, the flow raises
+  // the unlock window, which closes this window via the onUnlockShown hook.
+  ipcMain.handle('settings:removeWallet', async (event) => {
+    if (!fromSettingsWindow(event)) throw new Error('unauthorized');
+    const win = settingsWin;
+    if (!win || win.isDestroyed()) throw new Error('unauthorized');
+    await removeWalletFlow({
+      signer: deps.signer,
+      keyVault: deps.keyVault,
+      seeds: {
+        readByAddress: readSeedByAddress,
+        getActive: getActiveAddress,
+        delete: deleteSeed,
+        hasAny: hasAnySeed,
+      },
+      confirm: (address) => confirmRemoveWallet(win, address),
+      emitLockState: (locked) => {
+        const main = deps.getMainWindow();
+        if (main && !main.isDestroyed()) {
+          main.webContents.send(EVENTS.LOCK_STATE_CHANGED, locked);
+        }
+      },
+      showUnlock: deps.showUnlock,
+      warn: (message) => logMain(`[settings] ${message}`),
+    });
+    logMain('[settings] wallet removed via settings window');
+    const main = deps.getMainWindow();
+    if (main && !main.isDestroyed()) main.webContents.reload();
+    // The (self-healed) active address after the removal, so the UI can
+    // refresh without a second round-trip.
+    return { activeAddress: await getActiveAddress() };
+  });
+}
+
+/** Close the settings window (lock screen takeover). Safe to call anytime. */
+export function closeSettingsWindow(): void {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close();
 }
 
 /**
@@ -189,7 +243,7 @@ export function showSettingsWindow(deps: SettingsDeps): void {
   const parent = main && !main.isDestroyed() && main.isVisible() ? main : undefined;
   const win = new BrowserWindow({
     width: 520,
-    height: 600,
+    height: 720,
     resizable: false,
     minimizable: false,
     maximizable: false,

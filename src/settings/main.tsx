@@ -18,10 +18,19 @@ interface SettingsCapabilities {
   effectiveAutolockMs: number;
 }
 
+interface SettingsWalletInfo {
+  activeAddress: string | null;
+}
+
 interface SettingsBridge {
-  get(): Promise<{ settings: DesktopSettings; capabilities: SettingsCapabilities }>;
+  get(): Promise<{
+    settings: DesktopSettings;
+    wallet: SettingsWalletInfo;
+    capabilities: SettingsCapabilities;
+  }>;
   set(patch: Partial<DesktopSettings>): Promise<{ settings: DesktopSettings }>;
   action(action: SettingsAction): Promise<{ ok: boolean; error?: string }>;
+  removeWallet(): Promise<{ activeAddress: string | null }>;
 }
 
 declare global {
@@ -44,12 +53,15 @@ interface ActionState {
 
 function SettingsApp() {
   const [settings, setSettings] = useState<DesktopSettings | null>(null);
+  const [wallet, setWallet] = useState<SettingsWalletInfo | null>(null);
   const [caps, setCaps] = useState<SettingsCapabilities | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<ActionState | null>(null);
   const [protocolStatus, setProtocolStatus] = useState<ActionState | null>(null);
   const [logsStatus, setLogsStatus] = useState<ActionState | null>(null);
   const [busyAction, setBusyAction] = useState<SettingsAction | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeStatus, setRemoveStatus] = useState<ActionState | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +70,7 @@ function SettingsApp() {
       .then((info) => {
         if (cancelled) return;
         setSettings(info.settings);
+        setWallet(info.wallet);
         setCaps(info.capabilities);
       })
       .catch(() => {
@@ -80,6 +93,27 @@ function SettingsApp() {
       setSaveStatus({ ok: false, message: 'Could not save. Please try again.' });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeAccount() {
+    if (removing) return;
+    setRemoving(true);
+    setRemoveStatus(null);
+    try {
+      // Main draws the trusted confirmation (default Cancel) over this window
+      // before anything is deleted; this button only starts that flow.
+      const result = await window.settingsBridge.removeWallet();
+      setWallet({ activeAddress: result.activeAddress });
+      setRemoveStatus({ ok: true, message: 'Account removed from this device.' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      // Trusted dialog cancelled: silently abort, no error banner.
+      if (!/reject|cancel/i.test(message)) {
+        setRemoveStatus({ ok: false, message: 'Could not remove the account.' });
+      }
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -223,6 +257,33 @@ function SettingsApp() {
               </p>
             )}
           </section>
+
+          {wallet?.activeAddress && (
+            <section className="settings-card danger">
+              <div className="settings-row">
+                <span className="settings-label">Remove account</span>
+                <button
+                  className="settings-button danger"
+                  type="button"
+                  disabled={removing}
+                  onClick={() => void removeAccount()}
+                >
+                  {removing ? 'Removing...' : 'Remove from this device'}
+                </button>
+              </div>
+              <p className="settings-help">
+                Permanently deletes the active account&apos;s encrypted seed from this device. You
+                will need the recovery phrase (or hex seed) to restore it. Other accounts on this
+                device are not affected. You will be asked to confirm.
+              </p>
+              <p className="settings-address">{wallet.activeAddress}</p>
+              {removeStatus && (
+                <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
+                  {removeStatus.message}
+                </p>
+              )}
+            </section>
+          )}
 
           {saveStatus && (
             <p className={`settings-status ${saveStatus.ok ? 'ok' : 'error'}`}>

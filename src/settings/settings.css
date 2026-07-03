@@ -44,8 +44,7 @@ body {
   flex-direction: column;
   padding: 24px 24px 16px;
   background:
-    radial-gradient(58% 30% at 50% 0%, hsl(199 89% 64% / 0.08), transparent 70%),
-    var(--bg);
+    radial-gradient(58% 30% at 50% 0%, hsl(199 89% 64% / 0.08), transparent 70%), var(--bg);
 }
 
 .settings-header {
@@ -209,6 +208,31 @@ body {
 .settings-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Destructive section (remove account): the design system's deep red
+   (--destructive: 0 62.8% 30.6%) as border accent, matching the wallet's
+   destructive-card treatment. */
+.settings-card.danger {
+  border-color: hsl(0 62.8% 30.6% / 0.7);
+}
+
+.settings-button.danger {
+  border-color: hsl(0 62.8% 30.6%);
+  color: var(--error);
+}
+
+.settings-button.danger:hover:not(:disabled) {
+  border-color: var(--error);
+  background: hsl(0 84% 60% / 0.08);
+}
+
+.settings-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted-fg);
+  word-break: break-all;
+  margin: 0;
 }
 
 .settings-status {

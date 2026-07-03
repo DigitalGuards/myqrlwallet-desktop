@@ -185,15 +185,26 @@ quick-unlock) live outside the renderer's reach, in a second app-owned surface:
 - **Settings window is main-owned** (`src/main/settingsWindow.ts`,
   `src/settings/`), built on the unlock-window pattern: hardened
   webPreferences, its own preload exposing only `window.settingsBridge`
-  (`get`/`set`/`action`), a no-network meta CSP, and every IPC handler gated by
+  (`get`/`set`/`action`/`removeWallet`), a no-network meta CSP, and every IPC handler gated by
   a live-sender check (`fromSettingsWindow`) plus a zod-strict argument parse.
   The wallet renderer cannot draw over it, inject into it, or read/write any
   setting: its only capability is asking main to show the window
   (`IPC.OPEN_DESKTOP_SETTINGS`, sender-gated, no data in either direction).
-- **Cannot open while locked**: when the unlock window owns the display
-  (`isUnlockWindowShown()`), both the menu entry and the renderer request
-  refuse and focus the unlock window instead; opening settings never reveals
-  the hidden main window.
+- **Cannot open while locked, and closes when the lock takes over**: when the
+  unlock window owns the display (`isUnlockWindowShown()`), both the menu entry
+  and the renderer request refuse and focus the unlock window instead; opening
+  settings never reveals the hidden main window. Conversely, every
+  `showUnlockWindow` call fires the `setOnUnlockShown` hook, which closes a
+  live settings window: the lock screen is the ONLY surface while locked, and
+  no settings action (autolock change, wallet removal) stays reachable.
+- **Wallet removal from settings uses the same trusted gate**: the settings
+  window's remove-account action runs the identical flow as the renderer's
+  `REMOVE_WALLET` (`src/main/walletRemoval.ts`): a main-drawn confirmation
+  (default Cancel) precedes any deletion, the ciphertext is deleted before the
+  keychain entry, and the unlock window is raised when the removed account
+  owned the open session. The wallet renderer is reloaded afterwards so its
+  account list re-hydrates from the signer's seed files; it never has to be
+  trusted to clean up after a removal it did not perform.
 - **Settings store holds no secrets** (`src/main/settingsFile.ts`,
   `userData/settings.json`): a versioned, zod-strict envelope
   (`autolockMs`, `biometricUnlock`) written atomically at mode `0600` like the
