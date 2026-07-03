@@ -175,6 +175,17 @@ async function handle(req: SignerRequest): Promise<void> {
         }
         return;
       }
+      case 'signer:setAutolock': {
+        // Re-arm the idle timer with the new bound; no-op success when locked
+        // (the bound is applied by the next unlock). Reject a non-positive or
+        // non-finite bound: a NaN timer would fire immediately.
+        if (!Number.isFinite(req.autolockMs) || req.autolockMs <= 0) {
+          throw new Error('invalid autolock bound');
+        }
+        session.setAutolock(req.autolockMs, now);
+        send({ id: req.id, ok: true, type: 'signer:setAutolock', result: null });
+        return;
+      }
       case 'signer:lock': {
         session.lock();
         send({ id: req.id, ok: true, type: 'signer:lock', result: null });

@@ -12,7 +12,7 @@
  */
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { AUTOLOCK_MS } from './config';
+import { getEffectiveAutolockMs } from './settingsFile';
 import {
   getActiveAddress,
   listSeeds,
@@ -139,7 +139,7 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     try {
-      await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password });
+      await deps.signer.unlock({ encrypted, autolockMs: await getEffectiveAutolockMs(), password });
       // Unlocking an account selects it (the picker may have chosen a
       // different wallet than the previously active one).
       await setActiveAddress(encrypted.address);
@@ -159,7 +159,7 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const kekHex = await deps.keyVault.retrieve(encrypted.address);
     if (!kekHex) return { ok: false, error: 'Biometric unlock is unavailable. Use your password.' };
     try {
-      await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+      await deps.signer.unlock({ encrypted, autolockMs: await getEffectiveAutolockMs(), kekHex });
       await setActiveAddress(encrypted.address);
       finishUnlock(deps);
       return { ok: true };
