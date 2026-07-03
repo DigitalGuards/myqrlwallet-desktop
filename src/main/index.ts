@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
+import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
+import { logMain } from './log';
 import { registerIpcHandlers } from './ipc';
 import {
   buildContentSecurityPolicy,
@@ -21,8 +23,11 @@ import {
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
 import {
+  focusUnlockWindow,
+  isUnlockWindowShown,
   notifyUnlockedExternally,
   registerUnlockIpc,
+  setOnUnlocked,
   showUnlockWindow,
   type UnlockDeps,
 } from './unlockWindow';
@@ -44,18 +49,104 @@ const signer = new SignerBridge(() => {
   }
 });
 
+/**
+ * dApp-connect URI ingress (OS qrlconnect:// protocol handler). Delivery
+ * surfaces the window and forwards the shape-validated URI to the renderer,
+ * whose consent modal gates any relay contact. Focusing here is correct: the
+ * user just clicked a connect link intending to open the wallet.
+ */
+const dappIngress = new DappUriIngress({
+  deliver: (uri) => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) {
+      logMain('[ingress] deliver failed: no window (will re-buffer)');
+      return false;
+    }
+    // Live check, not event bookkeeping: delivering into a mid-load document
+    // would race the renderer's listener registration, so buffer and let the
+    // did-finish-load flush re-deliver.
+    if (win.webContents.isLoadingMainFrame()) {
+      logMain('[ingress] deliver deferred: renderer mid-load (will flush on load)');
+      return false;
+    }
+    // Single-window lock screen invariant (unlockWindow.ts): while locked the
+    // hidden wallet window must never be revealed or focused. A protocol
+    // launch while locked would otherwise show the full wallet UI (balances,
+    // history, the consent modal) above the unlock window without a password.
+    // Buffer instead and surface the unlock window; setOnUnlocked flushes.
+    if (isUnlockWindowShown()) {
+      focusUnlockWindow();
+      logMain('[ingress] deliver deferred: wallet locked (buffered until unlock)');
+      return false;
+    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send(EVENTS.DAPP_CONNECT_URI, uri);
+    logMain(
+      `[ingress] URI delivered to renderer (${uri.length} chars, window visible=${win.isVisible()})`,
+    );
+    return true;
+  },
+});
+
 app.setName('MyQRLWallet');
 // Hardening: a single instance, and no remote-content surprises.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  // Duplicate instance (protocol launch while running): the lock call already
+  // handed our argv to the primary. exit(), not quit(): quit() lets the rest
+  // of this module keep booting, which raced whenReady and wrote confusing
+  // duplicate registration/boot lines into the primary's log.
+  app.exit(0);
 }
 
-app.on('second-instance', () => {
-  if (mainWindow) {
+// Register as the qrlconnect:// handler so dApp "open in desktop wallet"
+// links reach us. Packaged builds register the bare exe; unpackaged dev runs
+// must pin execPath + the app path or Windows would launch a bare electron.
+if (process.defaultApp) {
+  if (process.argv.length >= 2 && process.argv[1]) {
+    const ok = app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [
+      path.resolve(process.argv[1]),
+    ]);
+    logMain(`[ingress] protocol registration (dev): ${ok ? 'ok' : 'FAILED'}`);
+  }
+} else {
+  const ok = app.setAsDefaultProtocolClient('qrlconnect');
+  logMain(`[ingress] protocol registration: ${ok ? 'ok' : 'FAILED'}`);
+}
+
+app.on('second-instance', (_event, argv) => {
+  // While locked, the unlock window is the only surface allowed on screen:
+  // focusing the hidden main window here could reveal it on some platforms.
+  if (isUnlockWindowShown()) {
+    focusUnlockWindow();
+  } else if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+  // Windows/Linux: a protocol launch while we are running lands in the second
+  // instance's argv. Only the first qrlconnect: argument is treated as data.
+  const uri = extractDappUriFromArgv(argv);
+  if (uri) {
+    // Log shape validity separately so a 'rejected' distinguishes a malformed
+    // URI (clipboard mangling, truncation) from the hostile-flood rate limit.
+    const result = dappIngress.offer(uri);
+    logMain(
+      `[ingress] second-instance URI (${uri.length} chars, shape-valid=${isValidDappUri(uri)}) -> ${result}`,
+    );
+  } else {
+    logMain(`[ingress] second-instance without qrlconnect URI (argv len=${argv.length})`);
+  }
+});
+
+// macOS: protocol launches arrive via open-url (register before 'ready').
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  const result = dappIngress.offer(url);
+  logMain(
+    `[ingress] open-url URI (${url.length} chars, shape-valid=${isValidDappUri(url)}) -> ${result}`,
+  );
 });
 
 const RENDERER_DIR = path.join(__dirname, '../renderer');
@@ -173,6 +264,14 @@ function createWindow(startLocked = false): void {
     mainWindow = null;
   });
 
+  // A cold-start protocol launch reaches us before the renderer exists; the
+  // ingress buffers it (deliver() sees the main frame mid-load) and flushes
+  // here. Reloads re-fire this event, so a re-buffered URI is re-delivered.
+  mainWindow.webContents.on('did-finish-load', () => {
+    logMain('[ingress] renderer loaded: flushing any buffered URI');
+    dappIngress.rendererReady();
+  });
+
   const devUrl = rendererDevUrl();
   if (devUrl) {
     // Development only. Production ALWAYS uses loadFile (the brief's mandate).
@@ -185,6 +284,7 @@ function createWindow(startLocked = false): void {
 app
   .whenReady()
   .then(async () => {
+    logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
@@ -252,6 +352,12 @@ app
 
     const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
     registerUnlockIpc(unlockDeps);
+    // A qrlconnect:// URI that arrived while locked was buffered (deliver()
+    // refuses to reveal the hidden wallet window); flush it now that the
+    // wallet window is visible again.
+    setOnUnlocked(() => {
+      dappIngress.rendererReady();
+    });
     registerIpcHandlers({
       getWindow: () => mainWindow,
       signer,
@@ -264,6 +370,16 @@ app
     // ready-to-show is gated deterministically (no race against showUnlockWindow).
     const lockedAtStartup = await hasAnySeed();
     createWindow(lockedAtStartup);
+
+    // Cold start via a protocol click (Windows/Linux): the URI is in OUR argv.
+    // Buffered by the ingress until the renderer finishes loading.
+    const coldStartUri = extractDappUriFromArgv(process.argv.slice(1));
+    if (coldStartUri) {
+      const result = dappIngress.offer(coldStartUri);
+      logMain(
+        `[ingress] cold-start URI (${coldStartUri.length} chars, shape-valid=${isValidDappUri(coldStartUri)}) -> ${result}`,
+      );
+    }
 
     // If a wallet already exists, the freshly-forked signer is locked: gate the
     // app behind the native unlock window before the wallet can be touched.
@@ -281,6 +397,7 @@ app
     // warning nobody sees. Fail loudly instead: native error box, then exit
     // non-zero. showErrorBox is safe before any window exists.
     const message = err instanceof Error ? err.message : String(err);
+    logMain(`[boot] startup FAILED: ${message}`);
     dialog.showErrorBox(
       'MyQRLWallet failed to start',
       `${message}\n\nThe app cannot continue and will close. If this keeps happening, reinstall MyQRLWallet.`,
