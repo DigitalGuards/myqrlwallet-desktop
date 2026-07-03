@@ -30,6 +30,7 @@ const api: QrlWalletApi = {
   importWallet: (req) => ipcRenderer.invoke(IPC.IMPORT_WALLET, req),
   sendRawTransaction: (req) => ipcRenderer.invoke(IPC.SEND_RAW_TRANSACTION, req),
   dappRequestAttention: () => ipcRenderer.invoke(IPC.DAPP_REQUEST_ATTENTION),
+  openDesktopSettings: () => ipcRenderer.invoke(IPC.OPEN_DESKTOP_SETTINGS),
   onLockStateChanged: (cb) => {
     // Wrap the callback in a closure rather than handing out ipcRenderer.on.
     const listener = (_event: unknown, locked: boolean): void => cb(locked);

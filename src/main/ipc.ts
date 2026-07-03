@@ -31,6 +31,7 @@ import {
   writeSeed,
 } from './seedFile';
 import { isTrustedSender } from './security';
+import { isUnlockWindowShown } from './unlockWindow';
 import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
 import {
@@ -58,6 +59,9 @@ interface Deps {
   /** Tear down a live native unlock window after a renderer-driven unlock, so
    * the two unlock paths cannot desync (window shown while already unlocked). */
   notifyUnlocked: () => void;
+  /** Show/focus the native desktop settings window (no data crosses; the
+   * window itself refuses to open while locked). */
+  showSettings: () => void;
 }
 
 // Cache ONLY a successful read: rpc.getChainId throws on an unreachable node,
@@ -73,7 +77,7 @@ const sameAccount = (a: string | null | undefined, b: string | null | undefined)
   typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
 
 export function registerIpcHandlers(deps: Deps): void {
-  const { getWindow, signer, keyVault, showUnlock, notifyUnlocked } = deps;
+  const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
   /** Wrap a handler with sender validation + (optional) schema parse. */
   function handle<S extends z.ZodTypeAny, R>(
@@ -327,6 +331,16 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.SEND_RAW_TRANSACTION, SendRawTransactionRequestSchema, (req) =>
     rpc.sendRawTransaction(req.rawTx),
   );
+
+  // ---- desktop settings window ---------------------------------------------
+  // The renderer may only ASK main to show/focus the native settings window;
+  // no data crosses in either direction and no main-owned setting is readable
+  // or writable over the renderer bridge. Rejected while locked: the unlock
+  // window must stay the only surface on screen.
+  handle(IPC.OPEN_DESKTOP_SETTINGS, null, async () => {
+    if (isUnlockWindowShown()) throw new Error('wallet is locked');
+    showSettings();
+  });
 
   // ---- dApp-connect attention ---------------------------------------------
   // A restricted dApp request arrived while the window is unfocused/minimised:

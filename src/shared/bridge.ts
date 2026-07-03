@@ -73,6 +73,13 @@ export interface QrlWalletApi {
    * (taskbar flash / dock bounce; never steals focus). Rate-limited in main. */
   dappRequestAttention(): Promise<void>;
 
+  // ---- desktop settings -----------------------------------------------------
+  /** Ask main to show/focus the native desktop settings window. Fire-and-ask:
+   * no data crosses in either direction (main-owned settings are never
+   * readable or writable from the renderer) and the request is rejected while
+   * the wallet is locked. */
+  openDesktopSettings(): Promise<void>;
+
   // ---- events -------------------------------------------------------------
   /** Subscribe to lock-state changes (e.g. autolock). Returns an unsubscribe. */
   onLockStateChanged(cb: (locked: boolean) => void): () => void;
