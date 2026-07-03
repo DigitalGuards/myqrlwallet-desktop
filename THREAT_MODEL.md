@@ -166,6 +166,16 @@ WALLET_INFO), or spam the wallet with pairing prompts.
   facts) remains the gate for anything that spends. Signature-request
   provenance is renderer-supplied and labelled unverified in the confirm
   dialog (`DAppOriginSchema`, `src/main/confirm.ts`).
+- Lock interaction: while the wallet is locked the ingress buffers the URI and
+  surfaces only the unlock window; delivery (which reveals and focuses the
+  wallet window) happens after a successful unlock. A protocol launch must
+  never become a lock-screen bypass.
+- Liveness invariant the renderer relies on: `REQUEST_SIGNATURE` must always
+  settle (approve, reject, error, or signer-exit rejection). The renderer's
+  approval card deliberately blocks all dismissal while a signing call is in
+  flight (double-answer race), so a never-settling request would wedge it;
+  `signerBridge` enforces this via per-request timeouts and rejecting all
+  pending requests on signer exit.
 
 ## Honest tradeoffs already noted in the code
 

@@ -23,8 +23,11 @@ import {
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
 import {
+  focusUnlockWindow,
+  isUnlockWindowShown,
   notifyUnlockedExternally,
   registerUnlockIpc,
+  setOnUnlocked,
   showUnlockWindow,
   type UnlockDeps,
 } from './unlockWindow';
@@ -66,6 +69,16 @@ const dappIngress = new DappUriIngress({
       logMain('[ingress] deliver deferred: renderer mid-load (will flush on load)');
       return false;
     }
+    // Single-window lock screen invariant (unlockWindow.ts): while locked the
+    // hidden wallet window must never be revealed or focused. A protocol
+    // launch while locked would otherwise show the full wallet UI (balances,
+    // history, the consent modal) above the unlock window without a password.
+    // Buffer instead and surface the unlock window; setOnUnlocked flushes.
+    if (isUnlockWindowShown()) {
+      focusUnlockWindow();
+      logMain('[ingress] deliver deferred: wallet locked (buffered until unlock)');
+      return false;
+    }
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -104,7 +117,11 @@ if (process.defaultApp) {
 }
 
 app.on('second-instance', (_event, argv) => {
-  if (mainWindow) {
+  // While locked, the unlock window is the only surface allowed on screen:
+  // focusing the hidden main window here could reveal it on some platforms.
+  if (isUnlockWindowShown()) {
+    focusUnlockWindow();
+  } else if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
@@ -335,6 +352,12 @@ app
 
     const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
     registerUnlockIpc(unlockDeps);
+    // A qrlconnect:// URI that arrived while locked was buffered (deliver()
+    // refuses to reveal the hidden wallet window); flush it now that the
+    // wallet window is visible again.
+    setOnUnlocked(() => {
+      dappIngress.rendererReady();
+    });
     registerIpcHandlers({
       getWindow: () => mainWindow,
       signer,

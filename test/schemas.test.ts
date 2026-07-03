@@ -353,6 +353,14 @@ test('dApp origin rejects oversized, non-http(s), control-char and extra-keyed v
   // control chars in the display name (dialog spoofing via injected newlines)
   assert.equal(parse({ ...validOrigin, name: 'evil\nOnly approve: yes' }), false);
   assert.equal(parse({ ...validOrigin, name: 'evil\u0007bell' }), false);
+  // C1 controls, Unicode line/paragraph separators, bidi marks and overrides:
+  // the same dialog-spoofing class, outside the C0 range.
+  assert.equal(parse({ ...validOrigin, name: 'evil\u0085next-line' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2028Only approve: yes' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2029para' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u202egnihsihp' }), false, 'RLO override');
+  assert.equal(parse({ ...validOrigin, name: 'evil\u200e' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2066isolate' }), false);
   // dangerous URL schemes
   assert.equal(parse({ ...validOrigin, url: 'javascript:alert(1)' }), false);
   assert.equal(parse({ ...validOrigin, url: 'file:///etc/passwd' }), false);

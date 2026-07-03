@@ -37,6 +37,35 @@ let unlockWin: BrowserWindow | null = null;
 // 'close' handler does not treat that as a user dismissal (which quits).
 let unlocked = false;
 let ipcRegistered = false;
+let onUnlockedCallback: (() => void) | null = null;
+
+/**
+ * True while the lock screen owns the display (an unlock window is up and the
+ * unlock has not completed). Consumers must not reveal or focus the hidden
+ * main wallet window while this holds: the single-window lock screen is a
+ * documented invariant of this module.
+ */
+export function isUnlockWindowShown(): boolean {
+  return unlockWin !== null && !unlockWin.isDestroyed() && !unlocked;
+}
+
+/** Bring the unlock window to the front (protocol launches while locked). */
+export function focusUnlockWindow(): void {
+  if (unlockWin && !unlockWin.isDestroyed()) {
+    if (unlockWin.isMinimized()) unlockWin.restore();
+    unlockWin.focus();
+  }
+}
+
+/**
+ * Register a hook that fires after EVERY successful unlock (both the native
+ * window flow and a renderer-driven unlock routed through
+ * notifyUnlockedExternally), once the main window is visible again. Used by
+ * the dApp URI ingress to flush a connection URI that arrived while locked.
+ */
+export function setOnUnlocked(cb: () => void): void {
+  onUnlockedCallback = cb;
+}
 
 function notifyMain(deps: UnlockDeps, locked: boolean): void {
   const win = deps.getMainWindow();
@@ -52,6 +81,7 @@ function finishUnlock(deps: UnlockDeps): void {
   const main = deps.getMainWindow();
   if (main && !main.isDestroyed()) main.show();
   if (unlockWin && !unlockWin.isDestroyed()) unlockWin.close();
+  onUnlockedCallback?.();
 }
 
 /**
