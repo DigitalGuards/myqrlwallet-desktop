@@ -32,6 +32,7 @@ import {
 } from './seedFile';
 import { isTrustedSender } from './security';
 import { isUnlockWindowShown } from './unlockWindow';
+import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
 import {
@@ -227,34 +228,27 @@ export function registerIpcHandlers(deps: Deps): void {
   // given, mirroring the old single-wallet wipe): delete its encrypted seed
   // from disk and clear its OS-keychain entry. Reachable only behind the
   // renderer's confirmation UI, and gated by the trusted main-drawn
-  // confirmation (default Cancel), exactly like the signing path.
+  // confirmation (default Cancel), exactly like the signing path. The flow
+  // itself (ordering invariants) is shared with the native settings window:
+  // src/main/walletRemoval.ts.
   handle(IPC.REMOVE_WALLET, RemoveWalletRequestSchema, async (req) => {
-    const target = req?.address ?? (await getActiveAddress());
-    if (!target) throw new Error('no wallet to remove');
-    const seed = await readSeedByAddress(target);
-    if (!seed) throw new Error('no such wallet on this device');
-    const approved = await confirmRemoveWallet(requireWindow(), seed.address);
-    if (!approved) throw new Error('user rejected wallet removal');
-    // Drop the session only when it belongs to the wallet being removed;
-    // removing a background wallet must not lock the one in use.
-    const st = await signer.status();
-    const sessionWasTarget = st.unlocked && sameAccount(st.address, seed.address);
-    if (sessionWasTarget) {
-      await signer.lock();
-      emitLockState(true);
-    }
-    // Delete the security-relevant ciphertext FIRST so the wallet is
-    // unrecoverable even if the keychain clear then fails (a bare KEK with no
-    // matching ciphertext is useless). Log, do not swallow, a clear failure.
-    await deleteSeed(seed.address);
-    await keyVault
-      .delete(seed.address)
-      .catch((err) => console.error('removeWallet: keychain clear failed', err));
-    // Single-window lock invariant: if the open session died and other wallets
-    // remain, the app is now locked, so raise the native unlock window for the
-    // (self-healed) active wallet. After removing the LAST wallet there is
-    // nothing to unlock and the renderer's create/import flow shows instead.
-    if (sessionWasTarget && (await hasAnySeed())) showUnlock();
+    await removeWalletFlow(
+      {
+        signer,
+        keyVault,
+        seeds: {
+          readByAddress: readSeedByAddress,
+          getActive: getActiveAddress,
+          delete: deleteSeed,
+          hasAny: hasAnySeed,
+        },
+        confirm: (address) => confirmRemoveWallet(requireWindow(), address),
+        emitLockState,
+        showUnlock,
+        warn: (message) => console.error(message),
+      },
+      req?.address,
+    );
     return buildStatus();
   });
 

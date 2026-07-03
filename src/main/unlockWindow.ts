@@ -38,6 +38,7 @@ let unlockWin: BrowserWindow | null = null;
 let unlocked = false;
 let ipcRegistered = false;
 let onUnlockedCallback: (() => void) | null = null;
+let onUnlockShownCallback: (() => void) | null = null;
 
 /**
  * True while the lock screen owns the display (an unlock window is up and the
@@ -65,6 +66,16 @@ export function focusUnlockWindow(): void {
  */
 export function setOnUnlocked(cb: () => void): void {
   onUnlockedCallback = cb;
+}
+
+/**
+ * Register a hook that fires whenever the lock screen takes over the display
+ * (every showUnlockWindow call). Used by index.ts to close the native settings
+ * window: while locked, the unlock window must be the ONLY surface on screen,
+ * and settings actions (autolock, wallet removal) must not be reachable.
+ */
+export function setOnUnlockShown(cb: () => void): void {
+  onUnlockShownCallback = cb;
 }
 
 function notifyMain(deps: UnlockDeps, locked: boolean): void {
@@ -171,6 +182,12 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
 /** Show (or focus) the app-owned unlock window; hide the main window while locked. */
 export function showUnlockWindow(deps: UnlockDeps): void {
+  // The lock screen is taking over: give the registered hook the chance to
+  // tear down any other app-owned surface (the settings window) FIRST, so the
+  // unlock window is the only thing on screen. Runs on the focus
+  // short-circuit too: it must hold even if the settings window somehow
+  // appeared after the lock.
+  onUnlockShownCallback?.();
   // Short-circuit only to an EXISTING, still-locked window. A window mid-close
   // after a successful unlock (unlocked === true) must fall through so a fresh one
   // is built rather than focusing a dying window.

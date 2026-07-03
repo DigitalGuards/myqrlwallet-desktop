@@ -22,13 +22,19 @@ import {
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
-import { registerSettingsIpc, showSettingsWindow, type SettingsDeps } from './settingsWindow';
+import {
+  closeSettingsWindow,
+  registerSettingsIpc,
+  showSettingsWindow,
+  type SettingsDeps,
+} from './settingsWindow';
 import {
   focusUnlockWindow,
   isUnlockWindowShown,
   notifyUnlockedExternally,
   registerUnlockIpc,
   setOnUnlocked,
+  setOnUnlockShown,
   showUnlockWindow,
   type UnlockDeps,
 } from './unlockWindow';
@@ -405,6 +411,7 @@ app
       signer,
       keyVault,
       reregisterProtocol: registerQrlconnectProtocol,
+      showUnlock: () => showUnlockWindow(unlockDeps),
     };
     registerSettingsIpc(settingsDeps);
     installApplicationMenu(settingsDeps);
@@ -413,6 +420,11 @@ app
     // wallet window is visible again.
     setOnUnlocked(() => {
       dappIngress.rendererReady();
+    });
+    // Single-surface lock screen: whenever the unlock window takes over the
+    // display, the settings window (with its autolock/removal actions) closes.
+    setOnUnlockShown(() => {
+      closeSettingsWindow();
     });
     registerIpcHandlers({
       getWindow: () => mainWindow,
