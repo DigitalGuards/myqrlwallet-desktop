@@ -157,6 +157,13 @@ function SettingsApp() {
       <header className="settings-header">
         <img className="settings-logo" src={logoUrl} alt="" aria-hidden="true" />
         <h1 className="settings-title">Settings</h1>
+        <button
+          className="settings-button settings-close"
+          type="button"
+          onClick={() => window.close()}
+        >
+          Back to wallet
+        </button>
       </header>
 
       {loading ? (

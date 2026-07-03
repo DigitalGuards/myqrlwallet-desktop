@@ -79,6 +79,12 @@ body {
   margin: 0;
 }
 
+/* The way back from the takeover screen (Esc works too; the OS titlebar X is
+   easy to miss on a full-bleed window). */
+.settings-close {
+  margin-left: auto;
+}
+
 .settings-body {
   flex: 1;
   display: flex;
