@@ -11,7 +11,10 @@
  */
 import { z } from 'zod';
 
-/** A QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated). */
+/** A QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated).
+ * 20-byte format ONLY: when the 64-byte address work (Q + 128 hex) lands,
+ * this schema, `addressOf`'s identity slice (signer/signing.ts), and the
+ * signature-request account binding must all move together. */
 export const AddressSchema = z
   .string()
   .regex(/^Q[0-9a-fA-F]{40}$/, 'must be a Q-prefixed 20-byte hex address');
@@ -80,16 +83,25 @@ export const UnsignedTransactionSchema = z
  * label so the user knows which dApp asked, while the tx facts themselves
  * stay main-computed. Strictly bounded so it cannot smuggle bulk data.
  */
+/* eslint-disable no-control-regex -- the whole point of this pattern is to reject control chars */
+// Reject C0+C1 control chars, Unicode line/paragraph separators (U+2028/9),
+// bidi marks (U+200E/F) and bidi overrides/isolates (U+202A-E, U+2066-9) in a
+// dApp display name: it is rendered into the trusted confirm dialog, so
+// line-break/bidi injection must die at the boundary.
+const DAPP_NAME_SAFE =
+  /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]+$/;
+/* eslint-enable no-control-regex */
+
 export const DAppOriginSchema = z
   .object({
     via: z.literal('dapp'),
-    /** dApp display name from ORIGINATOR_INFO; control chars rejected. */
-    name: z
-      .string()
-      .min(1)
-      .max(64)
-      // eslint-disable-next-line no-control-regex -- rejecting control chars is the point
-      .regex(/^[^\u0000-\u001f\u007f]+$/, 'control characters not allowed'),
+    /** dApp display name from ORIGINATOR_INFO. Rejects C0+C1 control chars,
+     * Unicode line/paragraph separators (U+2028/U+2029), bidi marks
+     * (U+200E/U+200F), and bidi overrides/isolates (U+202A-E, U+2066-9): the
+     * name is rendered into the trusted confirm dialog, so line-break/bidi
+     * injection dies at the boundary (defense-in-depth; the qrlconnect URI
+     * ingress is ASCII-only anyway). */
+    name: z.string().min(1).max(64).regex(DAPP_NAME_SAFE, 'control characters not allowed'),
     /** dApp URL from ORIGINATOR_INFO; a plain http(s) URL, or empty when the
      * dApp supplied something unusable (the renderer sanitiser maps a
      * non-http(s)/unparseable URL to '' rather than dropping provenance). */
