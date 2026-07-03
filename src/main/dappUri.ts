@@ -55,9 +55,13 @@ export type DappUriOfferResult = 'delivered' | 'buffered' | 'rejected';
 
 interface DappUriIngressDeps {
   /**
-   * Hand a validated URI to the renderer. Returns false when the renderer
-   * cannot receive right now (window gone mid-flight); the URI is then
-   * re-buffered for the next rendererReady().
+   * Hand a validated URI to the renderer. MUST check live window state and
+   * return false when the renderer cannot receive right now (no window,
+   * window destroyed, main frame mid-load); the URI is then buffered for the
+   * next rendererReady(). Readiness is deliberately NOT tracked here with
+   * did-start-loading/did-finish-load bookkeeping: those events do not pair
+   * one-to-one (a stray did-start-loading left the flag stuck false in the
+   * field, silently buffering every warm-start URI forever).
    */
   deliver: (uri: string) => boolean;
   /** Injectable clock for tests. */
@@ -69,7 +73,6 @@ export class DappUriIngress {
   private readonly now: () => number;
   private pending: string | null = null;
   private lastAcceptedAt = Number.NEGATIVE_INFINITY;
-  private ready = false;
 
   constructor(deps: DappUriIngressDeps) {
     this.deliver = deps.deliver;
@@ -78,31 +81,25 @@ export class DappUriIngress {
 
   /**
    * Offer a raw URI from any ingress path (argv, second-instance, open-url).
-   * Invalid or rate-limited URIs are dropped; otherwise the URI is delivered
-   * immediately (renderer ready) or buffered (depth 1, latest wins).
+   * Invalid or rate-limited URIs are dropped; otherwise delivery is attempted
+   * immediately and the URI is buffered on failure (depth 1, latest wins).
    */
   offer(raw: string): DappUriOfferResult {
     if (!isValidDappUri(raw)) return 'rejected';
     const t = this.now();
     if (t - this.lastAcceptedAt < DAPP_URI_RATE_LIMIT_MS) return 'rejected';
     this.lastAcceptedAt = t;
-    if (this.ready && this.deliver(raw)) return 'delivered';
+    if (this.deliver(raw)) return 'delivered';
     this.pending = raw;
     return 'buffered';
   }
 
   /** The renderer finished loading: flush any buffered URI. */
   rendererReady(): void {
-    this.ready = true;
     if (this.pending !== null) {
       const uri = this.pending;
       this.pending = null;
       if (!this.deliver(uri)) this.pending = uri;
     }
-  }
-
-  /** The renderer went away (window closed / reload started): buffer again. */
-  rendererGone(): void {
-    this.ready = false;
   }
 }

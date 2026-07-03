@@ -59,6 +59,13 @@ const dappIngress = new DappUriIngress({
       logMain('[ingress] deliver failed: no window (will re-buffer)');
       return false;
     }
+    // Live check, not event bookkeeping: delivering into a mid-load document
+    // would race the renderer's listener registration, so buffer and let the
+    // did-finish-load flush re-deliver.
+    if (win.webContents.isLoadingMainFrame()) {
+      logMain('[ingress] deliver deferred: renderer mid-load (will flush on load)');
+      return false;
+    }
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -74,7 +81,11 @@ app.setName('MyQRLWallet');
 // Hardening: a single instance, and no remote-content surprises.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  // Duplicate instance (protocol launch while running): the lock call already
+  // handed our argv to the primary. exit(), not quit(): quit() lets the rest
+  // of this module keep booting, which raced whenReady and wrote confusing
+  // duplicate registration/boot lines into the primary's log.
+  app.exit(0);
 }
 
 // Register as the qrlconnect:// handler so dApp "open in desktop wallet"
@@ -234,13 +245,11 @@ function createWindow(startLocked = false): void {
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
-    dappIngress.rendererGone();
   });
 
   // A cold-start protocol launch reaches us before the renderer exists; the
-  // ingress buffers it and flushes here. Reloads re-fire both events, so the
-  // buffer never delivers into a half-loaded document.
-  mainWindow.webContents.on('did-start-loading', () => dappIngress.rendererGone());
+  // ingress buffers it (deliver() sees the main frame mid-load) and flushes
+  // here. Reloads re-fire this event, so a re-buffered URI is re-delivered.
   mainWindow.webContents.on('did-finish-load', () => {
     logMain('[ingress] renderer loaded: flushing any buffered URI');
     dappIngress.rendererReady();
