@@ -21,7 +21,7 @@ import { MLDSA87, newWalletFromExtendedSeed } from '@theqrl/wallet.js';
 import Web3, { utils as web3Utils } from '@theqrl/web3';
 import { shake256 } from '@noble/hashes/sha3.js';
 import { MLDSA87 as SIZES, SCHEME } from '../shared/constants';
-import type { SignatureResult, UnsignedTransaction } from '../shared/schemas';
+import type { SignatureRequest, SignatureResult, UnsignedTransaction } from '../shared/schemas';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 
@@ -142,6 +142,31 @@ export function addressFromHexSeed(hexSeed: string): string {
 }
 
 /**
+ * The account a signature request claims to sign with (message/typedData carry
+ * an explicit `signer`; transactions bind via `tx.from`).
+ */
+export function expectedSignerOf(request: SignatureRequest): string {
+  return request.kind === 'transaction' ? request.tx.from : request.signer;
+}
+
+/**
+ * Enforce that a signature request targets exactly the unlocked session's
+ * account. Renderer account state and signer session state are separate and
+ * can diverge (account switch, re-unlock into another wallet); without this
+ * check the signer would silently sign with whatever key is unlocked, i.e. a
+ * dApp could receive a signature (or a spend) from an account it never asked
+ * for. Throws on mismatch; comparison is case-insensitive (EIP-55 casing).
+ */
+export function assertSessionSigner(request: SignatureRequest, sessionAddress: string): void {
+  const expected = expectedSignerOf(request);
+  if (expected.toLowerCase() !== sessionAddress.toLowerCase()) {
+    throw new Error(
+      'signing account mismatch: request targets a different account than the unlocked session',
+    );
+  }
+}
+
+/**
  * `qrl_signMessage` v1, byte-faithful to the web wallet:
  *   digest = SHAKE256("QRL-SIGN-MSG-v1" || messageBytes, 64)
  *   sig    = ML-DSA-87.sign(digest, sk, hedged=true, ctx="QRL-SIGN-MSG-v1")
@@ -166,6 +191,7 @@ export function signMessage(hexSeed: string, messageHex: string): SignatureResul
       publicKey: bytesToHex(wallet.pk),
       signer: addressOf(wallet),
       digest: bytesToHex(digest),
+      schemeVersion: SCHEME.TAG_MSG,
     };
   } finally {
     wallet.zeroize();

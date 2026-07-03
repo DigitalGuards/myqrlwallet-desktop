@@ -15,7 +15,7 @@
  * wallet the session/unlock flows target; switching to a different account
  * drops the session and raises the native unlock window for the new account.
  */
-import { type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { AUTOLOCK_MS } from './config';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
@@ -170,6 +170,18 @@ export function registerIpcHandlers(deps: Deps): void {
         throw new Error('transaction chain id does not match the node; rebuild the transaction');
       }
     }
+    // Fail fast when the request targets a different account than the
+    // unlocked session, BEFORE drawing the modal: the signer enforces the
+    // same binding authoritatively, but the user should not be asked to
+    // approve something that cannot be signed. Also guarantees the account
+    // shown in the trusted confirm is the account that will sign.
+    const requestedSigner = req.kind === 'transaction' ? req.tx.from : req.signer;
+    const st = await signer.status();
+    if (!st.address || !sameAccount(requestedSigner, st.address)) {
+      throw new Error(
+        'signing account mismatch: request targets a different account than the unlocked session',
+      );
+    }
     const approved = await confirmSignature(requireWindow(), req);
     if (!approved) throw new Error('user rejected signature');
     return signer.sign(req, signingChainId);
@@ -310,4 +322,25 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.SEND_RAW_TRANSACTION, SendRawTransactionRequestSchema, (req) =>
     rpc.sendRawTransaction(req.rawTx),
   );
+
+  // ---- dApp-connect attention ---------------------------------------------
+  // A restricted dApp request arrived while the window is unfocused/minimised:
+  // surface it WITHOUT stealing focus (taskbar flash / dock bounce, and
+  // showInactive when hidden). Rate-limited so a compromised renderer can
+  // annoy, not strobe; it grants nothing else. Takes no argument.
+  let lastAttentionAt = Number.NEGATIVE_INFINITY;
+  const ATTENTION_RATE_LIMIT_MS = 5000;
+  handle(IPC.DAPP_REQUEST_ATTENTION, null, async () => {
+    const now = Date.now();
+    if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
+    lastAttentionAt = now;
+    const win = requireWindow();
+    if (!win.isVisible()) win.showInactive();
+    if (process.platform === 'darwin') {
+      app.dock?.bounce('informational');
+    } else {
+      // Windows/Linux: flash the taskbar entry; stops on focus.
+      win.flashFrame(true);
+    }
+  });
 }
