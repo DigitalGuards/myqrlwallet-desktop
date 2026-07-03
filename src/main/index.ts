@@ -22,6 +22,7 @@ import {
 } from './security';
 import { installPermissionHandlers } from './permissions';
 import { SignerBridge } from './signerBridge';
+import { registerSettingsIpc, showSettingsWindow, type SettingsDeps } from './settingsWindow';
 import {
   focusUnlockWindow,
   isUnlockWindowShown,
@@ -104,17 +105,25 @@ if (!gotLock) {
 // Register as the qrlconnect:// handler so dApp "open in desktop wallet"
 // links reach us. Packaged builds register the bare exe; unpackaged dev runs
 // must pin execPath + the app path or Windows would launch a bare electron.
-if (process.defaultApp) {
-  if (process.argv.length >= 2 && process.argv[1]) {
-    const ok = app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [
-      path.resolve(process.argv[1]),
-    ]);
-    logMain(`[ingress] protocol registration (dev): ${ok ? 'ok' : 'FAILED'}`);
+// Also re-invoked on demand by the settings window's "Re-register handler"
+// action (after OS handler theft by another app).
+function registerQrlconnectProtocol(): boolean {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2 && process.argv[1]) {
+      const ok = app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [
+        path.resolve(process.argv[1]),
+      ]);
+      logMain(`[ingress] protocol registration (dev): ${ok ? 'ok' : 'FAILED'}`);
+      return ok;
+    }
+    logMain('[ingress] protocol registration (dev): skipped (no app path in argv)');
+    return false;
   }
-} else {
   const ok = app.setAsDefaultProtocolClient('qrlconnect');
   logMain(`[ingress] protocol registration: ${ok ? 'ok' : 'FAILED'}`);
+  return ok;
 }
+registerQrlconnectProtocol();
 
 app.on('second-instance', (_event, argv) => {
   // While locked, the unlock window is the only surface allowed on screen:
@@ -150,6 +159,52 @@ app.on('open-url', (event, url) => {
 });
 
 const RENDERER_DIR = path.join(__dirname, '../renderer');
+
+/**
+ * Application menu. Replaces the previous drop-the-default-menu setup with a
+ * minimal template that preserves the standard roles and adds the one custom
+ * entry: Settings (CmdOrCtrl+,), which opens the native settings window.
+ * showSettingsWindow itself refuses while locked (focuses the unlock window
+ * instead), so the menu item is safe to leave enabled. On Windows/Linux the
+ * menu bar stays hidden (autoHideMenuBar) but the accelerator still works.
+ */
+function installApplicationMenu(settingsDeps: SettingsDeps): void {
+  const settingsItem: Electron.MenuItemConstructorOptions = {
+    label: 'Settings...',
+    accelerator: 'CmdOrCtrl+,',
+    click: () => showSettingsWindow(settingsDeps),
+  };
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: app.name,
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            settingsItem,
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        },
+        { role: 'editMenu' },
+        { role: 'windowMenu' },
+      ]),
+    );
+  } else {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        { label: 'File', submenu: [settingsItem, { type: 'separator' }, { role: 'quit' }] },
+      ]),
+    );
+  }
+}
 
 /**
  * The file-protocol handler does two jobs:
@@ -303,16 +358,9 @@ app
     // header (webRequest does not reliably cover file:// document loads).
     installFileProtocolHandler();
 
-    // Drop the default Electron menu (File/Edit/View/Window/Help): a wallet has no
-    // use for it. On macOS keep a minimal app + edit + window menu so the standard
-    // shortcuts (Cmd+Q, copy/paste, close) still work; elsewhere remove it entirely.
-    if (process.platform === 'darwin') {
-      Menu.setApplicationMenu(
-        Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
-      );
-    } else {
-      Menu.setApplicationMenu(null);
-    }
+    // The application menu (with the native Settings entry) is installed
+    // further down, once the signer/key-vault deps its click handler needs
+    // exist: see installApplicationMenu.
 
     // Strict CSP on the default session. In dev, also permit the Vite dev server
     // origin + its HMR websocket so the renderer can load with HMR.
@@ -352,6 +400,14 @@ app
 
     const unlockDeps: UnlockDeps = { getMainWindow: () => mainWindow, signer, keyVault };
     registerUnlockIpc(unlockDeps);
+    const settingsDeps: SettingsDeps = {
+      getMainWindow: () => mainWindow,
+      signer,
+      keyVault,
+      reregisterProtocol: registerQrlconnectProtocol,
+    };
+    registerSettingsIpc(settingsDeps);
+    installApplicationMenu(settingsDeps);
     // A qrlconnect:// URI that arrived while locked was buffered (deliver()
     // refuses to reveal the hidden wallet window); flush it now that the
     // wallet window is visible again.
@@ -364,6 +420,7 @@ app
       keyVault,
       showUnlock: () => showUnlockWindow(unlockDeps),
       notifyUnlocked: () => notifyUnlockedExternally(unlockDeps),
+      showSettings: () => showSettingsWindow(settingsDeps),
     });
 
     // Resolve the locked-at-startup decision BEFORE creating the window so its

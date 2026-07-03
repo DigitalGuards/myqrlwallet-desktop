@@ -98,11 +98,11 @@ export default [
     },
   },
 
-  // Browser-context surface: the native unlock window (src/unlock). Browser
+  // Browser-context surfaces: the native unlock + settings windows. Browser
   // globals, no Node globals. The crypto fence and the ipcRenderer-global ban
   // stay in force here (inherited from the base block).
   {
-    files: ['src/unlock/**/*.{ts,tsx}'],
+    files: ['src/unlock/**/*.{ts,tsx}', 'src/settings/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.browser,

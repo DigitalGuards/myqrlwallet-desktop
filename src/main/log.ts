@@ -20,12 +20,19 @@ const MAX_BYTES = 1024 * 1024; // rotate to .1 past 1MB; one spare generation
 
 let resolvedPath: string | null | undefined;
 
+/** The directory main.log lives in (userData/logs). Used by the settings
+ * window's "Open logs folder" action; kept here so the path never drifts
+ * from where logMain actually writes. */
+export function logsDir(): string {
+  return path.join(app.getPath('userData'), 'logs');
+}
+
 function logFilePath(): string | null {
   if (resolvedPath !== undefined) return resolvedPath;
   try {
     // userData derives from appData + app name (set before this runs) and is
     // available before app ready.
-    const dir = path.join(app.getPath('userData'), 'logs');
+    const dir = logsDir();
     mkdirSync(dir, { recursive: true });
     resolvedPath = path.join(dir, 'main.log');
   } catch {

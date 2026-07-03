@@ -55,6 +55,11 @@ export const IPC = {
    * DAPP_SHOW_WEBVIEW contract). Rate-limited in main; can only raise/flash
    * the window, never anything else. */
   DAPP_REQUEST_ATTENTION: 'wallet:dappRequestAttention',
+  /** Renderer asks main to show/focus the NATIVE desktop settings window
+   * (main-owned, drawn outside the renderer). No argument, no return data;
+   * rejected while locked. The renderer cannot read or write any main-owned
+   * setting through this or any other channel. */
+  OPEN_DESKTOP_SETTINGS: 'wallet:openDesktopSettings',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
