@@ -11,7 +11,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
 import { APP_ID, connectSrcOrigins } from './config';
-import { DappUriIngress, extractDappUriFromArgv } from './dappUri';
+import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
+import { logMain } from './log';
 import { registerIpcHandlers } from './ipc';
 import {
   buildContentSecurityPolicy,
@@ -54,11 +55,17 @@ const signer = new SignerBridge(() => {
 const dappIngress = new DappUriIngress({
   deliver: (uri) => {
     const win = mainWindow;
-    if (!win || win.isDestroyed()) return false;
+    if (!win || win.isDestroyed()) {
+      logMain('[ingress] deliver failed: no window (will re-buffer)');
+      return false;
+    }
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
     win.webContents.send(EVENTS.DAPP_CONNECT_URI, uri);
+    logMain(
+      `[ingress] URI delivered to renderer (${uri.length} chars, window visible=${win.isVisible()})`,
+    );
     return true;
   },
 });
@@ -75,10 +82,14 @@ if (!gotLock) {
 // must pin execPath + the app path or Windows would launch a bare electron.
 if (process.defaultApp) {
   if (process.argv.length >= 2 && process.argv[1]) {
-    app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [path.resolve(process.argv[1])]);
+    const ok = app.setAsDefaultProtocolClient('qrlconnect', process.execPath, [
+      path.resolve(process.argv[1]),
+    ]);
+    logMain(`[ingress] protocol registration (dev): ${ok ? 'ok' : 'FAILED'}`);
   }
 } else {
-  app.setAsDefaultProtocolClient('qrlconnect');
+  const ok = app.setAsDefaultProtocolClient('qrlconnect');
+  logMain(`[ingress] protocol registration: ${ok ? 'ok' : 'FAILED'}`);
 }
 
 app.on('second-instance', (_event, argv) => {
@@ -89,13 +100,25 @@ app.on('second-instance', (_event, argv) => {
   // Windows/Linux: a protocol launch while we are running lands in the second
   // instance's argv. Only the first qrlconnect: argument is treated as data.
   const uri = extractDappUriFromArgv(argv);
-  if (uri) dappIngress.offer(uri);
+  if (uri) {
+    // Log shape validity separately so a 'rejected' distinguishes a malformed
+    // URI (clipboard mangling, truncation) from the hostile-flood rate limit.
+    const result = dappIngress.offer(uri);
+    logMain(
+      `[ingress] second-instance URI (${uri.length} chars, shape-valid=${isValidDappUri(uri)}) -> ${result}`,
+    );
+  } else {
+    logMain(`[ingress] second-instance without qrlconnect URI (argv len=${argv.length})`);
+  }
 });
 
 // macOS: protocol launches arrive via open-url (register before 'ready').
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  dappIngress.offer(url);
+  const result = dappIngress.offer(url);
+  logMain(
+    `[ingress] open-url URI (${url.length} chars, shape-valid=${isValidDappUri(url)}) -> ${result}`,
+  );
 });
 
 const RENDERER_DIR = path.join(__dirname, '../renderer');
@@ -218,7 +241,10 @@ function createWindow(startLocked = false): void {
   // ingress buffers it and flushes here. Reloads re-fire both events, so the
   // buffer never delivers into a half-loaded document.
   mainWindow.webContents.on('did-start-loading', () => dappIngress.rendererGone());
-  mainWindow.webContents.on('did-finish-load', () => dappIngress.rendererReady());
+  mainWindow.webContents.on('did-finish-load', () => {
+    logMain('[ingress] renderer loaded: flushing any buffered URI');
+    dappIngress.rendererReady();
+  });
 
   const devUrl = rendererDevUrl();
   if (devUrl) {
@@ -232,6 +258,7 @@ function createWindow(startLocked = false): void {
 app
   .whenReady()
   .then(async () => {
+    logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
@@ -315,7 +342,12 @@ app
     // Cold start via a protocol click (Windows/Linux): the URI is in OUR argv.
     // Buffered by the ingress until the renderer finishes loading.
     const coldStartUri = extractDappUriFromArgv(process.argv.slice(1));
-    if (coldStartUri) dappIngress.offer(coldStartUri);
+    if (coldStartUri) {
+      const result = dappIngress.offer(coldStartUri);
+      logMain(
+        `[ingress] cold-start URI (${coldStartUri.length} chars, shape-valid=${isValidDappUri(coldStartUri)}) -> ${result}`,
+      );
+    }
 
     // If a wallet already exists, the freshly-forked signer is locked: gate the
     // app behind the native unlock window before the wallet can be touched.
@@ -333,6 +365,7 @@ app
     // warning nobody sees. Fail loudly instead: native error box, then exit
     // non-zero. showErrorBox is safe before any window exists.
     const message = err instanceof Error ? err.message : String(err);
+    logMain(`[boot] startup FAILED: ${message}`);
     dialog.showErrorBox(
       'MyQRLWallet failed to start',
       `${message}\n\nThe app cannot continue and will close. If this keeps happening, reinstall MyQRLWallet.`,
