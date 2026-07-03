@@ -101,8 +101,19 @@ test('SignatureRequest validates each arm and bounds payload size', () => {
     true,
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef' }).success,
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef', signer: ADDR })
+      .success,
     true,
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef' }).success,
+    false,
+    'message arm requires the signer binding',
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {} }).success,
+    false,
+    'typedData arm requires the signer binding',
   );
   assert.equal(
     SignatureRequestSchema.safeParse({ kind: 'nonsense', tx: validTx }).success,
@@ -111,11 +122,16 @@ test('SignatureRequest validates each arm and bounds payload size', () => {
   );
   const hugeMessage = '0x' + 'a'.repeat(2 * 64 * 1024 + 2);
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: hugeMessage }).success,
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: hugeMessage, signer: ADDR })
+      .success,
     false,
     'oversized message rejected',
   );
-  const hugePayload = { kind: 'typedData', payload: { big: 'a'.repeat(70 * 1024) } };
+  const hugePayload = {
+    kind: 'typedData',
+    payload: { big: 'a'.repeat(70 * 1024) },
+    signer: ADDR,
+  };
   assert.equal(
     SignatureRequestSchema.safeParse(hugePayload).success,
     false,
@@ -227,21 +243,30 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
   );
   // An empty message and an empty typedData payload are both valid.
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' }).success,
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x', signer: ADDR }).success,
     true,
   );
-  assert.equal(SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {} }).success, true);
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {}, signer: ADDR }).success,
+    true,
+  );
   // The message bound is on the TOTAL string length (incl. the 0x prefix).
   const maxLen = 2 * 64 * 1024;
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen - 2) })
-      .success,
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0x' + 'a'.repeat(maxLen - 2),
+      signer: ADDR,
+    }).success,
     true,
     'message at the length bound is accepted',
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen) })
-      .success,
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0x' + 'a'.repeat(maxLen),
+      signer: ADDR,
+    }).success,
     false,
     'message over the length bound is rejected',
   );
@@ -296,20 +321,29 @@ test('SignatureRequest accepts a bounded dApp origin block on every arm', () => 
     true,
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', origin: validOrigin })
-      .success,
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0xab',
+      signer: ADDR,
+      origin: validOrigin,
+    }).success,
     true,
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {}, origin: validOrigin })
-      .success,
+    SignatureRequestSchema.safeParse({
+      kind: 'typedData',
+      payload: {},
+      signer: ADDR,
+      origin: validOrigin,
+    }).success,
     true,
   );
 });
 
 test('dApp origin rejects oversized, non-http(s), control-char and extra-keyed values', () => {
   const parse = (origin: unknown) =>
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', origin }).success;
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', signer: ADDR, origin })
+      .success;
   // wrong discriminator
   assert.equal(parse({ ...validOrigin, via: 'wallet' }), false);
   // oversized name / url / channelId

@@ -21,6 +21,7 @@ import { aesGcmEncrypt } from './aead';
 import { deriveKek } from './kdf';
 import { SignerSession } from './session';
 import {
+  assertSessionSigner,
   deriveSeedFromHexSeed,
   deriveSeedFromMnemonic,
   generateMnemonic,
@@ -147,6 +148,10 @@ async function handle(req: SignerRequest): Promise<void> {
       case 'signer:sign': {
         if (!session.unlocked) throw new Error('locked');
         const { request } = req;
+        // The signer is the last line of defense: whatever main/renderer
+        // validated, never sign with a different account than the request
+        // names. session.address is non-null while unlocked.
+        assertSessionSigner(request, session.address ?? '');
         if (request.kind === 'transaction') {
           // req.chainId is authoritative (main read it from the node); the
           // signer binds the signed tx to it and ignores any renderer tx.chainId.

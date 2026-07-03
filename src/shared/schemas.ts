@@ -131,6 +131,12 @@ export const SignatureRequestSchema = z
       .object({
         kind: z.literal('message'),
         messageHex: HexSchema.max(2 * 64 * 1024),
+        // The account the caller intends to sign with. The signer REJECTS the
+        // request when this differs from the unlocked session's address, so a
+        // renderer whose account state has diverged from the signer (or a dApp
+        // session pinned to another account) can never obtain a signature from
+        // an unintended key. Transactions carry the same binding via tx.from.
+        signer: AddressSchema,
         origin: DAppOriginSchema.optional(),
       })
       .strict(),
@@ -140,6 +146,8 @@ export const SignatureRequestSchema = z
         // The wallet computes the digest; we keep the payload opaque here and
         // let the signer's typed-data hasher validate structure. Bounded below.
         payload: z.record(z.string(), z.unknown()),
+        // Same session-address binding as the message arm.
+        signer: AddressSchema,
         origin: DAppOriginSchema.optional(),
       })
       .strict(),
@@ -276,6 +284,12 @@ export interface SignatureResult {
   signer: string;
   /** SHAKE256 digest that was signed (present for message/typedData). */
   digest?: string;
+  /**
+   * Signing-scheme identifier (present for message/typedData), e.g.
+   * "QRL-SIGN-MSG-v1". Byte-matches the web wallet's response so dApps get an
+   * identical shape from both hosts.
+   */
+  schemeVersion?: string;
   /** For transactions: the 0x raw signed tx ready to broadcast. */
   rawTransaction?: string;
 }

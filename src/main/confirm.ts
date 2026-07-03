@@ -64,7 +64,10 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
       return {
         title: 'Confirm message signature',
         message: 'Sign this message with your wallet key?',
+        // req.signer is trustworthy to display: main verified it against the
+        // unlocked session before this modal, and the signer re-enforces it.
         detail:
+          `Account:  ${req.signer}\n` +
           `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
           originDetail(req.origin),
       };
@@ -72,7 +75,10 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
       return {
         title: 'Confirm typed-data signature',
         message: 'Sign this structured data with your wallet key?',
-        detail: `Payload keys: ${Object.keys(req.payload).join(', ')}` + originDetail(req.origin),
+        detail:
+          `Account:  ${req.signer}\n` +
+          `Payload keys: ${Object.keys(req.payload).join(', ')}` +
+          originDetail(req.origin),
       };
   }
 }

@@ -170,6 +170,18 @@ export function registerIpcHandlers(deps: Deps): void {
         throw new Error('transaction chain id does not match the node; rebuild the transaction');
       }
     }
+    // Fail fast when the request targets a different account than the
+    // unlocked session, BEFORE drawing the modal: the signer enforces the
+    // same binding authoritatively, but the user should not be asked to
+    // approve something that cannot be signed. Also guarantees the account
+    // shown in the trusted confirm is the account that will sign.
+    const requestedSigner = req.kind === 'transaction' ? req.tx.from : req.signer;
+    const st = await signer.status();
+    if (!st.address || !sameAccount(requestedSigner, st.address)) {
+      throw new Error(
+        'signing account mismatch: request targets a different account than the unlocked session',
+      );
+    }
     const approved = await confirmSignature(requireWindow(), req);
     if (!approved) throw new Error('user rejected signature');
     return signer.sign(req, signingChainId);
