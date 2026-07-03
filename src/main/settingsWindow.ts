@@ -195,7 +195,9 @@ export function showSettingsWindow(deps: SettingsDeps): void {
     maximizable: false,
     fullscreenable: false,
     show: false,
-    backgroundColor: '#0b0d12',
+    // Pre-paint color = the design-system canvas (--background, #020817) so
+    // the first frame matches settings.css instead of flashing a shade off.
+    backgroundColor: '#020817',
     title: 'MyQRLWallet Settings',
     autoHideMenuBar: true,
     ...(parent ? { parent } : {}),
