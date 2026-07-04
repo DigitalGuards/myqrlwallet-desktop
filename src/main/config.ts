@@ -2,9 +2,12 @@
  * Runtime configuration for the main process.
  *
  * RPC endpoints are read from the environment so a build can be repointed
- * without code changes; defaults track the QRL testnet-v2 node documented in
- * the workspace CLAUDE.md. `connect-src` in the CSP is derived from exactly
- * these origins so the renderer can reach the configured RPC and nothing else.
+ * without code changes; defaults are the wallet BACKEND's JSON-RPC proxies
+ * (the same path the bundled renderer uses), NOT bare node hosts: the proxy
+ * is CF-fronted HTTPS (reachable from consumer networks that drop plain HTTP
+ * to raw IPs) and does its own server-side node failover. `connect-src` in
+ * the CSP is derived from exactly these origins so the renderer can reach the
+ * configured RPC and nothing else.
  */
 function envUrl(name: string, fallback: string): string {
   const v = process.env[name];
@@ -17,11 +20,16 @@ function envUrl(name: string, fallback: string): string {
   }
 }
 
-/** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace). */
-export const RPC_URL = envUrl('QRL_RPC_URL', 'http://REDACTED:8545');
+/** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace): the dev backend's
+ * RPC proxy, matching the staging renderer's provider URL. */
+export const RPC_URL = envUrl('QRL_RPC_URL', 'https://dev.qrlwallet.com/api/qrl-rpc/testnet');
 
-/** Optional secondary endpoint (foundation public RPC) for read failover. */
-export const RPC_URL_SECONDARY = envUrl('QRL_RPC_URL_SECONDARY', 'http://209.250.255.226:8545');
+/** Secondary endpoint for failover: the prod backend's RPC proxy (an
+ * independent deployment over the same node pool). */
+export const RPC_URL_SECONDARY = envUrl(
+  'QRL_RPC_URL_SECONDARY',
+  'https://qrlwallet.com/api/qrl-rpc/testnet',
+);
 
 // The autolock idle timeout is no longer a boot-time constant: it resolves per
 // unlock as env QRL_AUTOLOCK_MS > settings store > DEFAULT_AUTOLOCK_MS. See
