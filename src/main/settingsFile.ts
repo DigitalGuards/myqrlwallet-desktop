@@ -95,10 +95,20 @@ async function atomicWrite(p: string, contents: string): Promise<void> {
   try {
     await handle.writeFile(contents, 'utf8');
     await handle.sync();
-  } finally {
-    await handle.close();
+  } catch (err) {
+    // Failed mid-write: close and remove the temp file (best-effort) so a
+    // throw does not orphan `settings.json.<pid>.<seq>.tmp` next to the store.
+    await handle.close().catch(() => undefined);
+    await fs.unlink(tmp).catch(() => undefined);
+    throw err;
   }
-  await fs.rename(tmp, p);
+  await handle.close();
+  try {
+    await fs.rename(tmp, p);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw err;
+  }
 }
 
 /**
@@ -170,4 +180,15 @@ export async function getEffectiveAutolockMs(): Promise<number> {
 export async function getBiometricUnlockEnabled(): Promise<boolean> {
   const stored = await readSettings();
   return stored.biometricUnlock ?? true;
+}
+
+/** True only when the user EXPLICITLY enabled biometric quick unlock in the
+ * settings window (stored `true`, not the undefined default). Gates KEK
+ * re-provisioning on a password unlock: the toggle-off sweep deletes stored
+ * KEKs and import-time provisioning alone could never restore them, but a
+ * password unlock must not push the KEK into the OS vault for users who never
+ * opted in via settings (their import-time choice stands). */
+export async function isBiometricUnlockExplicitlyEnabled(): Promise<boolean> {
+  const stored = await readSettings();
+  return stored.biometricUnlock === true;
 }

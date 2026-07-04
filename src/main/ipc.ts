@@ -19,7 +19,11 @@ import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'elect
 import { z } from 'zod';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import * as rpc from './rpc';
-import { getBiometricUnlockEnabled, getEffectiveAutolockMs } from './settingsFile';
+import {
+  getBiometricUnlockEnabled,
+  getEffectiveAutolockMs,
+  isBiometricUnlockExplicitlyEnabled,
+} from './settingsFile';
 import {
   deleteSeed,
   getActiveAddress,
@@ -119,13 +123,20 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   async function walletList(): Promise<WalletListResult> {
-    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    const [seeds, active, biometricEnabled] = await Promise.all([
+      listSeeds(),
+      getActiveAddress(),
+      getBiometricUnlockEnabled(),
+    ]);
     // keyVault.has shells out to the OS keychain helper on macOS, so resolve
     // all wallets concurrently rather than one blocking call at a time.
+    // keychainBacked reflects the USABLE state: a stored KEK counts only while
+    // the biometric preference is on (the settings toggle is authoritative
+    // even if its delete sweep failed).
     const wallets: WalletInfo[] = await Promise.all(
       seeds.map(async (s) => ({
         address: s.address,
-        keychainBacked: await keyVault.has(s.address),
+        keychainBacked: biometricEnabled && (await keyVault.has(s.address)),
       })),
     );
     return { wallets, active };
@@ -199,9 +210,37 @@ export function registerIpcHandlers(deps: Deps): void {
     if (!encrypted) throw new Error('no wallet to unlock');
     const autolockMs = await getEffectiveAutolockMs();
     if (req.password) {
-      await signer.unlock({ encrypted, autolockMs, password: req.password });
+      // Re-provision the OS-vault KEK when the user EXPLICITLY enabled
+      // biometric quick unlock in settings and no KEK is stored (the
+      // toggle-off sweep deletes it; import-time provisioning alone could
+      // never restore it). The untouched default keeps the original
+      // import-time-only behavior: a password unlock never pushes the KEK
+      // into the vault without that opt-in.
+      const wantKek =
+        (await isBiometricUnlockExplicitlyEnabled()) &&
+        (await keyVault.isAvailable()) &&
+        !(await keyVault.has(encrypted.address));
+      const result = await signer.unlock({
+        encrypted,
+        autolockMs,
+        password: req.password,
+        wantKek,
+      });
+      if (wantKek && result.kekHex) {
+        // Best-effort: the password unlock already succeeded; a vault write
+        // failure only means Touch ID stays unavailable until the next try.
+        await keyVault
+          .store(encrypted.address, result.kekHex)
+          .catch((err: unknown) => console.error('unlock: keychain provisioning failed', err));
+        result.kekHex = undefined;
+      }
     } else {
-      // No password: unlock via a KEK retrieved from the OS keychain.
+      // No password: unlock via a KEK retrieved from the OS keychain. The
+      // settings preference is authoritative even if the toggle-off sweep
+      // failed to delete a stored KEK.
+      if (!(await getBiometricUnlockEnabled())) {
+        throw new Error('keychain unlock unavailable; password required');
+      }
       const kekHex = await keyVault.retrieve(encrypted.address);
       if (!kekHex) throw new Error('keychain unlock unavailable; password required');
       await signer.unlock({ encrypted, autolockMs, kekHex });
@@ -348,6 +387,11 @@ export function registerIpcHandlers(deps: Deps): void {
     const now = Date.now();
     if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
     lastAttentionAt = now;
+    // Single-window lock screen invariant: while locked, the hidden wallet
+    // window must never be revealed (showInactive below would). The request
+    // stays pending in the renderer and is answerable after unlock; no
+    // focus-steal, so no focusUnlockWindow here either.
+    if (isUnlockWindowShown()) return;
     // The dApp approval modal lives in the wallet renderer: if the settings
     // window is the visible surface (wallet hidden behind it), give the
     // surface back so the request is actually seeable. Worst case for a

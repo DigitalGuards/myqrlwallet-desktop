@@ -130,8 +130,19 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
     if (parsed.data.biometricUnlock === false) {
       // Turning the preference OFF revokes the stored KEKs: clear the OS
       // keychain entry of every provisioned wallet. Failures are logged, not
-      // swallowed silently, and never block persisting the preference.
-      const seeds = await listSeeds();
+      // swallowed silently, and never block persisting the preference. The
+      // sweep is defense-in-depth: every unlock path also checks the
+      // preference itself, so a failed listing (listSeeds throws on real I/O
+      // errors) degrades to KEK bytes lingering in the vault, not to a
+      // usable biometric unlock.
+      let seeds: Awaited<ReturnType<typeof listSeeds>> = [];
+      try {
+        seeds = await listSeeds();
+      } catch (err) {
+        logMain(
+          `[settings] keychain sweep skipped: seed listing failed (${err instanceof Error ? err.message : 'error'})`,
+        );
+      }
       let cleared = 0;
       for (const seed of seeds) {
         try {
@@ -218,13 +229,19 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
  * that needs the wallet surface back). Safe to call anytime; the window's
  * closed handler restores the wallet window when appropriate. */
 export function closeSettingsWindow(): void {
-  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.close();
+  // destroy(), not close(): a modal confirm dialog attached to this window can
+  // defer close() on some platforms, which would leave the remove-wallet
+  // confirmation approvable while the lock screen owns the display. destroy()
+  // tears down unconditionally; an attached dialog resolves as Cancel.
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.destroy();
 }
 
 /** True while the settings window is the visible app surface (the wallet
  * window is hidden behind it). */
 export function isSettingsWindowShown(): boolean {
-  return settingsWin !== null && !settingsWin.isDestroyed();
+  // Visibility, not mere existence: a window mid-load (or hung before
+  // ready-to-show) must not swallow focus meant for the visible wallet.
+  return settingsWin !== null && !settingsWin.isDestroyed() && settingsWin.isVisible();
 }
 
 /** Bring the settings window to the front (duplicate app launches while it is
@@ -279,7 +296,26 @@ export function showSettingsWindow(deps: SettingsDeps): void {
   });
   settingsWin = win;
 
+  // Present-failure recovery: settings gates nothing, so a renderer that
+  // cannot present is simply destroyed. The wallet window is untouched
+  // (hiding happens only inside ready-to-show), so no zero-visible-window
+  // state is reachable, and retrying the menu item builds a fresh window.
+  const watchdog = setTimeout(() => {
+    if (settingsWin === win && !win.isDestroyed() && !win.isVisible()) {
+      logMain('[settings] renderer never presented within 10s; destroying');
+      win.destroy();
+    }
+  }, 10_000);
+  win.webContents.once('did-fail-load', (_event, code, description) => {
+    logMain(`[settings] load failed (${String(code)} ${description}); destroying`);
+    if (!win.isDestroyed()) win.destroy();
+  });
+  win.webContents.once('render-process-gone', (_event, details) => {
+    logMain(`[settings] renderer gone (${details.reason}); destroying`);
+    if (!win.isDestroyed()) win.destroy();
+  });
   win.once('ready-to-show', () => {
+    clearTimeout(watchdog);
     // Show first, hide second: settings covers the wallet exactly, so the
     // swap underneath is invisible and the app reads as ONE surface that
     // switched to its settings screen.
@@ -288,6 +324,7 @@ export function showSettingsWindow(deps: SettingsDeps): void {
     if (m && !m.isDestroyed()) m.hide();
   });
   win.on('closed', () => {
+    clearTimeout(watchdog);
     // Only clear the module ref if THIS window is still current.
     if (settingsWin === win) settingsWin = null;
     // Restore the wallet window, UNLESS the lock screen owns the display:
