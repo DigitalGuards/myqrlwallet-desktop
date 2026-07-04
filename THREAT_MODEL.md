@@ -177,6 +177,52 @@ WALLET_INFO), or spam the wallet with pairing prompts.
   `signerBridge` enforces this via per-request timeouts and rejecting all
   pending requests on signer exit.
 
+## The settings window and the settings store
+
+The desktop's security-relevant preferences (auto-lock timeout, biometric
+quick-unlock) live outside the renderer's reach, in a second app-owned surface:
+
+- **Settings window is main-owned** (`src/main/settingsWindow.ts`,
+  `src/settings/`), built on the unlock-window pattern: hardened
+  webPreferences, its own preload exposing only `window.settingsBridge`
+  (`get`/`set`/`action`/`removeWallet`), a no-network meta CSP, and every IPC handler gated by
+  a live-sender check (`fromSettingsWindow`) plus a zod-strict argument parse.
+  The wallet renderer cannot draw over it, inject into it, or read/write any
+  setting: its only capability is asking main to show the window
+  (`IPC.OPEN_DESKTOP_SETTINGS`, sender-gated, no data in either direction).
+- **Cannot open while locked, and closes when the lock takes over**: when the
+  unlock window owns the display (`isUnlockWindowShown()`), both the menu entry
+  and the renderer request refuse and focus the unlock window instead; opening
+  settings never reveals the hidden main window. Conversely, every
+  `showUnlockWindow` call fires the `setOnUnlockShown` hook, which closes a
+  live settings window: the lock screen is the ONLY surface while locked, and
+  no settings action (autolock change, wallet removal) stays reachable.
+  Settings itself uses the unlock-window takeover pattern (covers the wallet
+  window's bounds, hides it underneath); its close handler restores the wallet
+  window ONLY when the lock screen is not up, so a lock-triggered close never
+  reveals the hidden wallet. A qrlconnect:// delivery or a dApp
+  attention request closes settings first, so the consent/approval UI is never
+  hidden behind it.
+- **Wallet removal from settings uses the same trusted gate**: the settings
+  window's remove-account action runs the identical flow as the renderer's
+  `REMOVE_WALLET` (`src/main/walletRemoval.ts`): a main-drawn confirmation
+  (default Cancel) precedes any deletion, the ciphertext is deleted before the
+  keychain entry, and the unlock window is raised when the removed account
+  owned the open session. The wallet renderer is reloaded afterwards so its
+  account list re-hydrates from the signer's seed files; it never has to be
+  trusted to clean up after a removal it did not perform.
+- **Settings store holds no secrets** (`src/main/settingsFile.ts`,
+  `userData/settings.json`): a versioned, zod-strict envelope
+  (`autolockMs`, `biometricUnlock`) written atomically at mode `0600` like the
+  seed store, self-healing on corruption (any unparsable content degrades to
+  defaults; startup never throws). Same-user malware reading it learns only a
+  timeout preference. Autolock resolves env `QRL_AUTOLOCK_MS` > store >
+  default; a live change re-arms the open signer session via the private
+  `signer:setAutolock` message, which is never exposed on the renderer bridge.
+  Disabling biometric unlock deletes every wallet's stored KEK from the OS
+  vault; enabling it only persists the preference (the KEK provisions at the
+  next password unlock, never from settings).
+
 ## Honest tradeoffs already noted in the code
 
 These are the specific, acknowledged weaknesses. Each maps to a code path.

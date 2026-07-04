@@ -118,18 +118,42 @@ async function atomicWrite(p: string, contents: string): Promise<void> {
 
 // ---- wallet listing / lookup ------------------------------------------------
 
-/** Every readable wallet envelope on disk, ordered by creation time. */
+/** Every readable wallet envelope on disk, ordered by creation time.
+ *
+ * Error contract: this list is AUTHORITATIVE for consumers (the renderer
+ * destructively reconciles its account list against it; the settings window's
+ * remove UI keys off it), so an I/O failure must THROW rather than masquerade
+ * as "no wallets": a swallowed EACCES/EBUSY (antivirus lock on userData is a
+ * classic) would read as every wallet having been removed. Only two
+ * degradations stay silent: a missing seeds directory (nothing provisioned
+ * yet) and a file with corrupt CONTENT (unparsable/wrong shape), skipped so
+ * one damaged envelope cannot hide the rest. */
 export async function listSeeds(): Promise<EncryptedSeed[]> {
   let names: string[];
   try {
     names = await fs.readdir(seedsDir());
-  } catch {
-    return [];
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
   }
   // Read every envelope concurrently rather than serially.
   const jsonNames = names.filter((name) => name.endsWith('.json'));
   const read = await Promise.all(
-    jsonNames.map((name) => readEnvelopeFile(path.join(seedsDir(), name))),
+    jsonNames.map(async (name) => {
+      try {
+        const raw = await fs.readFile(path.join(seedsDir(), name), 'utf8');
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          return isEncryptedSeed(parsed) ? parsed : null;
+        } catch {
+          return null; // corrupt content: skip this envelope, keep the rest
+        }
+      } catch (err) {
+        // Deleted between readdir and read (a concurrent removal): fine.
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw err; // real I/O failure: the listing must fail loudly
+      }
+    }),
   );
   const seeds = read.filter((s): s is EncryptedSeed => s !== null);
   // Fall back to 0 for a missing createdAt so the comparator never returns NaN

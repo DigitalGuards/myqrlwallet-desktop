@@ -6,8 +6,6 @@
  * the workspace CLAUDE.md. `connect-src` in the CSP is derived from exactly
  * these origins so the renderer can reach the configured RPC and nothing else.
  */
-import { DEFAULT_AUTOLOCK_MS } from '../shared/constants';
-
 function envUrl(name: string, fallback: string): string {
   const v = process.env[name];
   if (!v) return fallback;
@@ -25,8 +23,9 @@ export const RPC_URL = envUrl('QRL_RPC_URL', 'http://REDACTED:8545');
 /** Optional secondary endpoint (foundation public RPC) for read failover. */
 export const RPC_URL_SECONDARY = envUrl('QRL_RPC_URL_SECONDARY', 'http://209.250.255.226:8545');
 
-/** Idle timeout before the signer auto-locks. */
-export const AUTOLOCK_MS = Number(process.env.QRL_AUTOLOCK_MS ?? DEFAULT_AUTOLOCK_MS);
+// The autolock idle timeout is no longer a boot-time constant: it resolves per
+// unlock as env QRL_AUTOLOCK_MS > settings store > DEFAULT_AUTOLOCK_MS. See
+// getEffectiveAutolockMs() in src/main/settingsFile.ts.
 
 /**
  * Origins the reused myqrlwallet-frontend talks to at runtime: the backend
