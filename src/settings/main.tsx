@@ -296,12 +296,16 @@ function SettingsApp() {
                 device are not affected. You will be asked to confirm.
               </p>
               <p className="settings-address">{wallet.activeAddress}</p>
-              {removeStatus && (
-                <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
-                  {removeStatus.message}
-                </p>
-              )}
             </section>
+          )}
+
+          {/* Outside the address-gated section: after the LAST wallet is
+              removed that section unmounts, and this confirmation must
+              survive it. */}
+          {removeStatus && (
+            <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
+              {removeStatus.message}
+            </p>
           )}
 
           {saveStatus && (

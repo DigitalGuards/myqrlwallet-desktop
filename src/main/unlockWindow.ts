@@ -12,7 +12,11 @@
  */
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { getEffectiveAutolockMs } from './settingsFile';
+import {
+  getBiometricUnlockEnabled,
+  getEffectiveAutolockMs,
+  isBiometricUnlockExplicitlyEnabled,
+} from './settingsFile';
 import {
   getActiveAddress,
   listSeeds,
@@ -129,13 +133,19 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    const [seeds, active, biometricEnabled] = await Promise.all([
+      listSeeds(),
+      getActiveAddress(),
+      getBiometricUnlockEnabled(),
+    ]);
     // Resolve keychain backing for all wallets concurrently (keyVault.has
-    // shells out to the OS helper on macOS).
+    // shells out to the OS helper on macOS). A stored KEK counts only while
+    // the biometric settings preference is on, so the Touch ID button never
+    // shows for a user who disabled it.
     const wallets = await Promise.all(
       seeds.map(async (s) => ({
         address: s.address,
-        keychainBacked: await deps.keyVault.has(s.address),
+        keychainBacked: biometricEnabled && (await deps.keyVault.has(s.address)),
       })),
     );
     return { wallets, active };
@@ -150,7 +160,30 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     try {
-      await deps.signer.unlock({ encrypted, autolockMs: await getEffectiveAutolockMs(), password });
+      // Re-provision the OS-vault KEK when the user EXPLICITLY enabled
+      // biometric quick unlock in settings and none is stored (mirrors the
+      // renderer UNLOCK path; the toggle-off sweep deletes stored KEKs and
+      // import-time provisioning alone could never restore them).
+      const wantKek =
+        (await isBiometricUnlockExplicitlyEnabled()) &&
+        (await deps.keyVault.isAvailable()) &&
+        !(await deps.keyVault.has(encrypted.address));
+      const result = await deps.signer.unlock({
+        encrypted,
+        autolockMs: await getEffectiveAutolockMs(),
+        password,
+        wantKek,
+      });
+      if (wantKek && result.kekHex) {
+        // Best-effort: the unlock already succeeded; a vault write failure
+        // only means Touch ID stays unavailable until the next try.
+        try {
+          await deps.keyVault.store(encrypted.address, result.kekHex);
+        } catch {
+          /* logged nowhere sensitive; never block the unlock */
+        }
+        result.kekHex = undefined;
+      }
       // Unlocking an account selects it (the picker may have chosen a
       // different wallet than the previously active one).
       await setActiveAddress(encrypted.address);
@@ -167,6 +200,11 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const { address } = (arg ?? {}) as { address?: unknown };
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
+    // The settings preference is authoritative even if the toggle-off sweep
+    // failed to delete a stored KEK.
+    if (!(await getBiometricUnlockEnabled())) {
+      return { ok: false, error: 'Biometric unlock is disabled in Settings.' };
+    }
     const kekHex = await deps.keyVault.retrieve(encrypted.address);
     if (!kekHex) return { ok: false, error: 'Biometric unlock is unavailable. Use your password.' };
     try {
