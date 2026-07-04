@@ -1,9 +1,11 @@
 /**
  * Minimal JSON-RPC client + transaction assembly. This is the seed of the
  * "bundled local RPC proxy" the desktop app becomes (Stage 3 of the research
- * roadmap): today it talks directly to the configured QRL v2 `qrl_*` endpoint,
- * with a read-only failover to the secondary. Signing/broadcast stay separate
- * (signing is in the signer; broadcast is `sendRawTransaction` here).
+ * roadmap): today it talks to the configured QRL v2 `qrl_*` endpoints (by
+ * default the wallet backend's RPC proxies, see config.ts), reads failing
+ * over to the secondary and broadcast failing over on transport errors only.
+ * Signing stays separate (in the signer); broadcast is `sendRawTransaction`
+ * here.
  *
  * No secrets pass through this module.
  */
@@ -17,17 +19,48 @@ interface JsonRpcResponse<T> {
   error?: { code: number; message: string };
 }
 
+/**
+ * A TRANSPORT failure (endpoint unreachable, reset, timeout, gateway error):
+ * the request never got a JSON-RPC answer, so nothing was accepted or
+ * rejected by a node. Distinguished from JSON-RPC errors because only
+ * transport failures are safe to fail over on for a broadcast.
+ */
+export class RpcTransportError extends Error {}
+
+/** Pull a usable detail (ECONNRESET, ETIMEDOUT, ...) out of undici's opaque
+ * "TypeError: fetch failed" wrapper so the surfaced error names the problem. */
+function transportDetail(err: unknown): string {
+  if (!(err instanceof Error)) return 'network error';
+  if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'timeout';
+  const cause = err.cause;
+  if (cause && typeof cause === 'object' && 'code' in cause) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === 'string' && code.length > 0) return code;
+  }
+  return err.message || 'network error';
+}
+
 let rpcId = 0;
 
 async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
-    // The signer, not main, never makes RPC calls; this is main's proxy.
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`rpc ${method} http ${res.status}`);
+  const host = new URL(url).host;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
+      // The signer, not main, never makes RPC calls; this is main's proxy.
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    throw new RpcTransportError(`rpc ${method}: ${host} unreachable (${transportDetail(err)})`, {
+      cause: err,
+    });
+  }
+  // A non-2xx here is a gateway/proxy-level failure (JSON-RPC rejections come
+  // back as 200 + error body), so it counts as transport too.
+  if (!res.ok) throw new RpcTransportError(`rpc ${method}: ${host} http ${res.status}`);
   const body = (await res.json()) as JsonRpcResponse<T>;
   if (body.error) throw new Error(`rpc ${method}: ${body.error.message}`);
   if (body.result === undefined) throw new Error(`rpc ${method}: empty result`);
@@ -118,7 +151,24 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
 }
 
 export async function sendRawTransaction(rawTx: string): Promise<{ transactionHash: string }> {
-  // Broadcast is primary-only (the secondary may not accept writes).
-  const hash = await rpcCallOn<string>(RPC_URL, 'qrl_sendRawTransaction', [rawTx]);
-  return { transactionHash: hash };
+  // Broadcast prefers the primary and fails over to the secondary ONLY on a
+  // transport failure (endpoint unreachable): a JSON-RPC rejection means a
+  // node ANSWERED and refused the tx, which must surface, not retry.
+  // Rebroadcasting an identical signed raw tx is idempotent (same hash, and
+  // the nonce protects against a double-spend), so the transport retry is
+  // safe even if the first request died after reaching the node.
+  try {
+    const hash = await rpcCallOn<string>(RPC_URL, 'qrl_sendRawTransaction', [rawTx]);
+    return { transactionHash: hash };
+  } catch (err) {
+    if (
+      !(err instanceof RpcTransportError) ||
+      !RPC_URL_SECONDARY ||
+      RPC_URL_SECONDARY === RPC_URL
+    ) {
+      throw err;
+    }
+    const hash = await rpcCallOn<string>(RPC_URL_SECONDARY, 'qrl_sendRawTransaction', [rawTx]);
+    return { transactionHash: hash };
+  }
 }
