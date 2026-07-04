@@ -114,11 +114,13 @@ yields NO key material, because keys never live there.
    `requestSignature`, `unlock`, `lock`, `removeWallet`, `getStatus`,
    `hasWallet`, `createWallet`, `importWallet`, `listWallets`,
    `setActiveWallet`, `sendRawTransaction`, `dappRequestAttention`,
-   `onLockStateChanged`, `onDAppConnectUri`). The unlock window's preload
-   exposes only `window.unlockBridge` (`getInfo`/`submit`/`biometric`). Never
-   expose raw `ipcRenderer`, `invoke`, channel strings, or Node primitives.
+   `openDesktopSettings`, `onLockStateChanged`, `onDAppConnectUri`). The unlock
+   window's preload exposes only `window.unlockBridge`
+   (`getInfo`/`submit`/`biometric`); the settings window's preload exposes only
+   `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`). Never expose raw
+   `ipcRenderer`, `invoke`, channel strings, or Node primitives.
    Files: `src/preload/index.ts`, `src/unlock/preload.ts`,
-   `src/shared/bridge.ts`, `src/shared/constants.ts`.
+   `src/settings/preload.ts`, `src/shared/bridge.ts`, `src/shared/constants.ts`.
 
 4. **Every IPC handler validates sender AND argument.** Each `ipcMain.handle`
    first calls `isTrustedSender` (top frame of the wallet window + `file:`
@@ -132,9 +134,12 @@ yields NO key material, because keys never live there.
    irreversible wipe) each proceed only after a main-drawn confirmation
    (`confirmSignature` / `confirmRemoveWallet`) returns approved; a rejection
    throws and nothing is signed or deleted. The renderer's own confirm UI is
-   convenience, never the gate. The unlock password is collected in the native
+   convenience, never the gate. The wallet removal triggered from the native
+   settings window runs the same shared flow (`src/main/walletRemoval.ts`)
+   behind the same confirmation. The unlock password is collected in the native
    unlock window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer.
-   Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/unlockWindow.ts`.
+   Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/walletRemoval.ts`,
+   `src/main/unlockWindow.ts`, `src/main/settingsWindow.ts`.
 
 6. **Strict CSP: `script-src 'self'`, no script `unsafe-inline` / `unsafe-eval`.**
    The load-bearing control is `script-src 'self'`: a renderer RCE can neither

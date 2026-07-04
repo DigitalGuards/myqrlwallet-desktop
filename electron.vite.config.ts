@@ -37,8 +37,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
-          // Dedicated preload for the native unlock window.
+          // Dedicated preloads for the native unlock + settings windows.
           unlock: resolve(__dirname, 'src/unlock/preload.ts'),
+          settings: resolve(__dirname, 'src/settings/preload.ts'),
         },
         output: {
           // Sandboxed preloads must be CommonJS.
@@ -50,10 +51,14 @@ export default defineConfig({
   },
   // The MAIN wallet renderer is the real myqrlwallet-frontend, built by its own
   // toolchain via scripts/build-renderer.sh into out/renderer (run by
-  // `npm run build`). The ONLY renderer electron-vite builds here is the small,
-  // app-owned unlock window (out/unlock), native to the desktop app.
+  // `npm run build`). The only renderers electron-vite builds here are the two
+  // small, app-owned native windows: unlock (out/unlock) and settings
+  // (out/settings). Multi-page build rooted at src/ so each page keeps its
+  // directory (out/<page>/index.html, matching the loadFile paths in
+  // src/main/unlockWindow.ts and src/main/settingsWindow.ts); shared assets
+  // land in out/assets with per-page relative references (base './').
   renderer: {
-    root: 'src/unlock',
+    root: 'src',
     plugins: [react()],
     // Relative base so assets resolve under file:// (loadFile).
     base: './',
@@ -62,9 +67,15 @@ export default defineConfig({
       // the target there: vite 7 changed the default build target (from 'modules'
       // to a broad browser baseline) and the explicit pin avoids that drift.
       target: 'chrome148',
-      outDir: resolve(__dirname, 'out/unlock'),
+      outDir: resolve(__dirname, 'out'),
+      // out/ also holds the main + preload bundles built earlier in the same
+      // electron-vite run; NEVER let the renderer build empty it.
+      emptyOutDir: false,
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/unlock/index.html') },
+        input: {
+          unlock: resolve(__dirname, 'src/unlock/index.html'),
+          settings: resolve(__dirname, 'src/settings/index.html'),
+        },
       },
     },
   },

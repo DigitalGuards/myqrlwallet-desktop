@@ -17,9 +17,13 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
-import { AUTOLOCK_MS } from './config';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import * as rpc from './rpc';
+import {
+  getBiometricUnlockEnabled,
+  getEffectiveAutolockMs,
+  isBiometricUnlockExplicitlyEnabled,
+} from './settingsFile';
 import {
   deleteSeed,
   getActiveAddress,
@@ -31,6 +35,9 @@ import {
   writeSeed,
 } from './seedFile';
 import { isTrustedSender } from './security';
+import { closeSettingsWindow } from './settingsWindow';
+import { isUnlockWindowShown } from './unlockWindow';
+import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
 import {
@@ -58,6 +65,9 @@ interface Deps {
   /** Tear down a live native unlock window after a renderer-driven unlock, so
    * the two unlock paths cannot desync (window shown while already unlocked). */
   notifyUnlocked: () => void;
+  /** Show/focus the native desktop settings window (no data crosses; the
+   * window itself refuses to open while locked). */
+  showSettings: () => void;
 }
 
 // Cache ONLY a successful read: rpc.getChainId throws on an unreachable node,
@@ -73,7 +83,7 @@ const sameAccount = (a: string | null | undefined, b: string | null | undefined)
   typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
 
 export function registerIpcHandlers(deps: Deps): void {
-  const { getWindow, signer, keyVault, showUnlock, notifyUnlocked } = deps;
+  const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
   /** Wrap a handler with sender validation + (optional) schema parse. */
   function handle<S extends z.ZodTypeAny, R>(
@@ -113,13 +123,20 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   async function walletList(): Promise<WalletListResult> {
-    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    const [seeds, active, biometricEnabled] = await Promise.all([
+      listSeeds(),
+      getActiveAddress(),
+      getBiometricUnlockEnabled(),
+    ]);
     // keyVault.has shells out to the OS keychain helper on macOS, so resolve
     // all wallets concurrently rather than one blocking call at a time.
+    // keychainBacked reflects the USABLE state: a stored KEK counts only while
+    // the biometric preference is on (the settings toggle is authoritative
+    // even if its delete sweep failed).
     const wallets: WalletInfo[] = await Promise.all(
       seeds.map(async (s) => ({
         address: s.address,
-        keychainBacked: await keyVault.has(s.address),
+        keychainBacked: biometricEnabled && (await keyVault.has(s.address)),
       })),
     );
     return { wallets, active };
@@ -191,13 +208,42 @@ export function registerIpcHandlers(deps: Deps): void {
   handle(IPC.UNLOCK, UnlockRequestSchema, async (req) => {
     const encrypted = req.address ? await readSeedByAddress(req.address) : await readActiveSeed();
     if (!encrypted) throw new Error('no wallet to unlock');
+    const autolockMs = await getEffectiveAutolockMs();
     if (req.password) {
-      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password: req.password });
+      // Re-provision the OS-vault KEK when the user EXPLICITLY enabled
+      // biometric quick unlock in settings and no KEK is stored (the
+      // toggle-off sweep deletes it; import-time provisioning alone could
+      // never restore it). The untouched default keeps the original
+      // import-time-only behavior: a password unlock never pushes the KEK
+      // into the vault without that opt-in.
+      const wantKek =
+        (await isBiometricUnlockExplicitlyEnabled()) &&
+        (await keyVault.isAvailable()) &&
+        !(await keyVault.has(encrypted.address));
+      const result = await signer.unlock({
+        encrypted,
+        autolockMs,
+        password: req.password,
+        wantKek,
+      });
+      if (wantKek && result.kekHex) {
+        // Best-effort: the password unlock already succeeded; a vault write
+        // failure only means Touch ID stays unavailable until the next try.
+        await keyVault
+          .store(encrypted.address, result.kekHex)
+          .catch((err: unknown) => console.error('unlock: keychain provisioning failed', err));
+        result.kekHex = undefined;
+      }
     } else {
-      // No password: unlock via a KEK retrieved from the OS keychain.
+      // No password: unlock via a KEK retrieved from the OS keychain. The
+      // settings preference is authoritative even if the toggle-off sweep
+      // failed to delete a stored KEK.
+      if (!(await getBiometricUnlockEnabled())) {
+        throw new Error('keychain unlock unavailable; password required');
+      }
       const kekHex = await keyVault.retrieve(encrypted.address);
       if (!kekHex) throw new Error('keychain unlock unavailable; password required');
-      await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+      await signer.unlock({ encrypted, autolockMs, kekHex });
     }
     // Unlocking an account selects it.
     await setActiveAddress(encrypted.address);
@@ -222,34 +268,27 @@ export function registerIpcHandlers(deps: Deps): void {
   // given, mirroring the old single-wallet wipe): delete its encrypted seed
   // from disk and clear its OS-keychain entry. Reachable only behind the
   // renderer's confirmation UI, and gated by the trusted main-drawn
-  // confirmation (default Cancel), exactly like the signing path.
+  // confirmation (default Cancel), exactly like the signing path. The flow
+  // itself (ordering invariants) is shared with the native settings window:
+  // src/main/walletRemoval.ts.
   handle(IPC.REMOVE_WALLET, RemoveWalletRequestSchema, async (req) => {
-    const target = req?.address ?? (await getActiveAddress());
-    if (!target) throw new Error('no wallet to remove');
-    const seed = await readSeedByAddress(target);
-    if (!seed) throw new Error('no such wallet on this device');
-    const approved = await confirmRemoveWallet(requireWindow(), seed.address);
-    if (!approved) throw new Error('user rejected wallet removal');
-    // Drop the session only when it belongs to the wallet being removed;
-    // removing a background wallet must not lock the one in use.
-    const st = await signer.status();
-    const sessionWasTarget = st.unlocked && sameAccount(st.address, seed.address);
-    if (sessionWasTarget) {
-      await signer.lock();
-      emitLockState(true);
-    }
-    // Delete the security-relevant ciphertext FIRST so the wallet is
-    // unrecoverable even if the keychain clear then fails (a bare KEK with no
-    // matching ciphertext is useless). Log, do not swallow, a clear failure.
-    await deleteSeed(seed.address);
-    await keyVault
-      .delete(seed.address)
-      .catch((err) => console.error('removeWallet: keychain clear failed', err));
-    // Single-window lock invariant: if the open session died and other wallets
-    // remain, the app is now locked, so raise the native unlock window for the
-    // (self-healed) active wallet. After removing the LAST wallet there is
-    // nothing to unlock and the renderer's create/import flow shows instead.
-    if (sessionWasTarget && (await hasAnySeed())) showUnlock();
+    await removeWalletFlow(
+      {
+        signer,
+        keyVault,
+        seeds: {
+          readByAddress: readSeedByAddress,
+          getActive: getActiveAddress,
+          delete: deleteSeed,
+          hasAny: hasAnySeed,
+        },
+        confirm: (address) => confirmRemoveWallet(requireWindow(), address),
+        emitLockState,
+        showUnlock,
+        warn: (message) => console.error(message),
+      },
+      req?.address,
+    );
     return buildStatus();
   });
 
@@ -286,8 +325,12 @@ export function registerIpcHandlers(deps: Deps): void {
   ): Promise<WalletStatus> {
     await writeSeed(encrypted);
     await setActiveAddress(encrypted.address);
-    const wantKek = useKeychain && (await keyVault.isAvailable());
-    const result = await signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password, wantKek });
+    // Keychain provisioning is gated on the renderer's opt-in AND the settings
+    // preference (biometricUnlock, default on) AND platform availability.
+    const wantKek =
+      useKeychain && (await getBiometricUnlockEnabled()) && (await keyVault.isAvailable());
+    const autolockMs = await getEffectiveAutolockMs();
+    const result = await signer.unlock({ encrypted, autolockMs, password, wantKek });
     if (wantKek && result.kekHex) {
       await keyVault.store(encrypted.address, result.kekHex);
       // result.kekHex is a JS string and cannot be truly zeroized; minimise its
@@ -323,6 +366,16 @@ export function registerIpcHandlers(deps: Deps): void {
     rpc.sendRawTransaction(req.rawTx),
   );
 
+  // ---- desktop settings window ---------------------------------------------
+  // The renderer may only ASK main to show/focus the native settings window;
+  // no data crosses in either direction and no main-owned setting is readable
+  // or writable over the renderer bridge. Rejected while locked: the unlock
+  // window must stay the only surface on screen.
+  handle(IPC.OPEN_DESKTOP_SETTINGS, null, async () => {
+    if (isUnlockWindowShown()) throw new Error('wallet is locked');
+    showSettings();
+  });
+
   // ---- dApp-connect attention ---------------------------------------------
   // A restricted dApp request arrived while the window is unfocused/minimised:
   // surface it WITHOUT stealing focus (taskbar flash / dock bounce, and
@@ -334,6 +387,17 @@ export function registerIpcHandlers(deps: Deps): void {
     const now = Date.now();
     if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
     lastAttentionAt = now;
+    // Single-window lock screen invariant: while locked, the hidden wallet
+    // window must never be revealed (showInactive below would). The request
+    // stays pending in the renderer and is answerable after unlock; no
+    // focus-steal, so no focusUnlockWindow here either.
+    if (isUnlockWindowShown()) return;
+    // The dApp approval modal lives in the wallet renderer: if the settings
+    // window is the visible surface (wallet hidden behind it), give the
+    // surface back so the request is actually seeable. Worst case for a
+    // malicious renderer spamming this: the user's settings window closes,
+    // rate-limited; same nuisance tier as the flash itself.
+    closeSettingsWindow();
     const win = requireWindow();
     if (!win.isVisible()) win.showInactive();
     if (process.platform === 'darwin') {
