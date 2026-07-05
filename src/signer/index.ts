@@ -21,6 +21,7 @@ import { aesGcmEncrypt } from './aead';
 import { deriveKek } from './kdf';
 import { SignerSession } from './session';
 import {
+  assertSessionSigner,
   deriveSeedFromHexSeed,
   deriveSeedFromMnemonic,
   generateMnemonic,
@@ -147,6 +148,10 @@ async function handle(req: SignerRequest): Promise<void> {
       case 'signer:sign': {
         if (!session.unlocked) throw new Error('locked');
         const { request } = req;
+        // The signer is the last line of defense: whatever main/renderer
+        // validated, never sign with a different account than the request
+        // names. session.address is non-null while unlocked.
+        assertSessionSigner(request, session.address ?? '');
         if (request.kind === 'transaction') {
           // req.chainId is authoritative (main read it from the node); the
           // signer binds the signed tx to it and ignores any renderer tx.chainId.
@@ -168,6 +173,17 @@ async function handle(req: SignerRequest): Promise<void> {
           // signature over a digest the dApp side would not reproduce.
           throw new Error('typedData signing not yet wired in desktop scaffold; port typedData.ts');
         }
+        return;
+      }
+      case 'signer:setAutolock': {
+        // Re-arm the idle timer with the new bound; no-op success when locked
+        // (the bound is applied by the next unlock). Reject a non-positive or
+        // non-finite bound: a NaN timer would fire immediately.
+        if (!Number.isFinite(req.autolockMs) || req.autolockMs <= 0) {
+          throw new Error('invalid autolock bound');
+        }
+        session.setAutolock(req.autolockMs, now);
+        send({ id: req.id, ok: true, type: 'signer:setAutolock', result: null });
         return;
       }
       case 'signer:lock': {

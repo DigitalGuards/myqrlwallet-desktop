@@ -11,7 +11,10 @@
  */
 import { z } from 'zod';
 
-/** A QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated). */
+/** A QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated).
+ * 20-byte format ONLY: when the 64-byte address work (Q + 128 hex) lands,
+ * this schema, `addressOf`'s identity slice (signer/signing.ts), and the
+ * signature-request account binding must all move together. */
 export const AddressSchema = z
   .string()
   .regex(/^Q[0-9a-fA-F]{40}$/, 'must be a Q-prefixed 20-byte hex address');
@@ -73,19 +76,91 @@ export const UnsignedTransactionSchema = z
   .strict();
 
 /**
+ * Optional dApp-connect provenance attached to a signature request by the
+ * renderer when the request originated from a connected dApp session. It is
+ * renderer-supplied and therefore UNTRUSTED display metadata: the trusted
+ * confirm modal renders it under an explicit "unverified, dApp-supplied"
+ * label so the user knows which dApp asked, while the tx facts themselves
+ * stay main-computed. Strictly bounded so it cannot smuggle bulk data.
+ */
+/* eslint-disable no-control-regex -- the whole point of this pattern is to reject control chars */
+// Reject C0+C1 control chars, Unicode line/paragraph separators (U+2028/9),
+// bidi marks (U+200E/F) and bidi overrides/isolates (U+202A-E, U+2066-9) in a
+// dApp display name: it is rendered into the trusted confirm dialog, so
+// line-break/bidi injection must die at the boundary.
+const DAPP_NAME_SAFE =
+  /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]+$/;
+/* eslint-enable no-control-regex */
+
+export const DAppOriginSchema = z
+  .object({
+    via: z.literal('dapp'),
+    /** dApp display name from ORIGINATOR_INFO. Rejects C0+C1 control chars,
+     * Unicode line/paragraph separators (U+2028/U+2029), bidi marks
+     * (U+200E/U+200F), and bidi overrides/isolates (U+202A-E, U+2066-9): the
+     * name is rendered into the trusted confirm dialog, so line-break/bidi
+     * injection dies at the boundary (defense-in-depth; the qrlconnect URI
+     * ingress is ASCII-only anyway). */
+    name: z.string().min(1).max(64).regex(DAPP_NAME_SAFE, 'control characters not allowed'),
+    /** dApp URL from ORIGINATOR_INFO; a plain http(s) URL, or empty when the
+     * dApp supplied something unusable (the renderer sanitiser maps a
+     * non-http(s)/unparseable URL to '' rather than dropping provenance). */
+    url: z
+      .string()
+      .max(256)
+      .refine((s) => {
+        if (s === '') return true;
+        try {
+          const u = new URL(s);
+          return u.protocol === 'https:' || u.protocol === 'http:';
+        } catch {
+          return false;
+        }
+      }, 'must be an http(s) URL or empty'),
+    /** Relay channel id of the session the request arrived on. */
+    channelId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[0-9a-fA-F-]+$/, 'must be a hex/uuid channel id'),
+  })
+  .strict();
+
+/**
  * The discriminated signing request. Transactions are the spend path; message
  * and typed-data mirror the wallet's `qrl_signMessage` / `qrl_signTypedData`.
  */
 export const SignatureRequestSchema = z
   .discriminatedUnion('kind', [
-    z.object({ kind: z.literal('transaction'), tx: UnsignedTransactionSchema }).strict(),
-    z.object({ kind: z.literal('message'), messageHex: HexSchema.max(2 * 64 * 1024) }).strict(),
+    z
+      .object({
+        kind: z.literal('transaction'),
+        tx: UnsignedTransactionSchema,
+        origin: DAppOriginSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('message'),
+        messageHex: HexSchema.max(2 * 64 * 1024),
+        // The account the caller intends to sign with. The signer REJECTS the
+        // request when this differs from the unlocked session's address, so a
+        // renderer whose account state has diverged from the signer (or a dApp
+        // session pinned to another account) can never obtain a signature from
+        // an unintended key. Transactions carry the same binding via tx.from.
+        signer: AddressSchema,
+        origin: DAppOriginSchema.optional(),
+      })
+      .strict(),
     z
       .object({
         kind: z.literal('typedData'),
         // The wallet computes the digest; we keep the payload opaque here and
         // let the signer's typed-data hasher validate structure. Bounded below.
         payload: z.record(z.string(), z.unknown()),
+        // Same session-address binding as the message arm.
+        signer: AddressSchema,
+        origin: DAppOriginSchema.optional(),
       })
       .strict(),
   ])
@@ -161,6 +236,7 @@ export type GetBalanceRequest = z.infer<typeof GetBalanceRequestSchema>;
 export type BuildTransactionRequest = z.infer<typeof BuildTransactionRequestSchema>;
 export type UnsignedTransaction = z.infer<typeof UnsignedTransactionSchema>;
 export type SignatureRequest = z.infer<typeof SignatureRequestSchema>;
+export type DAppOrigin = z.infer<typeof DAppOriginSchema>;
 export type UnlockRequest = z.infer<typeof UnlockRequestSchema>;
 export type ImportWalletRequest = z.infer<typeof ImportWalletRequestSchema>;
 export type CreateWalletRequest = z.infer<typeof CreateWalletRequestSchema>;
@@ -220,6 +296,16 @@ export interface SignatureResult {
   signer: string;
   /** SHAKE256 digest that was signed (present for message/typedData). */
   digest?: string;
+  /**
+   * Signing-scheme identifier (present for message/typedData), e.g.
+   * "QRL-SIGN-MSG-v1". Byte-matches the web wallet's response so dApps get an
+   * identical shape from both hosts.
+   */
+  schemeVersion?: string;
   /** For transactions: the 0x raw signed tx ready to broadcast. */
   rawTransaction?: string;
+  /** For transactions: the tx hash web3 computed from the signed tx. Held by
+   * main to resolve an "already known" broadcast rejection to a success (the
+   * node already has this exact tx); never renderer-supplied. */
+  transactionHash?: string;
 }

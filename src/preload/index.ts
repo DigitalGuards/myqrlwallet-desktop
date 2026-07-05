@@ -29,11 +29,22 @@ const api: QrlWalletApi = {
   createWallet: (req) => ipcRenderer.invoke(IPC.CREATE_WALLET, req),
   importWallet: (req) => ipcRenderer.invoke(IPC.IMPORT_WALLET, req),
   sendRawTransaction: (req) => ipcRenderer.invoke(IPC.SEND_RAW_TRANSACTION, req),
+  dappRequestAttention: () => ipcRenderer.invoke(IPC.DAPP_REQUEST_ATTENTION),
+  openDesktopSettings: () => ipcRenderer.invoke(IPC.OPEN_DESKTOP_SETTINGS),
   onLockStateChanged: (cb) => {
     // Wrap the callback in a closure rather than handing out ipcRenderer.on.
     const listener = (_event: unknown, locked: boolean): void => cb(locked);
     ipcRenderer.on(EVENTS.LOCK_STATE_CHANGED, listener);
     return () => ipcRenderer.removeListener(EVENTS.LOCK_STATE_CHANGED, listener);
+  },
+  onDAppConnectUri: (cb) => {
+    const listener = (_event: unknown, uri: string): void => {
+      // Belt-and-braces: main already shape-validated, but a string check
+      // here keeps a malformed payload from reaching the renderer callback.
+      if (typeof uri === 'string') cb(uri);
+    };
+    ipcRenderer.on(EVENTS.DAPP_CONNECT_URI, listener);
+    return () => ipcRenderer.removeListener(EVENTS.DAPP_CONNECT_URI, listener);
   },
 };
 

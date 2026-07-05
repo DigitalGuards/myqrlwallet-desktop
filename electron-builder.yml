@@ -26,6 +26,13 @@ files:
   - '!.prettierrc*'
   - '!*.md'
 
+# qrlconnect:// protocol handler: dApp "open in desktop wallet" links.
+# NSIS registers it in HKCU (works with perMachine:false, no admin); macOS
+# gets CFBundleURLTypes and Linux the .desktop x-scheme-handler entry.
+protocols:
+  - name: QRL Connect
+    schemes: [qrlconnect]
+
 asar: true
 # @node-rs/argon2 ships a prebuilt .node that cannot run from inside the asar;
 # unpack every native binary so process.dlopen resolves it from app.asar.unpacked.

@@ -12,7 +12,11 @@
  */
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { AUTOLOCK_MS } from './config';
+import {
+  getBiometricUnlockEnabled,
+  getEffectiveAutolockMs,
+  isBiometricUnlockExplicitlyEnabled,
+} from './settingsFile';
 import {
   getActiveAddress,
   listSeeds,
@@ -37,6 +41,46 @@ let unlockWin: BrowserWindow | null = null;
 // 'close' handler does not treat that as a user dismissal (which quits).
 let unlocked = false;
 let ipcRegistered = false;
+let onUnlockedCallback: (() => void) | null = null;
+let onUnlockShownCallback: (() => void) | null = null;
+
+/**
+ * True while the lock screen owns the display (an unlock window is up and the
+ * unlock has not completed). Consumers must not reveal or focus the hidden
+ * main wallet window while this holds: the single-window lock screen is a
+ * documented invariant of this module.
+ */
+export function isUnlockWindowShown(): boolean {
+  return unlockWin !== null && !unlockWin.isDestroyed() && !unlocked;
+}
+
+/** Bring the unlock window to the front (protocol launches while locked). */
+export function focusUnlockWindow(): void {
+  if (unlockWin && !unlockWin.isDestroyed()) {
+    if (unlockWin.isMinimized()) unlockWin.restore();
+    unlockWin.focus();
+  }
+}
+
+/**
+ * Register a hook that fires after EVERY successful unlock (both the native
+ * window flow and a renderer-driven unlock routed through
+ * notifyUnlockedExternally), once the main window is visible again. Used by
+ * the dApp URI ingress to flush a connection URI that arrived while locked.
+ */
+export function setOnUnlocked(cb: () => void): void {
+  onUnlockedCallback = cb;
+}
+
+/**
+ * Register a hook that fires whenever the lock screen takes over the display
+ * (every showUnlockWindow call). Used by index.ts to close the native settings
+ * window: while locked, the unlock window must be the ONLY surface on screen,
+ * and settings actions (autolock, wallet removal) must not be reachable.
+ */
+export function setOnUnlockShown(cb: () => void): void {
+  onUnlockShownCallback = cb;
+}
 
 function notifyMain(deps: UnlockDeps, locked: boolean): void {
   const win = deps.getMainWindow();
@@ -52,6 +96,7 @@ function finishUnlock(deps: UnlockDeps): void {
   const main = deps.getMainWindow();
   if (main && !main.isDestroyed()) main.show();
   if (unlockWin && !unlockWin.isDestroyed()) unlockWin.close();
+  onUnlockedCallback?.();
 }
 
 /**
@@ -88,13 +133,19 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const [seeds, active] = await Promise.all([listSeeds(), getActiveAddress()]);
+    const [seeds, active, biometricEnabled] = await Promise.all([
+      listSeeds(),
+      getActiveAddress(),
+      getBiometricUnlockEnabled(),
+    ]);
     // Resolve keychain backing for all wallets concurrently (keyVault.has
-    // shells out to the OS helper on macOS).
+    // shells out to the OS helper on macOS). A stored KEK counts only while
+    // the biometric settings preference is on, so the Touch ID button never
+    // shows for a user who disabled it.
     const wallets = await Promise.all(
       seeds.map(async (s) => ({
         address: s.address,
-        keychainBacked: await deps.keyVault.has(s.address),
+        keychainBacked: biometricEnabled && (await deps.keyVault.has(s.address)),
       })),
     );
     return { wallets, active };
@@ -109,7 +160,30 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     try {
-      await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, password });
+      // Re-provision the OS-vault KEK when the user EXPLICITLY enabled
+      // biometric quick unlock in settings and none is stored (mirrors the
+      // renderer UNLOCK path; the toggle-off sweep deletes stored KEKs and
+      // import-time provisioning alone could never restore them).
+      const wantKek =
+        (await isBiometricUnlockExplicitlyEnabled()) &&
+        (await deps.keyVault.isAvailable()) &&
+        !(await deps.keyVault.has(encrypted.address));
+      const result = await deps.signer.unlock({
+        encrypted,
+        autolockMs: await getEffectiveAutolockMs(),
+        password,
+        wantKek,
+      });
+      if (wantKek && result.kekHex) {
+        // Best-effort: the unlock already succeeded; a vault write failure
+        // only means Touch ID stays unavailable until the next try.
+        try {
+          await deps.keyVault.store(encrypted.address, result.kekHex);
+        } catch {
+          /* logged nowhere sensitive; never block the unlock */
+        }
+        result.kekHex = undefined;
+      }
       // Unlocking an account selects it (the picker may have chosen a
       // different wallet than the previously active one).
       await setActiveAddress(encrypted.address);
@@ -126,10 +200,15 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const { address } = (arg ?? {}) as { address?: unknown };
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
+    // The settings preference is authoritative even if the toggle-off sweep
+    // failed to delete a stored KEK.
+    if (!(await getBiometricUnlockEnabled())) {
+      return { ok: false, error: 'Biometric unlock is disabled in Settings.' };
+    }
     const kekHex = await deps.keyVault.retrieve(encrypted.address);
     if (!kekHex) return { ok: false, error: 'Biometric unlock is unavailable. Use your password.' };
     try {
-      await deps.signer.unlock({ encrypted, autolockMs: AUTOLOCK_MS, kekHex });
+      await deps.signer.unlock({ encrypted, autolockMs: await getEffectiveAutolockMs(), kekHex });
       await setActiveAddress(encrypted.address);
       finishUnlock(deps);
       return { ok: true };
@@ -141,6 +220,12 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
 /** Show (or focus) the app-owned unlock window; hide the main window while locked. */
 export function showUnlockWindow(deps: UnlockDeps): void {
+  // The lock screen is taking over: give the registered hook the chance to
+  // tear down any other app-owned surface (the settings window) FIRST, so the
+  // unlock window is the only thing on screen. Runs on the focus
+  // short-circuit too: it must hold even if the settings window somehow
+  // appeared after the lock.
+  onUnlockShownCallback?.();
   // Short-circuit only to an EXISTING, still-locked window. A window mid-close
   // after a successful unlock (unlocked === true) must fall through so a fresh one
   // is built rather than focusing a dying window.

@@ -1,0 +1,274 @@
+/*
+ * Settings-window styling, matched to the unlock window (src/unlock/unlock.css)
+ * and therefore to the wallet renderer's slate-dark design language: slate-dark
+ * background, near-white text, slate borders, 0.5rem radius, the wallet's blue
+ * action accent, and the orange QRL logo as the brand mark.
+ */
+:root {
+  --bg: hsl(222.2 84% 4.9%); /* --background */
+  --fg: hsl(210 40% 98%); /* --foreground */
+  --muted-fg: hsl(215 20.2% 65.1%); /* --muted-foreground */
+  --faint: hsl(215 20% 45%);
+  --border: hsl(217.2 32.6% 17.5%); /* --border / --input */
+  --panel: hsl(217.2 32.6% 12%); /* slightly elevated surface */
+  --brand: hsl(199 89% 64%); /* --blue-accent */
+  --brand-hover: hsl(199 89% 70%);
+  --brand-fg: hsl(0 0% 100%);
+  --error: hsl(0 84% 67%);
+  --ok: hsl(142 66% 58%);
+  --radius: 0.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.settings-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 24px 16px;
+  background:
+    radial-gradient(58% 30% at 50% 0%, hsl(199 89% 64% / 0.08), transparent 70%), var(--bg);
+}
+
+/* The window covers the wallet window's full bounds (the unlock-window
+   takeover pattern), so constrain the content to a comfortable column and
+   center it; the gradient canvas stays full-bleed. */
+.settings-header,
+.settings-body,
+.settings-footer {
+  width: 100%;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.settings-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.settings-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* The way back from the takeover screen (Esc works too; the OS titlebar X is
+   easy to miss on a full-bleed window). */
+.settings-close {
+  margin-left: auto;
+}
+
+.settings-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-help {
+  font-size: 12px;
+  color: var(--muted-fg);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.settings-note {
+  font-size: 12px;
+  color: var(--faint);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.settings-select {
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  outline: none;
+  cursor: pointer;
+  min-width: 130px;
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+}
+
+.settings-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px hsl(199 89% 64% / 0.25);
+}
+
+.settings-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Toggle switch (checkbox-backed). */
+.settings-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: none;
+}
+
+.settings-toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.settings-toggle-track {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 140ms;
+}
+
+.settings-toggle input:checked + .settings-toggle-track {
+  background: var(--brand);
+}
+
+.settings-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg);
+  transition: transform 140ms;
+}
+
+.settings-toggle input:checked + .settings-toggle-track::after {
+  transform: translateX(18px);
+}
+
+.settings-toggle input:disabled + .settings-toggle-track {
+  opacity: 0.5;
+}
+
+.settings-button {
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition:
+    border-color 140ms,
+    background 140ms,
+    opacity 140ms;
+}
+
+.settings-button:hover:not(:disabled) {
+  border-color: var(--brand);
+  background: hsl(199 89% 64% / 0.08);
+}
+
+.settings-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Destructive section (remove account): the design system's deep red
+   (--destructive: 0 62.8% 30.6%) as border accent, matching the wallet's
+   destructive-card treatment. */
+.settings-card.danger {
+  border-color: hsl(0 62.8% 30.6% / 0.7);
+}
+
+.settings-button.danger {
+  border-color: hsl(0 62.8% 30.6%);
+  color: var(--error);
+}
+
+.settings-button.danger:hover:not(:disabled) {
+  border-color: var(--error);
+  background: hsl(0 84% 60% / 0.08);
+}
+
+.settings-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted-fg);
+  word-break: break-all;
+  margin: 0;
+}
+
+.settings-status {
+  font-size: 12px;
+  margin: 0;
+}
+
+.settings-status.ok {
+  color: var(--ok);
+}
+
+.settings-status.error {
+  color: var(--error);
+}
+
+.settings-footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--faint);
+}

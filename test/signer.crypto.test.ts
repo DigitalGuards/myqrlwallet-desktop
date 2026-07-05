@@ -24,8 +24,10 @@ import { shake256 } from '@noble/hashes/sha3.js';
 import { deriveKek } from '../src/signer/kdf';
 import { aesGcmEncrypt, aesGcmDecrypt, AeadAuthError } from '../src/signer/aead';
 import {
+  assertSessionSigner,
   deriveSeedFromHexSeed,
   deriveSeedFromMnemonic,
+  expectedSignerOf,
   generateMnemonic,
   signMessage,
 } from '../src/signer/signing';
@@ -115,6 +117,11 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
   assert.ok(result.publicKey, 'message signature must include the public key');
   assert.ok(result.digest, 'message signature must include the digest');
   assert.equal(result.signer, address, 'signer must match the derived address');
+  assert.equal(
+    result.schemeVersion,
+    'QRL-SIGN-MSG-v1',
+    'response must carry the scheme version the web wallet returns',
+  );
 
   const sig = hexToBytes(result.signature);
   const pk = hexToBytes(result.publicKey!);
@@ -138,6 +145,41 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
     false,
     'verification must fail for a tampered digest',
   );
+});
+
+test('assertSessionSigner binds every request arm to the unlocked account', () => {
+  const A = 'Q1111111111111111111111111111111111111111';
+  const B = 'Q2222222222222222222222222222222222222222';
+  const tx = {
+    from: A,
+    to: B,
+    value: '1',
+    nonce: 0,
+    gas: '21000',
+    maxFeePerGas: '10',
+    maxPriorityFeePerGas: '1',
+    chainId: 1337,
+    type: '0x2',
+    data: '0x',
+  } as const;
+  const msg = { kind: 'message', messageHex: '0xab', signer: A } as const;
+  const typed = { kind: 'typedData', payload: {}, signer: A } as const;
+  const txReq = { kind: 'transaction', tx } as const;
+
+  assert.equal(expectedSignerOf(msg), A);
+  assert.equal(expectedSignerOf(typed), A);
+  assert.equal(expectedSignerOf(txReq), A, 'transactions bind via tx.from');
+
+  // Matching account: no throw. Casing must not matter (EIP-55 checksums).
+  assert.doesNotThrow(() => assertSessionSigner(msg, A));
+  assert.doesNotThrow(() => assertSessionSigner(msg, A.toLowerCase()));
+  assert.doesNotThrow(() => assertSessionSigner(txReq, A));
+
+  // Any divergence between the request's account and the session: rejected.
+  assert.throws(() => assertSessionSigner(msg, B), /signing account mismatch/);
+  assert.throws(() => assertSessionSigner(typed, B), /signing account mismatch/);
+  assert.throws(() => assertSessionSigner(txReq, B), /signing account mismatch/);
+  assert.throws(() => assertSessionSigner(msg, ''), /signing account mismatch/);
 });
 
 test('generateMnemonic (signer create op) yields a usable, signing wallet', () => {

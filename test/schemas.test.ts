@@ -51,18 +51,25 @@ test('BuildTransactionRequest defaults feeLevel, bounds data, and rejects bad le
   assert.equal(ok.success && ok.data.feeLevel, 'medium', 'feeLevel defaults to medium');
 
   assert.equal(
-    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10', feeLevel: 'ludicrous' }).success,
+    BuildTransactionRequestSchema.safeParse({
+      from: ADDR,
+      to: ADDR2,
+      value: '10',
+      feeLevel: 'ludicrous',
+    }).success,
     false,
     'an unknown fee level is rejected',
   );
   assert.equal(
-    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: 'not-a-number' }).success,
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: 'not-a-number' })
+      .success,
     false,
     'value must be a decimal string',
   );
   const hugeData = '0x' + 'a'.repeat(2 * 128 * 1024 + 2);
   assert.equal(
-    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10', data: hugeData }).success,
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10', data: hugeData })
+      .success,
     false,
     'oversized calldata is rejected',
   );
@@ -94,8 +101,19 @@ test('SignatureRequest validates each arm and bounds payload size', () => {
     true,
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef' }).success,
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef', signer: ADDR })
+      .success,
     true,
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xdeadbeef' }).success,
+    false,
+    'message arm requires the signer binding',
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {} }).success,
+    false,
+    'typedData arm requires the signer binding',
   );
   assert.equal(
     SignatureRequestSchema.safeParse({ kind: 'nonsense', tx: validTx }).success,
@@ -104,11 +122,16 @@ test('SignatureRequest validates each arm and bounds payload size', () => {
   );
   const hugeMessage = '0x' + 'a'.repeat(2 * 64 * 1024 + 2);
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: hugeMessage }).success,
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: hugeMessage, signer: ADDR })
+      .success,
     false,
     'oversized message rejected',
   );
-  const hugePayload = { kind: 'typedData', payload: { big: 'a'.repeat(70 * 1024) } };
+  const hugePayload = {
+    kind: 'typedData',
+    payload: { big: 'a'.repeat(70 * 1024) },
+    signer: ADDR,
+  };
   assert.equal(
     SignatureRequestSchema.safeParse(hugePayload).success,
     false,
@@ -124,7 +147,11 @@ test('SendRawTransactionRequest requires 0x-prefixed hex', () => {
 
 test('Password + provisioning schemas bound their inputs', () => {
   assert.equal(PasswordSchema.safeParse('').success, false, 'empty password rejected');
-  assert.equal(PasswordSchema.safeParse('a'.repeat(1025)).success, false, 'over-long password rejected');
+  assert.equal(
+    PasswordSchema.safeParse('a'.repeat(1025)).success,
+    false,
+    'over-long password rejected',
+  );
   assert.equal(PasswordSchema.safeParse('a decent password').success, true);
 
   const create = CreateWalletRequestSchema.safeParse({ password: 'pw' });
@@ -215,17 +242,31 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
     'extra key rejected',
   );
   // An empty message and an empty typedData payload are both valid.
-  assert.equal(SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' }).success, true);
-  assert.equal(SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {} }).success, true);
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x', signer: ADDR }).success,
+    true,
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {}, signer: ADDR }).success,
+    true,
+  );
   // The message bound is on the TOTAL string length (incl. the 0x prefix).
   const maxLen = 2 * 64 * 1024;
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen - 2) }).success,
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0x' + 'a'.repeat(maxLen - 2),
+      signer: ADDR,
+    }).success,
     true,
     'message at the length bound is accepted',
   );
   assert.equal(
-    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x' + 'a'.repeat(maxLen) }).success,
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0x' + 'a'.repeat(maxLen),
+      signer: ADDR,
+    }).success,
     false,
     'message over the length bound is rejected',
   );
@@ -233,8 +274,14 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
 
 test('Decimal + hex + address boundary values', () => {
   // Zero transfer and leading-zero decimals are valid amounts.
-  assert.equal(BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0' }).success, true);
-  assert.equal(BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0001' }).success, true);
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0' }).success,
+    true,
+  );
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0001' }).success,
+    true,
+  );
   // Mixed-case Q-address is accepted (EIP-55 casing is tolerated by the schema).
   assert.equal(
     GetBalanceRequestSchema.safeParse({ address: 'Q' + 'a'.repeat(20) + 'A'.repeat(20) }).success,
@@ -243,13 +290,87 @@ test('Decimal + hex + address boundary values', () => {
   );
   // Calldata: bare even-length hex ok; odd-length (incl. 0x parity) rejected.
   assert.equal(
-    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: 'abcd' }).success,
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: 'abcd' })
+      .success,
     true,
     'bare even hex calldata accepted',
   );
   assert.equal(
-    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: '0xabc' }).success,
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '1', data: '0xabc' })
+      .success,
     false,
     'odd-length hex calldata rejected',
   );
+});
+
+// ---------------------------------------------------------------------------
+// dApp origin block (desktop dApp-connect provenance on signature requests)
+// ---------------------------------------------------------------------------
+
+const validOrigin = {
+  via: 'dapp' as const,
+  name: 'QuantaPool',
+  url: 'https://quantapool.com',
+  channelId: 'a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4',
+};
+
+test('SignatureRequest accepts a bounded dApp origin block on every arm', () => {
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'transaction', tx: validTx, origin: validOrigin })
+      .success,
+    true,
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({
+      kind: 'message',
+      messageHex: '0xab',
+      signer: ADDR,
+      origin: validOrigin,
+    }).success,
+    true,
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({
+      kind: 'typedData',
+      payload: {},
+      signer: ADDR,
+      origin: validOrigin,
+    }).success,
+    true,
+  );
+});
+
+test('dApp origin rejects oversized, non-http(s), control-char and extra-keyed values', () => {
+  const parse = (origin: unknown) =>
+    SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', signer: ADDR, origin })
+      .success;
+  // wrong discriminator
+  assert.equal(parse({ ...validOrigin, via: 'wallet' }), false);
+  // oversized name / url / channelId
+  assert.equal(parse({ ...validOrigin, name: 'x'.repeat(65) }), false);
+  assert.equal(parse({ ...validOrigin, url: 'https://a.com/' + 'x'.repeat(256) }), false);
+  assert.equal(parse({ ...validOrigin, channelId: 'a'.repeat(65) }), false);
+  // control chars in the display name (dialog spoofing via injected newlines)
+  assert.equal(parse({ ...validOrigin, name: 'evil\nOnly approve: yes' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u0007bell' }), false);
+  // C1 controls, Unicode line/paragraph separators, bidi marks and overrides:
+  // the same dialog-spoofing class, outside the C0 range.
+  assert.equal(parse({ ...validOrigin, name: 'evil\u0085next-line' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2028Only approve: yes' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2029para' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u202egnihsihp' }), false, 'RLO override');
+  assert.equal(parse({ ...validOrigin, name: 'evil\u200e' }), false);
+  assert.equal(parse({ ...validOrigin, name: 'evil\u2066isolate' }), false);
+  // dangerous URL schemes
+  assert.equal(parse({ ...validOrigin, url: 'javascript:alert(1)' }), false);
+  assert.equal(parse({ ...validOrigin, url: 'file:///etc/passwd' }), false);
+  assert.equal(parse({ ...validOrigin, url: 'not a url' }), false);
+  // empty url allowed (sanitiser maps unusable dApp URLs to '')
+  assert.equal(parse({ ...validOrigin, url: '' }), true);
+  // channelId charset
+  assert.equal(parse({ ...validOrigin, channelId: '../../etc' }), false);
+  // extra keys rejected (.strict())
+  assert.equal(parse({ ...validOrigin, extra: 1 }), false);
+  // empty name rejected
+  assert.equal(parse({ ...validOrigin, name: '' }), false);
 });
