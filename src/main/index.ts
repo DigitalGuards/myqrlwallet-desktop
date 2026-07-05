@@ -476,7 +476,12 @@ app
     // warning nobody sees. Fail loudly instead: native error box, then exit
     // non-zero. showErrorBox is safe before any window exists.
     const message = err instanceof Error ? err.message : String(err);
-    logMain(`[boot] startup FAILED: ${message}`);
+    // Log the stack, not just the message: the message alone ("signer exited")
+    // rarely pinpoints a startup failure, and this log is the only trace when
+    // the app dies before a window (see the headless-zombie note above). The
+    // stack names non-secret code paths only.
+    const detail = err instanceof Error && err.stack ? err.stack : message;
+    logMain(`[boot] startup FAILED: ${detail}`);
     dialog.showErrorBox(
       'MyQRLWallet failed to start',
       `${message}\n\nThe app cannot continue and will close. If this keeps happening, reinstall MyQRLWallet.`,

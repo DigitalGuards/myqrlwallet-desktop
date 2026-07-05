@@ -304,4 +304,8 @@ export interface SignatureResult {
   schemeVersion?: string;
   /** For transactions: the 0x raw signed tx ready to broadcast. */
   rawTransaction?: string;
+  /** For transactions: the tx hash web3 computed from the signed tx. Held by
+   * main to resolve an "already known" broadcast rejection to a success (the
+   * node already has this exact tx); never renderer-supplied. */
+  transactionHash?: string;
 }
