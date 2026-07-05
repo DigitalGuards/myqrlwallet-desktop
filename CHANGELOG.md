@@ -2,6 +2,54 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 0.3.0
+
+Still a staging build: the bundled renderer targets the dev environment
+(dev.qrlwallet.com) by default.
+
+### Added
+
+- Native, main-owned settings window: the single settings surface on desktop
+  (the renderer's settings page is bypassed entirely). Full-bleed takeover of
+  the wallet window, with an explicit "Back to wallet" button and Esc to close.
+  Covers autolock timing, biometric/keychain unlock preference, and per-account
+  removal, all handled in trusted native UI behind the same main-drawn
+  confirmation as before.
+- Main-owned settings store (`settings.json`, atomic 0600 writes, self-healing
+  reads). Autolock changes re-arm the running signer session live.
+- dApp-connect shell support: `qrlconnect://` deep links (protocol handler,
+  cold-start buffering, and second-instance handoff), attention/focus IPC for
+  approval UX, and the requesting dApp origin displayed in the trusted
+  signature confirmation.
+- Main-process file log with dApp-ingress log points for diagnosing pairing
+  issues.
+
+### Changed
+
+- RPC now flows through the wallet backend's proxies instead of a raw node
+  URL. Reads fail over to a secondary endpoint; a transaction broadcast fails
+  over on transport failures only (a node's JSON-RPC rejection always
+  surfaces), and a duplicate-known rejection after a retry resolves to the
+  signer-computed transaction hash instead of a false failure.
+
+### Security
+
+- Every signature request is bound to the unlocked session's account: a
+  request targeting any other account is refused by the signer
+  ("signing account mismatch").
+- A `qrlconnect://` launch can no longer reveal a locked wallet window, and
+  dApp attention requests are ignored while the unlock screen is up.
+- Signature results carry an explicit `schemeVersion`.
+
+### Fixed
+
+- Startup errors fail loudly with a native dialog instead of a silent zombie
+  process.
+- Windows cross-builds ship the win32 argon2 NAPI bindings (0.2.x Windows
+  installs could hit a signer that died at boot).
+- NSIS shortcut metadata kept under the 260-char `.lnk` limit (0.2.x could
+  corrupt the shortcut icon/working-directory fields).
+
 ## 0.2.1
 
 ### Added
