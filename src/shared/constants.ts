@@ -50,6 +50,16 @@ export const IPC = {
   SET_ACTIVE_WALLET: 'wallet:setActiveWallet',
   /** Broadcasts a signed raw transaction via the RPC proxy. */
   SEND_RAW_TRANSACTION: 'wallet:sendRawTransaction',
+  /** Renderer asks main to surface the window because a dApp-connect request
+   * needs the user's attention (desktop analogue of the mobile
+   * DAPP_SHOW_WEBVIEW contract). Rate-limited in main; can only raise/flash
+   * the window, never anything else. */
+  DAPP_REQUEST_ATTENTION: 'wallet:dappRequestAttention',
+  /** Renderer asks main to show/focus the NATIVE desktop settings window
+   * (main-owned, drawn outside the renderer). No argument, no return data;
+   * rejected while locked. The renderer cannot read or write any main-owned
+   * setting through this or any other channel. */
+  OPEN_DESKTOP_SETTINGS: 'wallet:openDesktopSettings',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -58,6 +68,11 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 export const EVENTS = {
   /** Emitted with a boolean `locked` whenever the signer session changes. */
   LOCK_STATE_CHANGED: 'wallet:lockStateChanged',
+  /** Emitted with a raw qrlconnect:// URI string that arrived via the OS
+   * protocol handler (cold or warm start). Main validates only the shape
+   * (scheme/length/charset); parsing the payload stays in the renderer's
+   * audited dApp-connect stack, behind its consent modal. */
+  DAPP_CONNECT_URI: 'wallet:dappConnectUri',
 } as const;
 
 /** The global the preload mounts on `window`. */
@@ -74,6 +89,10 @@ export const SIGNER_MSG = {
   UNLOCK: 'signer:unlock',
   SIGN: 'signer:sign',
   LOCK: 'signer:lock',
+  /** Re-arm the idle autolock timer of an OPEN session with a new bound
+   * (no-op success while locked). Main <-> signer private, like every other
+   * SIGNER_MSG: never exposed on the renderer bridge. */
+  SET_AUTOLOCK: 'signer:setAutolock',
   STATUS: 'signer:status',
   SHUTDOWN: 'signer:shutdown',
 } as const;

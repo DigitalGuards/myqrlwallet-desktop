@@ -127,6 +127,17 @@ export class SignerSession {
     return this.state.kek.toString('hex');
   }
 
+  /**
+   * Change the autolock bound of an OPEN session and re-arm the idle timer
+   * immediately (shrinking the window applies now, not at the next unlock).
+   * No-op while locked: the new bound arrives with the next unlock request.
+   */
+  setAutolock(autolockMs: number, now: number): void {
+    if (!this.state) return;
+    this.state.autolockMs = autolockMs;
+    this.bumpTimer(now);
+  }
+
   /** Sliding-window reset: a successful sign extends the session by the full
    * autolock interval from `now`. */
   private bumpTimer(now: number): void {

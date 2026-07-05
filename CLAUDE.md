@@ -67,7 +67,7 @@ npm run build          # electron-vite build (out/main, out/preload, out/rendere
 | Dir | Purpose |
 |---|---|
 | `src/shared/` | Cross-process, dependency-free contract: `constants.ts` (IPC channels, EVENTS, `BRIDGE_KEY='qrlWallet'`, MLDSA87 sizes, KDF_DEFAULTS, SCHEME, AEAD), `schemas.ts` (zod schemas + inferred request/result types), `bridge.ts` (`QrlWalletApi` + `window.qrlWallet` augmentation), `protocol.ts` (private main<->signer message types). Keep pure data; no side effects. |
-| `src/main/` | The broker (lowest-but-trusted). `index.ts` (window + lifecycle), `ipc.ts` (the renderer's entire reachable surface), `security.ts` (CSP, sender validation, navigation lockdown, hardened webPreferences), `config.ts` (RPC defaults, autolock), `confirm.ts` (trusted signature modal), `rpc.ts`, `seedFile.ts` (owns the encrypted seed on disk), `signerBridge.ts` (parent side of the signer channel). Holds NO plaintext keys. |
+| `src/main/` | The broker (lowest-but-trusted). `index.ts` (window + lifecycle + qrlconnect:// protocol handling), `ipc.ts` (the renderer's entire reachable surface), `security.ts` (CSP, sender validation, navigation lockdown, hardened webPreferences), `config.ts` (RPC defaults, autolock), `confirm.ts` (trusted signature modal, incl. the unverified dApp-origin block), `dappUri.ts` (qrlconnect URI shape validation, rate limit, cold-start buffer), `rpc.ts`, `seedFile.ts` (owns the encrypted seed on disk), `signerBridge.ts` (parent side of the signer channel). Holds NO plaintext keys. |
 | `src/signer/` | The isolated `utilityProcess`, the ONLY holder of plaintext key material. `index.ts` (entry, speaks only over `process.parentPort`), `kdf.ts` (Argon2id KEK), `aead.ts` (AES-256-GCM envelope), `signing.ts` (seed derivation + ML-DSA-87), `session.ts` (in-memory unlock + autolock), `zeroize.ts`. |
 | `src/keyvault/` | OS-keychain KEK storage. `factory.ts`/`index.ts` (resolution), `macKeychainVault.ts` (Touch-ID/keychain helper), `safeStorageVault.ts` (opt-in, no presence gate), `nullVault.ts`. |
 | `src/preload/` | `index.ts` (the `window.qrlWallet` contextBridge for the wallet window) and `preload.ts` for the unlock window (built to `out/preload/unlock.js`). Exposes ONLY narrow named wrappers; never raw `ipcRenderer`. |
@@ -113,11 +113,14 @@ yields NO key material, because keys never live there.
    named `window.qrlWallet` wrappers (`getBalance`, `buildTransaction`,
    `requestSignature`, `unlock`, `lock`, `removeWallet`, `getStatus`,
    `hasWallet`, `createWallet`, `importWallet`, `listWallets`,
-   `setActiveWallet`, `sendRawTransaction`, `onLockStateChanged`). The unlock
+   `setActiveWallet`, `sendRawTransaction`, `dappRequestAttention`,
+   `openDesktopSettings`, `onLockStateChanged`, `onDAppConnectUri`). The unlock
    window's preload exposes only `window.unlockBridge`
-   (`getInfo`/`submit`/`biometric`). Never expose raw `ipcRenderer`, `invoke`,
-   channel strings, or Node primitives. Files: `src/preload/index.ts`,
-   `src/unlock/preload.ts`, `src/shared/bridge.ts`, `src/shared/constants.ts`.
+   (`getInfo`/`submit`/`biometric`); the settings window's preload exposes only
+   `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`). Never expose raw
+   `ipcRenderer`, `invoke`, channel strings, or Node primitives.
+   Files: `src/preload/index.ts`, `src/unlock/preload.ts`,
+   `src/settings/preload.ts`, `src/shared/bridge.ts`, `src/shared/constants.ts`.
 
 4. **Every IPC handler validates sender AND argument.** Each `ipcMain.handle`
    first calls `isTrustedSender` (top frame of the wallet window + `file:`
@@ -131,9 +134,12 @@ yields NO key material, because keys never live there.
    irreversible wipe) each proceed only after a main-drawn confirmation
    (`confirmSignature` / `confirmRemoveWallet`) returns approved; a rejection
    throws and nothing is signed or deleted. The renderer's own confirm UI is
-   convenience, never the gate. The unlock password is collected in the native
+   convenience, never the gate. The wallet removal triggered from the native
+   settings window runs the same shared flow (`src/main/walletRemoval.ts`)
+   behind the same confirmation. The unlock password is collected in the native
    unlock window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer.
-   Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/unlockWindow.ts`.
+   Files: `src/main/ipc.ts`, `src/main/confirm.ts`, `src/main/walletRemoval.ts`,
+   `src/main/unlockWindow.ts`, `src/main/settingsWindow.ts`.
 
 6. **Strict CSP: `script-src 'self'`, no script `unsafe-inline` / `unsafe-eval`.**
    The load-bearing control is `script-src 'self'`: a renderer RCE can neither
@@ -232,6 +238,12 @@ Exercise these (test or manual) for any change to `src/main/ipc.ts`,
 - Malformed IPC rejection: a payload that fails zod parse is rejected before any action.
 - Sub-frame sender rejection: an IPC event from a non-top frame or non-`file:`
   origin is rejected by `isTrustedSender`.
+- dApp deep link (warm + cold start): a `qrlconnect://` launch surfaces the
+  window and reaches the renderer's consent modal; declining produces zero
+  relay traffic; a launch flood collapses to one prompt (rate limit).
+- dApp signature provenance: a signature request carrying a schema-valid
+  `origin` block renders the unverified dApp context in the trusted confirm;
+  an oversized/control-char/extra-keyed origin is rejected at the boundary.
 
 ## 7. Style
 

@@ -1,7 +1,7 @@
 {
   "name": "myqrlwallet-desktop",
-  "version": "0.2.1",
-  "description": "Post-quantum, enterprise-grade QRL desktop wallet. Electron shell with a hardened four-process architecture: a sandboxed renderer (reused myqrlwallet-frontend), a broker main process, and an isolated signer utilityProcess that is the sole holder of plaintext keys.",
+  "version": "0.3.0",
+  "description": "Post-quantum QRL desktop wallet: hardened Electron shell whose isolated signer process is the sole holder of plaintext keys.",
   "author": "DigitalGuards",
   "license": "MIT",
   "private": true,
@@ -29,7 +29,8 @@
     "dist:win": "npm run build && electron-builder --win --x64 --arm64",
     "dist:linux": "npm run build && electron-builder --linux --x64",
     "rebuild:native": "electron-builder install-app-deps",
-    "fuses:read": "electron-fuses read --app"
+    "fuses:read": "electron-fuses read --app",
+    "predist:win": "node scripts/ensure-win-napi.cjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",

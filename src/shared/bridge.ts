@@ -68,9 +68,26 @@ export interface QrlWalletApi {
   // ---- broadcast ----------------------------------------------------------
   sendRawTransaction(req: SendRawTransactionRequest): Promise<{ transactionHash: string }>;
 
+  // ---- dApp connect (desktop ingress + attention) --------------------------
+  /** Ask main to surface the window because a dApp request needs the user
+   * (taskbar flash / dock bounce; never steals focus). Rate-limited in main. */
+  dappRequestAttention(): Promise<void>;
+
+  // ---- desktop settings -----------------------------------------------------
+  /** Ask main to show/focus the native desktop settings window. Fire-and-ask:
+   * no data crosses in either direction (main-owned settings are never
+   * readable or writable from the renderer) and the request is rejected while
+   * the wallet is locked. */
+  openDesktopSettings(): Promise<void>;
+
   // ---- events -------------------------------------------------------------
   /** Subscribe to lock-state changes (e.g. autolock). Returns an unsubscribe. */
   onLockStateChanged(cb: (locked: boolean) => void): () => void;
+  /** Subscribe to qrlconnect:// URIs arriving via the OS protocol handler.
+   * The URI is shape-validated by main but otherwise raw: the renderer's
+   * dApp-connect stack parses it behind its consent modal. Returns an
+   * unsubscribe. */
+  onDAppConnectUri(cb: (uri: string) => void): () => void;
 }
 
 declare global {

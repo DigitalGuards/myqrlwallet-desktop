@@ -98,6 +98,14 @@ export interface LockReq extends BaseReq {
   type: 'signer:lock';
 }
 
+/** Re-arm the idle autolock timer of an open session with a new bound (main
+ * persisted a settings change). No-op success while locked: the new bound is
+ * simply passed on the next unlock. Carries no secret. */
+export interface SetAutolockReq extends BaseReq {
+  type: 'signer:setAutolock';
+  autolockMs: number;
+}
+
 export interface StatusReq extends BaseReq {
   type: 'signer:status';
 }
@@ -107,7 +115,7 @@ export interface ShutdownReq extends BaseReq {
 }
 
 export type SignerRequest =
-  CreateReq | ImportReq | UnlockReq | SignReq | LockReq | StatusReq | ShutdownReq;
+  CreateReq | ImportReq | UnlockReq | SignReq | LockReq | SetAutolockReq | StatusReq | ShutdownReq;
 
 // ---- Responses (signer -> main) -------------------------------------------
 
@@ -154,6 +162,7 @@ export type SignerOk =
   | { id: number; ok: true; type: 'signer:unlock'; result: UnlockResult }
   | { id: number; ok: true; type: 'signer:sign'; result: SignatureResult }
   | { id: number; ok: true; type: 'signer:lock'; result: null }
+  | { id: number; ok: true; type: 'signer:setAutolock'; result: null }
   | { id: number; ok: true; type: 'signer:status'; result: SignerStatus }
   | { id: number; ok: true; type: 'signer:shutdown'; result: null };
 
