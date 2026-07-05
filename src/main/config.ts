@@ -20,13 +20,38 @@ function envUrl(name: string, fallback: string): string {
   }
 }
 
+/** Sentinels that explicitly DISABLE an optional endpoint (no failover). */
+const DISABLE_TOKENS = new Set(['', 'none', 'off', 'disabled']);
+
+/**
+ * An OPTIONAL endpoint: unset -> the default; explicitly blank/none/off ->
+ * disabled (undefined); a valid URL -> that URL; set-but-malformed -> disabled
+ * rather than silently re-defaulting. The last point matters: an operator who
+ * points the primary at a private/local node must be able to turn the public
+ * fallback OFF, and a typo must not silently leak a signed raw tx to the prod
+ * proxy (or land it on a colliding chain id).
+ */
+function envUrlOptional(name: string, fallback: string): string | undefined {
+  const v = process.env[name];
+  if (v === undefined) return fallback;
+  const trimmed = v.trim();
+  if (DISABLE_TOKENS.has(trimmed.toLowerCase())) return undefined;
+  try {
+    return new URL(trimmed).toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
 /** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace): the dev backend's
  * RPC proxy, matching the staging renderer's provider URL. */
 export const RPC_URL = envUrl('QRL_RPC_URL', 'https://dev.qrlwallet.com/api/qrl-rpc/testnet');
 
 /** Secondary endpoint for failover: the prod backend's RPC proxy (an
- * independent deployment over the same node pool). */
-export const RPC_URL_SECONDARY = envUrl(
+ * independent deployment over the same node pool). Set QRL_RPC_URL_SECONDARY
+ * to an empty string / "none" / "off" to disable failover entirely (e.g. when
+ * the primary is a private node the prod proxy must never see). */
+export const RPC_URL_SECONDARY = envUrlOptional(
   'QRL_RPC_URL_SECONDARY',
   'https://qrlwallet.com/api/qrl-rpc/testnet',
 );
@@ -68,6 +93,7 @@ function frontendOrigins(): string[] {
 export function connectSrcOrigins(): string[] {
   const origins = new Set<string>();
   for (const url of [RPC_URL, RPC_URL_SECONDARY]) {
+    if (!url) continue; // secondary may be disabled (undefined)
     try {
       origins.add(new URL(url).origin);
     } catch {
