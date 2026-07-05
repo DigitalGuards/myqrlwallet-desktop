@@ -82,6 +82,26 @@ async function chainId(): Promise<number> {
 const sameAccount = (a: string | null | undefined, b: string | null | undefined): boolean =>
   typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
 
+// Bounded map of the most recently signed raw txs to their signer-computed
+// hash. Populated when main brokers a transaction signature, read when the
+// renderer then broadcasts it, so a duplicate-known broadcast rejection can
+// resolve to the real hash. Bounded (FIFO) so it cannot grow unboundedly over
+// a long session; a miss just means no duplicate-known shortcut (safe).
+const SIGNED_TX_HASH_LIMIT = 32;
+const signedTxHashes = new Map<string, string>();
+function rememberSignedTxHash(rawTx: string, hash: string): void {
+  if (signedTxHashes.has(rawTx)) signedTxHashes.delete(rawTx);
+  signedTxHashes.set(rawTx, hash);
+  while (signedTxHashes.size > SIGNED_TX_HASH_LIMIT) {
+    const oldest = signedTxHashes.keys().next().value;
+    if (oldest === undefined) break;
+    signedTxHashes.delete(oldest);
+  }
+}
+function recallSignedTxHash(rawTx: string): string | undefined {
+  return signedTxHashes.get(rawTx);
+}
+
 export function registerIpcHandlers(deps: Deps): void {
   const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
@@ -201,7 +221,15 @@ export function registerIpcHandlers(deps: Deps): void {
     }
     const approved = await confirmSignature(requireWindow(), req);
     if (!approved) throw new Error('user rejected signature');
-    return signer.sign(req, signingChainId);
+    const result = await signer.sign(req, signingChainId);
+    // Remember the signer-computed hash for THIS raw tx so the subsequent
+    // SEND_RAW_TRANSACTION can resolve an "already known" broadcast rejection
+    // to a success. Kept in main from the signer's own output: the renderer
+    // never supplies a hash, so it cannot forge a "successful" broadcast.
+    if (result.kind === 'transaction' && result.rawTransaction && result.transactionHash) {
+      rememberSignedTxHash(result.rawTransaction, result.transactionHash);
+    }
+    return result;
   });
 
   // ---- session ------------------------------------------------------------
@@ -363,7 +391,7 @@ export function registerIpcHandlers(deps: Deps): void {
 
   // ---- broadcast ----------------------------------------------------------
   handle(IPC.SEND_RAW_TRANSACTION, SendRawTransactionRequestSchema, (req) =>
-    rpc.sendRawTransaction(req.rawTx),
+    rpc.sendRawTransaction(req.rawTx, recallSignedTxHash(req.rawTx)),
   );
 
   // ---- desktop settings window ---------------------------------------------

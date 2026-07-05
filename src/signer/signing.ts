@@ -260,10 +260,16 @@ export async function signTransaction(
   if (!signed || !signed.rawTransaction) {
     throw new Error('transaction could not be signed');
   }
+  // web3 computes the tx hash of the signed envelope; surface it so main can
+  // resolve an "already known" broadcast rejection to a success. Optional:
+  // absent-tolerant downstream (a duplicate rejection without it just throws).
+  const transactionHash =
+    typeof signed.transactionHash === 'string' ? signed.transactionHash : undefined;
   return {
     kind: 'transaction',
     signature: signed.rawTransaction,
     rawTransaction: signed.rawTransaction,
     signer: derived,
+    ...(transactionHash ? { transactionHash } : {}),
   };
 }

@@ -61,9 +61,24 @@ async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Pro
   // A non-2xx here is a gateway/proxy-level failure (JSON-RPC rejections come
   // back as 200 + error body), so it counts as transport too.
   if (!res.ok) throw new RpcTransportError(`rpc ${method}: ${host} http ${res.status}`);
-  const body = (await res.json()) as JsonRpcResponse<T>;
+  let body: JsonRpcResponse<T>;
+  try {
+    body = (await res.json()) as JsonRpcResponse<T>;
+  } catch {
+    // A 200 whose body is not JSON is a gateway/interstitial (a Cloudflare
+    // challenge or error page on the CF-fronted proxy), NOT a node answer:
+    // classify it as transport so reads fail over and a broadcast retries the
+    // secondary instead of surfacing a raw "Unexpected token '<'" to the user.
+    throw new RpcTransportError(`rpc ${method}: ${host} returned a non-JSON body`);
+  }
+  // A genuine JSON-RPC error means a node ANSWERED and refused: surface it (a
+  // broadcast must NOT fail over on it).
   if (body.error) throw new Error(`rpc ${method}: ${body.error.message}`);
-  if (body.result === undefined) throw new Error(`rpc ${method}: empty result`);
+  // 200 with neither result nor error is a malformed envelope (proxy noise),
+  // not a node answer: treat as transport so it fails over like a non-JSON body.
+  if (body.result === undefined) {
+    throw new RpcTransportError(`rpc ${method}: ${host} returned no result`);
+  }
   return body.result;
 }
 
@@ -150,25 +165,72 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
   };
 }
 
-export async function sendRawTransaction(rawTx: string): Promise<{ transactionHash: string }> {
-  // Broadcast prefers the primary and fails over to the secondary ONLY on a
-  // transport failure (endpoint unreachable): a JSON-RPC rejection means a
-  // node ANSWERED and refused the tx, which must surface, not retry.
-  // Rebroadcasting an identical signed raw tx is idempotent (same hash, and
-  // the nonce protects against a double-spend), so the transport retry is
-  // safe even if the first request died after reaching the node.
+/**
+ * A node that already holds THIS exact tx (same hash) rejects with an
+ * "already known" family message. Because a duplicate is keyed on the tx HASH,
+ * the node holding it means our exact signed tx is in the mempool: when we
+ * know that hash, a duplicate rejection is a SUCCESSFUL (idempotent) broadcast,
+ * not a failure. Deliberately NOT "nonce too low": that means a tx with the
+ * same NONCE is already mined, which may be a DIFFERENT tx, so treating it as
+ * success could report a hash that never mines.
+ */
+const DUPLICATE_TX_RE = /already known|known transaction|already exists/i;
+
+/**
+ * Broadcast a signed raw tx. `expectedHash` (the signer-computed tx hash, held
+ * by main from the signature it just brokered, never renderer-supplied) lets a
+ * duplicate-known rejection resolve to that hash instead of failing: covers the
+ * "primary timed out AFTER the tx reached the node, retry hits the same pool
+ * which now reports it as known" case that would otherwise surface as a
+ * failure and tempt the user into a second (double-spending) send.
+ *
+ * Prefers the primary; fails over to the secondary ONLY on a transport failure
+ * (a JSON-RPC rejection means a node answered and refused, which must surface).
+ * Rebroadcasting an identical raw tx is idempotent (same hash, nonce-protected).
+ */
+export async function sendRawTransaction(
+  rawTx: string,
+  expectedHash?: string,
+): Promise<{ transactionHash: string }> {
+  const broadcastOn = async (url: string): Promise<{ transactionHash: string }> => {
+    try {
+      const hash = await rpcCallOn<string>(url, 'qrl_sendRawTransaction', [rawTx]);
+      return { transactionHash: hash };
+    } catch (err) {
+      if (
+        expectedHash &&
+        err instanceof Error &&
+        !(err instanceof RpcTransportError) &&
+        DUPLICATE_TX_RE.test(err.message)
+      ) {
+        return { transactionHash: expectedHash };
+      }
+      throw err;
+    }
+  };
+
   try {
-    const hash = await rpcCallOn<string>(RPC_URL, 'qrl_sendRawTransaction', [rawTx]);
-    return { transactionHash: hash };
-  } catch (err) {
+    return await broadcastOn(RPC_URL);
+  } catch (primaryErr) {
     if (
-      !(err instanceof RpcTransportError) ||
+      !(primaryErr instanceof RpcTransportError) ||
       !RPC_URL_SECONDARY ||
       RPC_URL_SECONDARY === RPC_URL
     ) {
-      throw err;
+      throw primaryErr;
     }
-    const hash = await rpcCallOn<string>(RPC_URL_SECONDARY, 'qrl_sendRawTransaction', [rawTx]);
-    return { transactionHash: hash };
+    try {
+      return await broadcastOn(RPC_URL_SECONDARY);
+    } catch (secondaryErr) {
+      // Chain the primary's transport error as the cause so a dual failure
+      // carries BOTH endpoints' diagnostics, not just the secondary's. Preserve
+      // the RpcTransportError type when the secondary also failed at transport.
+      if (secondaryErr instanceof RpcTransportError) {
+        throw new RpcTransportError(secondaryErr.message, { cause: primaryErr });
+      }
+      throw secondaryErr instanceof Error
+        ? new Error(secondaryErr.message, { cause: primaryErr })
+        : secondaryErr;
+    }
   }
 }
