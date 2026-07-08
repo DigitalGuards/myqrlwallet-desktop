@@ -2,6 +2,29 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 0.3.1
+
+Still a staging build: the bundled renderer targets the dev environment
+(dev.qrlwallet.com) by default.
+
+### Fixed
+
+- dApp contract calls are no longer starved by a fixed 90,000 gas limit:
+  transactions carrying calldata are estimated via `qrl_estimateGas` with the
+  web wallet's 1.2x buffer, and an estimate that would revert is refused
+  before signing instead of burning the fee on a guaranteed on-chain revert
+  (first hit by QuantaSwap HTLC locks, which write ~7 storage slots and need
+  ~175k gas). Calldata is canonicalized to the `0x` form and the estimate runs
+  in parallel with the nonce/gas-price/chain-id reads.
+
+### Changed
+
+- Bundled renderer refreshed: dApp transactions now show the full progress
+  ladder on desktop (signing, broadcasting, awaiting confirmation, confirmed),
+  answering the dApp only once the on-chain receipt lands (web parity),
+  instead of reporting success at broadcast time. Also fixes a progress-state
+  leak when a dApp session disconnects mid-transaction.
+
 ## 0.3.0
 
 Still a staging build: the bundled renderer targets the dev environment
