@@ -141,6 +141,29 @@ export function applyFeeLevel(
   return { maxFeePerGas, maxPriorityFeePerGas };
 }
 
+/** Gas-estimate buffer, mirroring the web wallet's GAS_ESTIMATE_BUFFER_MULTIPLIER. */
+const GAS_ESTIMATE_BUFFER_PCT = 120n;
+
+/**
+ * Estimate gas for a contract call via qrl_estimateGas, with the web wallet's
+ * 1.2x buffer. A JSON-RPC error here (typically: the call would revert)
+ * propagates on purpose: refusing to build is strictly better than signing a
+ * transaction that burns its whole gas limit and reverts on-chain.
+ */
+async function estimateGas(req: BuildTransactionRequest): Promise<bigint> {
+  const estimated = hexToBigInt(
+    await rpcRead<string>('qrl_estimateGas', [
+      {
+        from: req.from,
+        to: req.to,
+        value: `0x${BigInt(req.value).toString(16)}`,
+        data: req.data,
+      },
+    ]),
+  );
+  return (estimated * GAS_ESTIMATE_BUFFER_PCT) / 100n;
+}
+
 /** Assemble a complete unsigned type-2 transaction ready for the signer. */
 export async function buildTransaction(req: BuildTransactionRequest): Promise<UnsignedTransaction> {
   const [nonce, base, chainId] = await Promise.all([
@@ -149,8 +172,10 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
     getChainId(),
   ]);
   const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, req.feeLevel);
-  // Native transfer = 21000; a contract call would estimate via qrl_estimateGas.
-  const gas = req.data && req.data !== '0x' ? 90_000n : 21_000n;
+  // Native transfer = 21000; contract calls are estimated via qrl_estimateGas.
+  // A fixed 90k limit starved anything beyond a few storage writes (e.g. an
+  // HTLC lock writes ~7 fresh slots, ~175k gas) into guaranteed reverts.
+  const gas = req.data && req.data !== '0x' ? await estimateGas(req) : 21_000n;
   return {
     from: req.from,
     to: req.to,
