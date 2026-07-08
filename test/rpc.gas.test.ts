@@ -21,7 +21,12 @@ process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/te
 
 const rpc = await import('../src/main/rpc');
 
-let methods: string[] = [];
+interface RecordedCall {
+  method: string;
+  params: unknown[];
+}
+
+let calls: RecordedCall[] = [];
 let estimateResponse: { result?: string; error?: { code: number; message: string } };
 
 const realFetch = globalThis.fetch;
@@ -32,12 +37,14 @@ const READ_RESULTS: Record<string, string> = {
   qrl_chainId: '0x539',
 };
 
+const methodsCalled = () => calls.map((c) => c.method);
+
 beforeEach(() => {
-  methods = [];
+  calls = [];
   estimateResponse = { result: '0x249f0' }; // 150000
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
-    const { method } = JSON.parse(String(init?.body)) as { method: string };
-    methods.push(method);
+    const { method, params } = JSON.parse(String(init?.body)) as RecordedCall;
+    calls.push({ method, params });
     const payload =
       method === 'qrl_estimateGas'
         ? { jsonrpc: '2.0', id: 1, ...estimateResponse }
@@ -60,13 +67,23 @@ const REQ = {
 test('buildTransaction uses fixed 21000 gas for native transfers (no estimate call)', async () => {
   const tx = await rpc.buildTransaction(REQ);
   assert.equal(tx.gas, '21000');
-  assert.ok(!methods.includes('qrl_estimateGas'), 'no estimate for plain transfers');
+  assert.ok(!methodsCalled().includes('qrl_estimateGas'), 'no estimate for plain transfers');
 });
 
 test('buildTransaction estimates contract calls and applies the 1.2x buffer', async () => {
   const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381' });
   assert.equal(tx.gas, '180000', '150000 estimate * 1.2 buffer');
-  assert.ok(methods.includes('qrl_estimateGas'));
+  assert.ok(methodsCalled().includes('qrl_estimateGas'));
+});
+
+test('buildTransaction canonicalizes bare-hex calldata to 0x form (schema admits both)', async () => {
+  const tx = await rpc.buildTransaction({ ...REQ, data: 'ad4c2381' });
+  assert.equal(tx.gas, '180000', 'bare hex still estimates');
+  assert.equal(tx.data, '0xad4c2381', 'built tx carries the 0x form');
+  const estimate = calls.find((c) => c.method === 'qrl_estimateGas');
+  assert.ok(estimate, 'estimate dispatched');
+  const [callParams] = estimate.params as [{ data?: string }];
+  assert.equal(callParams.data, '0xad4c2381', 'estimate payload carries the 0x form');
 });
 
 test('buildTransaction surfaces an estimate rejection instead of building a doomed tx', async () => {
