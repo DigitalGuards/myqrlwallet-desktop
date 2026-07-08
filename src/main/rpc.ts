@@ -141,16 +141,46 @@ export function applyFeeLevel(
   return { maxFeePerGas, maxPriorityFeePerGas };
 }
 
+/** Gas-estimate buffer, mirroring the web wallet's GAS_ESTIMATE_BUFFER_MULTIPLIER. */
+const GAS_ESTIMATE_BUFFER_PCT = 120n;
+
+/**
+ * Estimate gas for a contract call via qrl_estimateGas, with the web wallet's
+ * 1.2x buffer. A JSON-RPC error here (typically: the call would revert)
+ * propagates on purpose: refusing to build is strictly better than signing a
+ * transaction that burns its whole gas limit and reverts on-chain.
+ */
+async function estimateGas(req: BuildTransactionRequest, data: string): Promise<bigint> {
+  const estimated = hexToBigInt(
+    await rpcRead<string>('qrl_estimateGas', [
+      {
+        from: req.from,
+        to: req.to,
+        value: `0x${BigInt(req.value).toString(16)}`,
+        data,
+      },
+    ]),
+  );
+  return (estimated * GAS_ESTIMATE_BUFFER_PCT) / 100n;
+}
+
 /** Assemble a complete unsigned type-2 transaction ready for the signer. */
 export async function buildTransaction(req: BuildTransactionRequest): Promise<UnsignedTransaction> {
-  const [nonce, base, chainId] = await Promise.all([
+  // HexSchema admits bare hex; JSON-RPC wants the 0x-prefixed form, so
+  // canonicalize once and use it for both the estimate and the built tx.
+  const data = req.data ? (req.data.startsWith('0x') ? req.data : `0x${req.data}`) : undefined;
+  // Native transfer = 21000; contract calls are estimated via qrl_estimateGas.
+  // A fixed 90k limit starved anything beyond a few storage writes (e.g. an
+  // HTLC lock writes ~7 fresh slots, ~175k gas) into guaranteed reverts.
+  // The estimate depends only on the request, so it runs in parallel with
+  // the other reads.
+  const [nonce, base, chainId, gas] = await Promise.all([
     getTransactionCount(req.from),
     getGasPrice(),
     getChainId(),
+    data && data !== '0x' ? estimateGas(req, data) : Promise.resolve(21_000n),
   ]);
   const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, req.feeLevel);
-  // Native transfer = 21000; a contract call would estimate via qrl_estimateGas.
-  const gas = req.data && req.data !== '0x' ? 90_000n : 21_000n;
   return {
     from: req.from,
     to: req.to,
@@ -161,7 +191,7 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
     maxPriorityFeePerGas: maxPriorityFeePerGas.toString(10),
     chainId,
     type: '0x2',
-    ...(req.data ? { data: req.data } : {}),
+    ...(data ? { data } : {}),
   };
 }
 
