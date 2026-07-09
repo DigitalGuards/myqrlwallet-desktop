@@ -2,6 +2,37 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 0.3.3
+
+First production release: the app now targets prod (qrlwallet.com) by
+default, both the bundled renderer and the main process (RPC proxy, CSP
+allowlist). Staging builds remain possible by exporting the dev env vars
+(scripts/build-renderer.sh + QRL_* runtime env).
+
+### Changed
+
+- Renderer build and main-process defaults flipped from the dev staging
+  environment to production; dev failover proxy retained as the secondary
+  RPC endpoint.
+
+## 0.3.2
+
+Still a staging build: the bundled renderer targets the dev environment
+(dev.qrlwallet.com) by default.
+
+### Changed
+
+- dApp connections page redesigned to match the wallet: card layout with a
+  gradient header, status pills, per-session account and date rows, a proper
+  empty state, and hover-destructive disconnect. Reached from the sidebar
+  dApps item.
+
+### Fixed
+
+- The consent dialog now refuses to pair when the wallet has no account,
+  with an inline prompt to create or import one first, instead of leaving a
+  ghost "Account: None" session.
+
 ## 0.3.1
 
 Still a staging build: the bundled renderer targets the dev environment
