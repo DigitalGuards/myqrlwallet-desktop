@@ -18,14 +18,14 @@
 #      RUNTIME in the frontend (router.tsx detects window.qrlWallet), so no
 #      build flag and no post-build HTML surgery is needed.
 #
-# This is a STAGING build: the bundled renderer targets the dev environment
-# (dev.qrlwallet.com), which CICD auto-deploys on every push to the frontend
-# `dev` branch. The frontend picks its backend/RPC/explorer from VITE_NODE_ENV
-# + VITE_*_DEVELOPMENT/_PRODUCTION (frontend src/config/networks.ts), so the dev
-# vars are defaulted below. Each is overridable: a value already in the
-# environment wins, so a prod build just exports VITE_NODE_ENV=production and
-# the *_PRODUCTION vars before running this. Keep the desktop main-process CSP
-# allowlist (src/main/config.ts frontendOrigins) in sync with these origins.
+# This is a PRODUCTION build by default: the bundled renderer targets
+# qrlwallet.com. The frontend picks its backend/RPC/explorer from
+# VITE_NODE_ENV + VITE_*_PRODUCTION/_DEVELOPMENT (frontend
+# src/config/networks.ts). Each var is overridable: a value already in the
+# environment wins, so a staging build exports VITE_NODE_ENV=development
+# (dev vars default to dev.qrlwallet.com below) plus the QRL_* runtime env
+# for the main process. Keep the desktop main-process CSP allowlist
+# (src/main/config.ts frontendOrigins) in sync with these origins.
 #
 # Exits 0 with guidance if the frontend dir is absent.
 
@@ -51,21 +51,31 @@ if [[ ! -d "${FRONTEND_DIR}/node_modules" ]]; then
   npm --prefix "${FRONTEND_DIR}" install
 fi
 
-# Dev-environment defaults for the staging build. ${VAR:-default} keeps any
-# value the caller already exported (so a prod build can override every one).
+# PRODUCTION defaults (qrlwallet.com). ${VAR:-default} keeps any value the
+# caller already exported, so a staging build just exports
+# VITE_NODE_ENV=development plus the *_DEVELOPMENT vars (dev.qrlwallet.com)
+# and matching QRL_* runtime env for the main process (src/main/config.ts).
 export VITE_DESKTOP=1
-export VITE_NODE_ENV="${VITE_NODE_ENV:-development}"
+export VITE_NODE_ENV="${VITE_NODE_ENV:-production}"
 # The RPC endpoint is the backend's JSON-RPC PROXY, not the bare host: the
-# frontend builds the provider URL as `${VITE_RPC_URL_DEVELOPMENT}/testnet`
+# frontend builds the provider URL as `${VITE_RPC_URL_PRODUCTION}/testnet`
 # (config/networks.ts), and the proxy lives at /api/qrl-rpc, so the live URL is
-# https://dev.qrlwallet.com/api/qrl-rpc/testnet. Pointing at the bare host makes
+# https://qrlwallet.com/api/qrl-rpc/testnet. Pointing at the bare host makes
 # the frontend POST to /testnet, which the edge answers 405 ("Connection failed").
+export VITE_RPC_URL_PRODUCTION="${VITE_RPC_URL_PRODUCTION:-https://qrlwallet.com/api/qrl-rpc}"
+export VITE_SERVER_URL_PRODUCTION="${VITE_SERVER_URL_PRODUCTION:-https://qrlwallet.com}"
+export VITE_EXPLORER_URL_PRODUCTION="${VITE_EXPLORER_URL_PRODUCTION:-https://zondscan.com}"
+# Staging fallbacks used when VITE_NODE_ENV=development is exported.
 export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwallet.com/api/qrl-rpc}"
 export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
 export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://zondscan.com}"
 
 echo "[build-renderer] building frontend (VITE_DESKTOP=1, VITE_NODE_ENV=${VITE_NODE_ENV})..."
-echo "[build-renderer]   server/RPC -> ${VITE_SERVER_URL_DEVELOPMENT}, explorer -> ${VITE_EXPLORER_URL_DEVELOPMENT}"
+if [[ "${VITE_NODE_ENV}" == "production" ]]; then
+  echo "[build-renderer]   server/RPC -> ${VITE_SERVER_URL_PRODUCTION}, explorer -> ${VITE_EXPLORER_URL_PRODUCTION}"
+else
+  echo "[build-renderer]   server/RPC -> ${VITE_SERVER_URL_DEVELOPMENT}, explorer -> ${VITE_EXPLORER_URL_DEVELOPMENT}"
+fi
 # VITE_DESKTOP=1 -> base './' for file://. The router switches to hash routing
 # at runtime via window.qrlWallet, so nothing else is needed.
 npm --prefix "${FRONTEND_DIR}" run build

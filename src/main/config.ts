@@ -43,17 +43,18 @@ function envUrlOptional(name: string, fallback: string): string | undefined {
   }
 }
 
-/** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace): the dev backend's
- * RPC proxy, matching the staging renderer's provider URL. */
-export const RPC_URL = envUrl('QRL_RPC_URL', 'https://dev.qrlwallet.com/api/qrl-rpc/testnet');
+/** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace): the prod backend's
+ * RPC proxy, matching the bundled renderer's provider URL. Export QRL_RPC_URL
+ * (and the VITE_* dev vars for the renderer) to build/run a staging app. */
+export const RPC_URL = envUrl('QRL_RPC_URL', 'https://qrlwallet.com/api/qrl-rpc/testnet');
 
-/** Secondary endpoint for failover: the prod backend's RPC proxy (an
+/** Secondary endpoint for failover: the dev backend's RPC proxy (an
  * independent deployment over the same node pool). Set QRL_RPC_URL_SECONDARY
  * to an empty string / "none" / "off" to disable failover entirely (e.g. when
- * the primary is a private node the prod proxy must never see). */
+ * the primary is a private node no shared proxy must ever see). */
 export const RPC_URL_SECONDARY = envUrlOptional(
   'QRL_RPC_URL_SECONDARY',
-  'https://qrlwallet.com/api/qrl-rpc/testnet',
+  'https://dev.qrlwallet.com/api/qrl-rpc/testnet',
 );
 
 // The autolock idle timeout is no longer a boot-time constant: it resolves per
@@ -63,21 +64,16 @@ export const RPC_URL_SECONDARY = envUrlOptional(
 /**
  * Origins the reused myqrlwallet-frontend talks to at runtime: the backend
  * tx-history/token API + the dApp-connect relay + the explorer. The desktop
- * build is a STAGING build that targets the dev environment (dev.qrlwallet.com,
- * which CICD auto-deploys on every push to the frontend `dev` branch); the
- * bundled renderer is built with matching dev env vars (scripts/build-renderer.sh).
- * Override with QRL_FRONTEND_ORIGINS (space-separated) to repoint at prod.
+ * build targets PRODUCTION (qrlwallet.com); the bundled renderer is built
+ * with matching prod env vars (scripts/build-renderer.sh). Override with
+ * QRL_FRONTEND_ORIGINS (space-separated) to repoint at the dev stack.
  */
 function frontendOrigins(): string[] {
   const fromEnv = process.env['QRL_FRONTEND_ORIGINS'];
   if (fromEnv) return fromEnv.split(/\s+/).filter(Boolean);
   return [
-    // dev backend: tx-history / token API and its websocket.
-    'https://dev.qrlwallet.com',
-    'wss://dev.qrlwallet.com',
-    // dApp-connect relay. The dev frontend talks to the qrlwallet.com relay
-    // (allowlisted, not proxied), so the desktop must reach it too or
-    // dApp-connect (the rerouted approval/sign path) is CSP-blocked.
+    // prod backend: tx-history / token API, its websocket, and the
+    // dApp-connect relay (same origin).
     'https://qrlwallet.com',
     'wss://qrlwallet.com',
     // block explorer API (token + NFT discovery).
