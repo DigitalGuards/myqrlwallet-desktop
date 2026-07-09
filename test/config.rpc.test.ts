@@ -30,9 +30,13 @@ function resolveConfig(env: Record<string, string | undefined>): {
   return JSON.parse(out) as { primary: string; secondary: string | null };
 }
 
-test('unset secondary uses the prod proxy default', () => {
-  const { secondary } = resolveConfig({ QRL_RPC_URL_SECONDARY: undefined });
-  assert.equal(secondary, 'https://qrlwallet.com/api/qrl-rpc/testnet');
+test('unset secondary uses the dev proxy default (prod is the primary since 0.3.3)', () => {
+  const { primary, secondary } = resolveConfig({
+    QRL_RPC_URL: undefined,
+    QRL_RPC_URL_SECONDARY: undefined,
+  });
+  assert.equal(primary, 'https://qrlwallet.com/api/qrl-rpc/testnet');
+  assert.equal(secondary, 'https://dev.qrlwallet.com/api/qrl-rpc/testnet');
 });
 
 test('empty-string secondary DISABLES failover (no default leak)', () => {
