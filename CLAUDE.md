@@ -191,7 +191,8 @@ electron-builder is **26.x GA**: top-level `mac.*` keys and `win.signtoolOptions
 - **Renderer**: `npm run build:renderer:frontend` (run by `npm run build`)
   builds the reused `myqrlwallet-frontend` into `out/renderer`; electron-vite
   additionally builds the native unlock window into `out/unlock`. This is a
-  dev.qrlwallet.com STAGING build by default (env-overridable; see
+  PRODUCTION (qrlwallet.com) build by default since 0.3.3; export
+  VITE_NODE_ENV=development + the dev vars for a staging build (see
   `scripts/build-renderer.sh`).
 - **macOS**: run `npm run build:keychain-helper` BEFORE `dist:mac`, otherwise
   `resources/` is empty and the app silently falls back to password-only unlock
