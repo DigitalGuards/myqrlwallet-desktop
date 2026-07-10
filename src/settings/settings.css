@@ -1,22 +1,22 @@
 /*
  * Settings-window styling, matched to the unlock window (src/unlock/unlock.css)
- * and therefore to the wallet renderer's slate-dark design language: slate-dark
- * background, near-white text, slate borders, 0.5rem radius, the wallet's blue
- * action accent, and the orange QRL logo as the brand mark.
+ * and therefore to the wallet renderer's Obsidian & Ember design language:
+ * deep warm-ink background, warm near-white text, soft borders, 0.75rem radius,
+ * the wallet's ember action color, and the orange QRL logo as the brand mark.
  */
 :root {
-  --bg: hsl(222.2 84% 4.9%); /* --background */
-  --fg: hsl(210 40% 98%); /* --foreground */
-  --muted-fg: hsl(215 20.2% 65.1%); /* --muted-foreground */
-  --faint: hsl(215 20% 45%);
-  --border: hsl(217.2 32.6% 17.5%); /* --border / --input */
-  --panel: hsl(217.2 32.6% 12%); /* slightly elevated surface */
-  --brand: hsl(199 89% 64%); /* --blue-accent */
-  --brand-hover: hsl(199 89% 70%);
-  --brand-fg: hsl(0 0% 100%);
+  --bg: hsl(235 15% 4%); /* --background */
+  --fg: hsl(36 20% 95%); /* --foreground */
+  --muted-fg: hsl(234 8% 64%); /* --muted-foreground */
+  --faint: hsl(234 8% 45%);
+  --border: hsl(235 10% 15%); /* --border / --input */
+  --panel: hsl(235 11% 10%); /* slightly elevated surface */
+  --brand: hsl(24 96% 55%); /* --primary: the wallet's ember action color */
+  --brand-hover: hsl(24 96% 62%);
+  --brand-fg: hsl(24 90% 6%); /* dark text on ember, as on renderer CTAs */
   --error: hsl(0 84% 67%);
   --ok: hsl(142 66% 58%);
-  --radius: 0.5rem;
+  --radius: 0.75rem;
 }
 
 * {
@@ -44,7 +44,7 @@ body {
   flex-direction: column;
   padding: 24px 24px 16px;
   background:
-    radial-gradient(58% 30% at 50% 0%, hsl(199 89% 64% / 0.08), transparent 70%), var(--bg);
+    radial-gradient(58% 30% at 50% 0%, hsl(24 96% 55% / 0.08), transparent 70%), var(--bg);
 }
 
 /* The window covers the wallet window's full bounds (the unlock-window
@@ -146,7 +146,7 @@ body {
 
 .settings-select:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px hsl(199 89% 64% / 0.25);
+  box-shadow: 0 0 0 3px hsl(24 96% 55% / 0.3);
 }
 
 .settings-select:disabled {
@@ -220,7 +220,7 @@ body {
 
 .settings-button:hover:not(:disabled) {
   border-color: var(--brand);
-  background: hsl(199 89% 64% / 0.08);
+  background: hsl(24 96% 55% / 0.08);
 }
 
 .settings-button:disabled {
