@@ -13,3 +13,6 @@ release/
 /resources/qrl-keychain-helper
 # Windows zone identifiers
 *:Zone.Identifier
+
+# Local operating notes; never tracked (private infrastructure detail)
+CLAUDE.md
