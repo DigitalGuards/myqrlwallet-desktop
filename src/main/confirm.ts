@@ -8,16 +8,16 @@
 import { type BrowserWindow, dialog } from 'electron';
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
 
-/** Format a smallest-unit integer string as QUANTA (18 decimals), trimmed. */
+/** Format a smallest-unit integer string as Quanta (18 decimals), trimmed. */
 function formatQuanta(smallestUnit: string): string {
   const v = BigInt(smallestUnit);
   const DECIMALS = 18n;
   const base = 10n ** DECIMALS;
   const whole = v / base;
   const frac = v % base;
-  if (frac === 0n) return `${whole.toString()} QUANTA`;
+  if (frac === 0n) return `${whole.toString()} Quanta`;
   const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
-  return `${whole.toString()}.${fracStr} QUANTA`;
+  return `${whole.toString()}.${fracStr} Quanta`;
 }
 
 /**
