@@ -20,19 +20,20 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 - **Key isolation:** every key-touching operation (wallet generation, seed encrypt/decrypt, ML-DSA-87 signing) runs in the isolated signer. The renderer routes those through `window.qrlWallet`; its in-page seed/signing primitives are neutered (throw) under desktop, as defense-in-depth.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
 - **Key at rest:** Argon2id (`@node-rs/argon2`) password-derived KEK + AES-256-GCM, with the macOS Keychain (Designated Requirement + Touch ID) as defense-in-depth. No PIN: the desktop unlock secret is a password.
-- **Environment:** this is a STAGING build. The bundled renderer targets the dev environment (`dev.qrlwallet.com`), which CICD auto-deploys on every push to the frontend `dev` branch. Repoint with env vars (see "Renderer reuse").
+- **Environment:** production build by default. The bundled renderer targets `qrlwallet.com`; export `VITE_NODE_ENV=development` plus the dev vars for a staging (`dev.qrlwallet.com`) build. Repoint with env vars (see "Renderer reuse").
 
 ## Download
 
 Prebuilt installers are on the [Releases](https://github.com/DigitalGuards/myqrlwallet-desktop/releases/latest)
-page: a Windows NSIS installer (`.exe`, x64), a universal Linux `AppImage`, and a
-Debian/Ubuntu `.deb`. Each release lists SHA-256 checksums.
+page: a Windows NSIS installer (`.exe`, x64/arm64), a universal Linux
+`AppImage`, a Debian/Ubuntu `.deb`, and a Fedora/RHEL `.rpm`. Each release
+lists SHA-256 checksums.
 
 These binaries are currently **unsigned**: Windows SmartScreen warns on first
 launch ("More info -> Run anyway"), and the Linux AppImage needs `chmod +x`
 before running. Code-signing (Authenticode) and macOS notarization are a planned
-follow-up; there is no macOS build yet. Builds are STAGING (they target
-`dev.qrlwallet.com`); see "Pointing at an environment" to repoint.
+follow-up; there is no macOS build yet. Builds target production
+(`qrlwallet.com`); see "Pointing at an environment" to repoint.
 
 To build the installers yourself, see "Packaging and signing" below.
 
@@ -166,12 +167,12 @@ frontend runs as the desktop/web build, not its mobile webview.
 
 ### Pointing at an environment
 
-This build is staging: it targets `dev.qrlwallet.com`. The frontend selects its
-backend / RPC / explorer from `VITE_NODE_ENV` + `VITE_*_DEVELOPMENT` /
-`_PRODUCTION` (frontend `src/config/networks.ts`). `build-renderer.sh` defaults
-those to the dev environment; each is overridable from the environment, so a
-prod build just exports `VITE_NODE_ENV=production` and the `*_PRODUCTION` vars
-before building. The main-process CSP `connect-src` allowlist
+This build targets production (`qrlwallet.com`) by default. The frontend
+selects its backend / RPC / explorer from `VITE_NODE_ENV` + `VITE_*_DEVELOPMENT`
+/ `_PRODUCTION` (frontend `src/config/networks.ts`). `build-renderer.sh`
+defaults those to production; each is overridable from the environment, so a
+staging build just exports `VITE_NODE_ENV=development` and the `*_DEVELOPMENT`
+vars before building. The main-process CSP `connect-src` allowlist
 (`src/main/config.ts` `frontendOrigins`) is kept in sync with those origins;
 override it with `QRL_FRONTEND_ORIGINS` (space-separated) when repointing.
 
