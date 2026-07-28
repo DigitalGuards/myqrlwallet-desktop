@@ -282,7 +282,8 @@ signing). Verify the result on a built app with `npm run fuses:read`.
   defeats it (see the Chrome ABE bypass history in the threat model).
 - The renderer is fully sandboxed and key-free. Containment controls:
   `contextIsolation`, `sandbox`, `nodeIntegration: false`, a strict CSP
-  (`default-src 'self'`, `script-src 'self'` with no inline/eval) delivered as a
+  (`default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'` with no
+  inline/eval of JS) delivered as a
   real `file://` response header, the file handler contained to the app bundle,
   IPC sender + schema validation, navigation lockdown with a trusted-host
   allowlist for external links, deny-by-default renderer permissions,

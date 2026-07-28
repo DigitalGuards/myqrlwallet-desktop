@@ -61,7 +61,9 @@ header by the file-protocol handler (`protocol.handle('file')` in
 `buildContentSecurityPolicy`) with NO script `unsafe-inline` and NO
 `unsafe-eval`. As defense-in-depth, `scripts/build-renderer.sh` rewrites the
 staged renderer's meta CSP to the same desktop policy, so both the header and
-the meta tag enforce `script-src 'self'`.
+the meta tag enforce `script-src 'self' 'wasm-unsafe-eval'` (WebAssembly
+compilation only, for the frontend's hash-wasm argon2id keystore import; JS
+`eval` stays blocked).
 
 This works because a Vite + React build emits a single hashed external
 stylesheet and external script chunks, so `script-src 'self'` is satisfiable:
