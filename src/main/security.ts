@@ -35,8 +35,14 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  *
  * The renderer is the real myqrlwallet-frontend, so the policy is tuned to what
  * that app needs while preserving the property that matters most:
- *   - script-src 'self': NO 'unsafe-inline', NO 'unsafe-eval'. A renderer RCE
- *     cannot inject or eval script. This is the load-bearing control.
+ *   - script-src 'self' 'wasm-unsafe-eval': NO 'unsafe-inline', NO
+ *     'unsafe-eval'. A renderer RCE cannot inject or eval script. This is the
+ *     load-bearing control. 'wasm-unsafe-eval' permits WebAssembly compilation
+ *     ONLY (not JS eval); the frontend's hash-wasm argon2id needs it to import
+ *     extension keystore backups at full speed (the pure-JS fallback works
+ *     without it but takes ~20s per attempt at production KDF params). The
+ *     wasm bytes come from the same bundled same-origin scripts script-src
+ *     already trusts, so this does not widen where code can come FROM.
  *   - style-src 'self' 'unsafe-inline': Radix UI sets inline style attributes
  *     at runtime; inline STYLE cannot execute code, so this is an accepted,
  *     much-lower-risk relaxation than inline script would be.
@@ -57,7 +63,7 @@ export function buildContentSecurityPolicy(connectSrc: string[]): string {
   const connect = ["'self'", ...connectSrc].join(' ');
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     `connect-src ${connect}`,
     "img-src 'self' data: https:",

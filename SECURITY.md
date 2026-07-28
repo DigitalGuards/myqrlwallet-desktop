@@ -50,7 +50,7 @@ to the same policy as defense-in-depth.
 
 ```
 default-src 'self';
-script-src 'self';
+script-src 'self' 'wasm-unsafe-eval';
 style-src 'self' 'unsafe-inline';
 connect-src 'self' <configured RPC/backend origins>;
 img-src 'self' data: https:;
@@ -65,7 +65,11 @@ worker-src 'self' blob:
 
 The load-bearing control is `script-src 'self'`: no `unsafe-inline` and no
 `unsafe-eval` for SCRIPT, so a renderer compromise can neither inject nor `eval`
-executable code. `style-src` allows `'unsafe-inline'` because the reused frontend
+executable code. `'wasm-unsafe-eval'` permits WebAssembly compilation ONLY (it
+does not enable JS `eval`); the frontend's hash-wasm argon2id needs it to import
+extension keystore backups at full speed, and the wasm bytes come from the same
+bundled same-origin scripts `script-src` already trusts, so it does not widen
+where code can come FROM. `style-src` allows `'unsafe-inline'` because the reused frontend
 (Radix UI) sets inline STYLE attributes at runtime; inline style cannot execute
 code, so this is a much-lower-risk relaxation than inline script would be.
 `base-uri`/`form-action` are `'self'`, which resolves to `file://` for the
