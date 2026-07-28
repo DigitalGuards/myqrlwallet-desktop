@@ -323,8 +323,9 @@ that Electron recommends disabling in favor of a registered custom scheme.
 - Why it is accepted for now: this is NOT a regression from the Electron 42 bump
   (the fuse defaulted enabled on the prior major too), and disabling it while the
   renderer is still served from `file://` would break asset loading. The
-  load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'`
-  with no inline/eval, navigation lockdown, deny-by-default permissions) are
+  load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'
+  'wasm-unsafe-eval'` with no inline/eval of JS, navigation lockdown,
+  deny-by-default permissions) are
   unaffected and still contain a renderer compromise.
 - Residual risk: an in-origin renderer RCE has the broader `file://` capability
   surface available rather than a minimal custom-scheme one.

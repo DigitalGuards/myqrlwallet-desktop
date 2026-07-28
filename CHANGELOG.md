@@ -2,6 +2,70 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.0.0
+
+Major testnet release. The desktop wallet has carried the full four-process
+hardened architecture (isolated signer, trusted main-drawn confirmations,
+strict `script-src 'self'` CSP, fuses + ASAR integrity) since the 0.3.x line;
+1.0.0 marks it as the stable QRL testnet build rather than a preview, and
+refreshes the bundled renderer.
+
+Still a testnet build: it targets the QRL testnet through qrlwallet.com. Do
+not treat balances or transactions as mainnet value.
+
+Note on the renderer snapshot: this build bundles the web wallet from its
+integration branch, so the wallet-file import/export below reaches desktop
+users slightly ahead of the same feature going live on qrlwallet.com.
+Everything else in the renderer matches what the web wallet serves today.
+
+### Added
+
+- Wallet-file interop in the bundled renderer: import an encrypted keystore
+  backup exported by the MyQRLWallet browser extension, and a PIN-gated
+  wallet-file export from Settings.
+- MIT `LICENSE` file at the repository root.
+
+### Security
+
+- Renderer CSP `script-src` now carries `'wasm-unsafe-eval'` in both delivery
+  paths (the response header from the file-protocol handler and the meta tag
+  rewritten by `scripts/build-renderer.sh`). This permits WebAssembly
+  compilation ONLY, not JS `eval`: the keystore import above uses hash-wasm
+  argon2id, which without it silently falls back to pure-JS argon2id at roughly
+  20 seconds per attempt, including every wrong-password retry. `script-src`
+  still carries no `'unsafe-inline'` and no `'unsafe-eval'`, and the wasm bytes
+  come from the same bundled same-origin scripts the policy already trusts, so
+  this does not widen where code can come from. `SECURITY.md`, `THREAT_MODEL.md`,
+  `README.md`, and `docs/FRONTEND_INTEGRATION.md` were updated to state the
+  shipped policy accurately.
+
+### Changed
+
+- Bundled renderer rebuilt from the current web wallet, picking up
+  everything shipped since the 0.3.5 renderer snapshot:
+  - Champagne identity color: the blue identity accent is replaced by the
+    Obsidian & Ember champagne token, with self-fitting one-line address
+    rendering.
+  - Native amounts are labelled "Quanta" (not "QRL"), with the unit on a
+    secondary line under the balance, and the balance number centered
+    independently of the action icons.
+  - Compact grouped-list settings page, PIN rows that auto-advance focus, and
+    the accompanying accessibility and auto-save hardening.
+  - Address book, mobile-device pairing as a remote signer, NFT metadata
+    refresh/retry, the EU-compliant legal document set, and the
+    recent-transactions popup readability fix.
+- Trusted confirmation dialog: amount unit casing corrected from "QUANTA" to
+  "Quanta", matching the renderer.
+
+### Notes on 0.3.4 and 0.3.5
+
+Those two releases shipped without changelog entries. For the record:
+
+- **0.3.5** retokened the native unlock and settings windows to the Obsidian &
+  Ember palette and refreshed the bundled renderer to match.
+- **0.3.4** refreshed the bundled renderer with the address book and
+  dApp-connect hardening.
+
 ## 0.3.3
 
 First production release: the app now targets prod (qrlwallet.com) by
