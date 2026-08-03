@@ -10,11 +10,12 @@
  * zod 4 matches the version used by myqrlwallet-frontend.
  */
 import { z } from 'zod';
+import { MLDSA87, SCHEME } from './constants';
 
-/** A QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated).
- * 20-byte format ONLY: when the 64-byte address work (Q + 128 hex) lands,
- * this schema, `addressOf`'s identity slice (signer/signing.ts), and the
- * signature-request account binding must all move together. */
+/** The deployed QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated).
+ * Roadmap 64-byte identities are intentionally rejected. Any future migration
+ * must update this schema, `addressOf` (signer/signing.ts), and every signature
+ * account-binding check as one atomic change. */
 export const AddressSchema = z
   .string()
   .regex(/^Q[0-9a-fA-F]{40}$/, 'must be a Q-prefixed 20-byte hex address');
@@ -286,26 +287,91 @@ export interface CreateWalletResult {
   mnemonic: string;
 }
 
-export interface SignatureResult {
-  kind: SignatureRequest['kind'];
-  /** Hex signature (transactions: the signed raw tx; messages: the ML-DSA sig). */
-  signature: string;
-  /** Hex ML-DSA-87 public key (present for message/typedData). */
-  publicKey?: string;
-  /** Signer Q-address. */
-  signer: string;
-  /** SHAKE256 digest that was signed (present for message/typedData). */
-  digest?: string;
-  /**
-   * Signing-scheme identifier (present for message/typedData), e.g.
-   * "QRL-SIGN-MSG-v1". Byte-matches the web wallet's response so dApps get an
-   * identical shape from both hosts.
-   */
-  schemeVersion?: string;
-  /** For transactions: the 0x raw signed tx ready to broadcast. */
-  rawTransaction?: string;
-  /** For transactions: the tx hash web3 computed from the signed tx. Held by
-   * main to resolve an "already known" broadcast rejection to a success (the
-   * node already has this exact tx); never renderer-supplied. */
-  transactionHash?: string;
+function fixedHexSchema(bytes: number): z.ZodString {
+  return z.string().regex(new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`));
+}
+
+const RawTransactionSchema = z
+  .string()
+  .max(2 * 256 * 1024 + 2)
+  .regex(/^0x(?:[0-9a-fA-F]{2})+$/, 'must be non-empty, byte-aligned 0x hex');
+
+const TransactionSignatureResultSchema = z
+  .object({
+    kind: z.literal('transaction'),
+    /** The signed raw transaction, duplicated under both names for renderer
+     * compatibility. The union-level refinement requires exact equality. */
+    signature: RawTransactionSchema,
+    rawTransaction: RawTransactionSchema,
+    /** Signer address in the deployed `Q` + 40-hex-character form. */
+    signer: AddressSchema,
+    /** Signer-computed transaction hash when supplied by web3. */
+    transactionHash: fixedHexSchema(32).optional(),
+  })
+  .strict();
+
+const AccountBoundSignatureFields = {
+  /** Hex ML-DSA-87 signature (exactly 4627 bytes). */
+  signature: fixedHexSchema(MLDSA87.SIGNATURE_BYTES),
+  /** Hex ML-DSA-87 public key (exactly 2592 bytes). */
+  publicKey: fixedHexSchema(MLDSA87.PUBLIC_KEY_BYTES),
+  /** Three-byte ML-DSA wallet descriptor used with the key to derive `signer`. */
+  descriptor: z.string().regex(/^0x01[0-9a-fA-F]{4}$/, 'must be a 3-byte ML-DSA descriptor'),
+  /** Signer address in the deployed `Q` + 40-hex-character form. */
+  signer: AddressSchema,
+  /** SHAKE256 digest that was signed (exactly 64 bytes). */
+  digest: fixedHexSchema(MLDSA87.DIGEST_BYTES),
+} as const;
+
+const MessageSignatureResultSchema = z
+  .object({
+    kind: z.literal('message'),
+    ...AccountBoundSignatureFields,
+    /** Byte-matches the web wallet and SDK message-signing domain. */
+    schemeVersion: z.literal(SCHEME.TAG_MSG),
+  })
+  .strict();
+
+const TypedDataSignatureResultSchema = z
+  .object({
+    kind: z.literal('typedData'),
+    ...AccountBoundSignatureFields,
+    /** Byte-matches the web wallet and SDK typed-data signing domain. */
+    schemeVersion: z.literal(SCHEME.TAG_TYPED),
+  })
+  .strict();
+
+/** Runtime parser for every successful signer response. The signer is a
+ * separate process, so TypeScript types alone do not enforce this boundary. */
+export const SignatureResultSchema = z
+  .discriminatedUnion('kind', [
+    TransactionSignatureResultSchema,
+    MessageSignatureResultSchema,
+    TypedDataSignatureResultSchema,
+  ])
+  .refine((result) => result.kind !== 'transaction' || result.signature === result.rawTransaction, {
+    message: 'transaction signature and rawTransaction must match',
+  });
+
+export type TransactionSignatureResult = z.infer<typeof TransactionSignatureResultSchema>;
+export type MessageSignatureResult = z.infer<typeof MessageSignatureResultSchema>;
+export type TypedDataSignatureResult = z.infer<typeof TypedDataSignatureResultSchema>;
+export type SignatureResult = z.infer<typeof SignatureResultSchema>;
+
+/** Parse a signer-process response and bind it to the request main sent. This
+ * prevents a malformed, stale, or wrong-arm child response from crossing the
+ * context bridge under a valid TypeScript assertion. */
+export function parseSignatureResultForRequest(
+  value: unknown,
+  request: SignatureRequest,
+): SignatureResult {
+  const result = SignatureResultSchema.parse(value);
+  if (result.kind !== request.kind) {
+    throw new Error('signer returned a result for a different request kind');
+  }
+  const expectedSigner = request.kind === 'transaction' ? request.tx.from : request.signer;
+  if (result.signer.toLowerCase() !== expectedSigner.toLowerCase()) {
+    throw new Error('signer returned a result for a different account');
+  }
+  return result;
 }

@@ -22,31 +22,37 @@ export const DAPP_URI_MAX_LENGTH = 4096;
 /** Minimum interval between two accepted URIs (hostile-flood damping). */
 export const DAPP_URI_RATE_LIMIT_MS = 2000;
 
+const DAPP_URI_PREFIX = 'qrlconnect://?';
+
 /**
- * Shape-validate a candidate qrlconnect:// URI. Scheme (case-insensitive),
- * bounded length, visible ASCII only (spaces, control chars and non-ASCII
- * rejected; a URI never legitimately contains them, and the PQP2 payload is
- * base45/URL-safe, so this never rejects a real URI).
+ * Shape-validate a candidate qrlconnect:// URI. PQP3 uses the exact canonical
+ * `qrlconnect://?q=...` form; stored-session wake links use
+ * `qrlconnect://?wake=...`. Main validates only that outer envelope, its
+ * length, and its visible-ASCII serialization. The renderer remains the sole
+ * parser for query parameters and never returns the bearer capability to main.
  */
 export function isValidDappUri(uri: string): boolean {
   if (typeof uri !== 'string') return false;
-  if (uri.length < 'qrlconnect:'.length + 1 || uri.length > DAPP_URI_MAX_LENGTH) return false;
-  if (!/^qrlconnect:/i.test(uri)) return false;
+  if (uri.length > DAPP_URI_MAX_LENGTH || !uri.startsWith(DAPP_URI_PREFIX)) return false;
+  if (uri.includes('#')) return false;
   for (let i = 0; i < uri.length; i++) {
     const c = uri.charCodeAt(i);
     if (c <= 0x20 || c > 0x7e) return false;
   }
-  return true;
+  const query = uri.slice(DAPP_URI_PREFIX.length);
+  return (
+    (query.startsWith('q=') && query.length > 2) || (query.startsWith('wake=') && query.length > 5)
+  );
 }
 
 /**
- * Pick the qrlconnect:// URI out of an argv vector (cold start or
- * second-instance on Windows/Linux). Only the FIRST matching argument is
- * consumed as data; everything else in argv is ignored, never executed.
+ * Pick the first canonical qrlconnect:// URI out of an argv vector (cold start
+ * or second-instance on Windows/Linux). Malformed lookalikes are skipped and
+ * everything else in argv is ignored, never executed.
  */
 export function extractDappUriFromArgv(argv: readonly string[]): string | null {
   for (const arg of argv) {
-    if (typeof arg === 'string' && /^qrlconnect:/i.test(arg)) return arg;
+    if (isValidDappUri(arg)) return arg;
   }
   return null;
 }

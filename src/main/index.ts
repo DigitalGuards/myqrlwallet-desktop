@@ -151,7 +151,7 @@ app.on('second-instance', (_event, argv) => {
     mainWindow.focus();
   }
   // Windows/Linux: a protocol launch while we are running lands in the second
-  // instance's argv. Only the first qrlconnect: argument is treated as data.
+  // instance's argv. Only the first canonical qrlconnect URI is treated as data.
   const uri = extractDappUriFromArgv(argv);
   if (uri) {
     // Log shape validity separately so a 'rejected' distinguishes a malformed

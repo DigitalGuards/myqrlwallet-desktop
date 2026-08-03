@@ -87,6 +87,37 @@ test('unlock with a wrong password fails authentication, not silently', async ()
   assert.equal(session.unlocked, false, 'a failed unlock must leave the session locked');
 });
 
+test('unlock rejects address metadata that does not match the encrypted seed', async () => {
+  const { encrypted } = await makeFixture();
+  const tampered: EncryptedSeed = {
+    ...encrypted,
+    address:
+      encrypted.address.toLowerCase() === `q${'a'.repeat(40)}`
+        ? `Q${'b'.repeat(40)}`
+        : `Q${'a'.repeat(40)}`,
+  };
+  const session = new SignerSession(() => {});
+
+  await assert.rejects(
+    () => session.unlock(tampered, 60_000, { password: PASSWORD }, 0),
+    /encrypted seed identity does not match wallet metadata/,
+  );
+  assert.equal(session.unlocked, false, 'an identity mismatch must leave the session locked');
+});
+
+test('unlock enforces the deployed uppercase-Q plus 40-hex address shape', async () => {
+  const { encrypted } = await makeFixture();
+  const session = new SignerSession(() => {});
+
+  for (const address of [encrypted.address.toLowerCase(), `Q${'a'.repeat(128)}`]) {
+    await assert.rejects(
+      () => session.unlock({ ...encrypted, address }, 60_000, { password: PASSWORD }, 0),
+      /invalid wallet address metadata/,
+    );
+    assert.equal(session.unlocked, false);
+  }
+});
+
 test('lock() drops the session and withSeed throws when locked', async () => {
   const { encrypted } = await makeFixture();
   const session = new SignerSession(() => {});
@@ -125,11 +156,19 @@ test('unlock via a pre-derived KEK (keychain / Touch-ID path) opens a session', 
   await session.unlock(encrypted, 60_000, { kek }, 0);
   assert.equal(session.unlocked, true);
   assert.equal(session.address, address);
-  assert.equal(session.withSeed((s) => s, 1), hexSeed, 'KEK unlock must expose the same seed');
+  assert.equal(
+    session.withSeed((s) => s, 1),
+    hexSeed,
+    'KEK unlock must expose the same seed',
+  );
 
   // The session copies the KEK, so wiping the caller's buffer must not break it.
   kek.fill(0);
-  assert.equal(session.withSeed((s) => s, 2), hexSeed, 'session must own its KEK copy');
+  assert.equal(
+    session.withSeed((s) => s, 2),
+    hexSeed,
+    'session must own its KEK copy',
+  );
 });
 
 test('the autolock window slides on activity and does not fire early', async (t) => {
