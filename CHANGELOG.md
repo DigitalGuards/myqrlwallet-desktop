@@ -20,7 +20,11 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   widths, exact result arms, transaction alias equality, and request-account
   binding, before returning a result across the renderer bridge.
 - Renderer builds now fail when the frontend source, lockfile, or staged entry
-  point is missing and always install frontend dependencies with `npm ci`.
+  point is missing, always install frontend dependencies with `npm ci`, and
+  enforce the desktop meta CSP across multiline or absent frontend meta tags.
+- Linux packaging now resolves electron-builder's actual executable name before
+  flipping fuses. A missing binary aborts packaging so ASAR integrity and the
+  remaining production fuses cannot be silently skipped.
 
 ## 1.0.0
 

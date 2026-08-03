@@ -122,17 +122,42 @@ EXPLORER_HOST="$(printf '%s' "${CSP_EXPLORER_URL}" | sed -E 's#^https?://##; s#/
 # qrlwallet.com https+wss is the dApp-connect relay, reached directly even by
 # the dev/staging frontend (keep in sync with src/main/config.ts frontendOrigins).
 DESKTOP_CSP="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${SERVER_HOST} wss://${SERVER_HOST} https://qrlwallet.com wss://qrlwallet.com https://${EXPLORER_HOST}; img-src 'self' data: https:; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:"
-# Distinguish the two skip reasons so the warning is never misleading: an empty
-# SERVER_HOST (misconfigured env) is a different problem from a genuinely absent
-# meta tag. Either way the header CSP (main process) remains authoritative.
-if [[ -z "${SERVER_HOST}" ]]; then
-  echo "[build-renderer] WARNING: no server host resolved from VITE_SERVER_URL_*; skipping meta CSP rewrite (header CSP still applies)" >&2
-elif grep -q '<meta http-equiv="Content-Security-Policy"' "${RENDER_HTML}"; then
-  echo "[build-renderer] rewriting renderer meta CSP to the desktop policy (script-src 'self' 'wasm-unsafe-eval', backend ${SERVER_HOST})"
-  sed -E "s#<meta http-equiv=\"Content-Security-Policy\"[^>]*>#<meta http-equiv=\"Content-Security-Policy\" content=\"${DESKTOP_CSP}\">#" "${RENDER_HTML}" > "${RENDER_HTML}.tmp" \
-    && mv "${RENDER_HTML}.tmp" "${RENDER_HTML}"
-else
-  echo "[build-renderer] WARNING: meta CSP tag not found in ${RENDER_HTML}; header CSP (main process) is the only policy" >&2
+if [[ -z "${SERVER_HOST}" || -z "${EXPLORER_HOST}" ]]; then
+  echo "[build-renderer] ERROR: could not resolve the CSP server and explorer hosts" >&2
+  exit 1
 fi
+
+# Vite/Prettier may serialize the source meta tag over several lines. Use Node's
+# HTML-text rewrite rather than line-oriented sed so the desktop policy always
+# replaces that complete tag. If a future frontend removes its web meta policy,
+# insert the desktop policy into <head> and preserve defense in depth.
+CSP_REWRITE_ACTION="$(node - "${RENDER_HTML}" "${DESKTOP_CSP}" <<'NODE'
+const fs = require('node:fs');
+
+const [htmlPath, csp] = process.argv.slice(2);
+if (!htmlPath || !csp) throw new Error('renderer CSP rewrite arguments are missing');
+
+let html = fs.readFileSync(htmlPath, 'utf8');
+const escapedCsp = csp.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${escapedCsp}">`;
+const cspMetaPattern =
+  /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(["'])Content-Security-Policy\1)[^>]*>/i;
+
+let action;
+if (cspMetaPattern.test(html)) {
+  html = html.replace(cspMetaPattern, cspMeta);
+  action = 'rewrote';
+} else {
+  const headPattern = /<head\b[^>]*>/i;
+  if (!headPattern.test(html)) throw new Error('renderer HTML has no <head> element');
+  html = html.replace(headPattern, (head) => `${head}\n    ${cspMeta}`);
+  action = 'inserted';
+}
+
+fs.writeFileSync(htmlPath, html);
+process.stdout.write(action);
+NODE
+)"
+echo "[build-renderer] ${CSP_REWRITE_ACTION} renderer meta CSP (script-src 'self' 'wasm-unsafe-eval', backend ${SERVER_HOST})"
 
 echo "[build-renderer] done. Real frontend staged at ${OUT_RENDERER}/index.html"

@@ -35,18 +35,22 @@ const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
  * @param {string} platform electronPlatformName ('darwin' | 'win32' | 'linux')
  * @param {string} appOutDir
  * @param {string} productFilename
+ * @param {string | undefined} linuxExecutableName
  * @returns {string}
  */
-function resolveElectronBinary(platform, appOutDir, productFilename) {
+function resolveElectronBinary(platform, appOutDir, productFilename, linuxExecutableName) {
   if (platform === 'darwin') {
     return path.join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename);
   }
   if (platform === 'win32') {
     return path.join(appOutDir, `${productFilename}.exe`);
   }
-  // linux: the binary has no extension and electron-builder lowercases it.
-  return path.join(appOutDir, productFilename);
+  // Linux uses LinuxPackager.executableName, which defaults to the lowercased
+  // package name and can differ from the human-facing productFilename.
+  return path.join(appOutDir, linuxExecutableName ?? productFilename);
 }
+
+exports.resolveElectronBinary = resolveElectronBinary;
 
 /**
  * @param {import('electron-builder').AfterPackContext} context
@@ -55,12 +59,22 @@ exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   const productFilename = context.packager.appInfo.productFilename;
   const isMac = platform === 'darwin';
+  const linuxExecutableName =
+    platform === 'linux' &&
+    'executableName' in context.packager &&
+    typeof context.packager.executableName === 'string'
+      ? context.packager.executableName
+      : undefined;
 
-  const electronBinary = resolveElectronBinary(platform, context.appOutDir, productFilename);
+  const electronBinary = resolveElectronBinary(
+    platform,
+    context.appOutDir,
+    productFilename,
+    linuxExecutableName,
+  );
 
   if (!fs.existsSync(electronBinary)) {
-    console.warn(`[afterPack] fuses skipped: binary not found at ${electronBinary}`);
-    return;
+    throw new Error(`[afterPack] cannot enforce fuses: binary not found at ${electronBinary}`);
   }
 
   console.log(`[afterPack] flipping @electron/fuses on ${electronBinary}`);

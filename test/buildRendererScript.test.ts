@@ -34,8 +34,20 @@ function makeFixture(t: TestContext) {
   };
 }
 
-function writeMockNpm(binDir: string) {
+function writeMockNpm(binDir: string, includeCsp = true) {
   const npmPath = join(binDir, 'npm');
+  const html = includeCsp
+    ? `<!doctype html>
+<html>
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src *"
+    />
+  </head>
+  <body><main>renderer</main></body>
+</html>`
+    : '<!doctype html><html><head></head><body><main>renderer</main></body></html>';
   writeFileSync(
     npmPath,
     `#!/usr/bin/env bash
@@ -43,7 +55,7 @@ set -euo pipefail
 printf '%s\\n' "$*" >> "$NPM_CALL_LOG"
 if [[ "$3" == "run" && "$4" == "build" ]]; then
   mkdir -p "$2/dist"
-  printf '%s\\n' '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src *"><main>renderer</main>' > "$2/dist/index.html"
+  printf '%s\\n' '${html}' > "$2/dist/index.html"
 fi
 `,
     { mode: 0o755 },
@@ -96,6 +108,28 @@ test('renderer build always installs from the lock and stages index.html', (t) =
     join(fixture.desktopDir, 'out', 'renderer', 'index.html'),
     'utf8',
   );
+  assert.match(rendererHtml, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.doesNotMatch(rendererHtml, /default-src \*/);
+  assert.equal(rendererHtml.match(/http-equiv="Content-Security-Policy"/g)?.length, 1);
+});
+
+test('renderer build inserts the desktop CSP when the frontend meta tag is absent', (t) => {
+  const fixture = makeFixture(t);
+  const binDir = join(fixture.root, 'bin');
+  const callLog = join(fixture.root, 'npm-calls.log');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir, false);
+
+  const result = runScript(fixture.scriptPath, binDir, { NPM_CALL_LOG: callLog });
+
+  assert.equal(result.status, 0, result.stderr);
+  const rendererHtml = readFileSync(
+    join(fixture.desktopDir, 'out', 'renderer', 'index.html'),
+    'utf8',
+  );
+  assert.match(rendererHtml, /<head>\s*<meta http-equiv="Content-Security-Policy"/);
   assert.match(rendererHtml, /script-src 'self' 'wasm-unsafe-eval'/);
 });
 
