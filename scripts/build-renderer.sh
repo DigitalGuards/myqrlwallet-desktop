@@ -27,7 +27,7 @@
 # for the main process. Keep the desktop main-process CSP allowlist
 # (src/main/config.ts frontendOrigins) in sync with these origins.
 #
-# Exits 0 with guidance if the frontend dir is absent.
+# Fails with guidance if the frontend source or lockfile is absent.
 
 set -euo pipefail
 
@@ -40,16 +40,19 @@ echo "[build-renderer] frontend dir: ${FRONTEND_DIR}"
 echo "[build-renderer] out renderer: ${OUT_RENDERER}"
 
 if [[ ! -d "${FRONTEND_DIR}" ]]; then
-  echo "[build-renderer] WARNING: frontend not found at ${FRONTEND_DIR}." >&2
+  echo "[build-renderer] ERROR: frontend not found at ${FRONTEND_DIR}." >&2
   echo "[build-renderer] Initialise the submodule (git submodule update --init" >&2
-  echo "[build-renderer] ../myqrlwallet-frontend) then re-run. Skipping." >&2
-  exit 0
+  echo "[build-renderer] ../myqrlwallet-frontend) then re-run." >&2
+  exit 1
 fi
 
-if [[ ! -d "${FRONTEND_DIR}/node_modules" ]]; then
-  echo "[build-renderer] installing frontend dependencies..."
-  npm --prefix "${FRONTEND_DIR}" install
+if [[ ! -f "${FRONTEND_DIR}/package-lock.json" ]]; then
+  echo "[build-renderer] ERROR: frontend lockfile not found at ${FRONTEND_DIR}/package-lock.json." >&2
+  exit 1
 fi
+
+echo "[build-renderer] installing locked frontend dependencies..."
+npm --prefix "${FRONTEND_DIR}" ci
 
 # PRODUCTION defaults (qrlwallet.com). ${VAR:-default} keeps any value the
 # caller already exported, so a staging build just exports
@@ -91,6 +94,12 @@ rm -rf "${OUT_RENDERER}"
 mkdir -p "${OUT_RENDERER}"
 cp -R "${FRONTEND_DIST}/." "${OUT_RENDERER}/"
 
+RENDER_HTML="${OUT_RENDERER}/index.html"
+if [[ ! -s "${RENDER_HTML}" ]]; then
+  echo "[build-renderer] ERROR: staged renderer entrypoint missing or empty at ${RENDER_HTML}." >&2
+  exit 1
+fi
+
 # The reused frontend ships a <meta http-equiv="Content-Security-Policy"> tuned
 # for WEB hosting: script-src carries 'unsafe-inline' and connect-src allows
 # http://localhost:* (both fine behind nginx's strict header, wrong for the
@@ -101,7 +110,6 @@ cp -R "${FRONTEND_DIST}/." "${OUT_RENDERER}/"
 # + relay + explorer. Mirror src/main/security.ts buildContentSecurityPolicy,
 # minus frame-ancestors (ignored in meta CSP). Idempotent, portable sed (no
 # in-place -i, which differs on BSD/macOS).
-RENDER_HTML="${OUT_RENDERER}/index.html"
 if [[ "${VITE_NODE_ENV}" == "production" ]]; then
   CSP_SERVER_URL="${VITE_SERVER_URL_PRODUCTION:-${VITE_SERVER_URL_DEVELOPMENT}}"
   CSP_EXPLORER_URL="${VITE_EXPLORER_URL_PRODUCTION:-${VITE_EXPLORER_URL_DEVELOPMENT}}"

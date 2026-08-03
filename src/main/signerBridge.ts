@@ -17,6 +17,7 @@ import type {
   SignerStatus,
   UnlockResult,
 } from '../shared/protocol';
+import { parseSignatureResultForRequest } from '../shared/schemas';
 import type { SignatureRequest, SignatureResult } from '../shared/schemas';
 
 interface Pending {
@@ -197,8 +198,9 @@ export class SignerBridge {
     return this.send<UnlockResult>({ type: 'signer:unlock', ...args });
   }
 
-  sign(request: SignatureRequest, chainId: number): Promise<SignatureResult> {
-    return this.send<SignatureResult>({ type: 'signer:sign', request, chainId });
+  async sign(request: SignatureRequest, chainId: number): Promise<SignatureResult> {
+    const result = await this.send<unknown>({ type: 'signer:sign', request, chainId });
+    return parseSignatureResultForRequest(result, request);
   }
 
   lock(): Promise<null> {

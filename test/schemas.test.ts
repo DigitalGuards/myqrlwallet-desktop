@@ -18,8 +18,10 @@ import {
   SendRawTransactionRequestSchema,
   SetActiveWalletRequestSchema,
   SignatureRequestSchema,
+  SignatureResultSchema,
   UnlockRequestSchema,
   UnsignedTransactionSchema,
+  parseSignatureResultForRequest,
 } from '../src/shared/schemas';
 
 const ADDR = 'Q' + 'a'.repeat(40);
@@ -136,6 +138,80 @@ test('SignatureRequest validates each arm and bounds payload size', () => {
     SignatureRequestSchema.safeParse(hugePayload).success,
     false,
     'oversized typedData payload rejected',
+  );
+});
+
+test('SignatureResult strictly validates message identity material and request binding', () => {
+  const request = { kind: 'message', messageHex: '0xab', signer: ADDR } as const;
+  const result = {
+    kind: 'message' as const,
+    signature: `0x${'ab'.repeat(4627)}`,
+    publicKey: `0x${'cd'.repeat(2592)}`,
+    descriptor: '0x010000',
+    signer: ADDR,
+    digest: `0x${'ef'.repeat(64)}`,
+    schemeVersion: 'QRL-SIGN-MSG-v1' as const,
+  };
+
+  assert.equal(SignatureResultSchema.safeParse(result).success, true);
+  assert.deepEqual(parseSignatureResultForRequest(result, request), result);
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, descriptor: undefined }).success,
+    false,
+    'descriptor is mandatory',
+  );
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, descriptor: '0x020000' }).success,
+    false,
+    'non-ML-DSA descriptor rejected',
+  );
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, publicKey: '0x00' }).success,
+    false,
+    'wrong public-key length rejected',
+  );
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, extra: true }).success,
+    false,
+    'extra response keys rejected',
+  );
+  assert.throws(
+    () => parseSignatureResultForRequest({ ...result, signer: ADDR2 }, request),
+    /different account/,
+  );
+  assert.throws(
+    () =>
+      parseSignatureResultForRequest(
+        {
+          kind: 'transaction',
+          signature: '0xab',
+          rawTransaction: '0xab',
+          signer: ADDR,
+        },
+        request,
+      ),
+    /different request kind/,
+  );
+});
+
+test('SignatureResult requires identical transaction aliases and a fixed-width hash', () => {
+  const result = {
+    kind: 'transaction' as const,
+    signature: '0xabcd',
+    rawTransaction: '0xabcd',
+    signer: ADDR,
+    transactionHash: `0x${'12'.repeat(32)}`,
+  };
+  assert.equal(SignatureResultSchema.safeParse(result).success, true);
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, rawTransaction: '0xabce' }).success,
+    false,
+    'transaction aliases must match exactly',
+  );
+  assert.equal(
+    SignatureResultSchema.safeParse({ ...result, transactionHash: '0x12' }).success,
+    false,
+    'transaction hash must be exactly 32 bytes',
   );
 });
 

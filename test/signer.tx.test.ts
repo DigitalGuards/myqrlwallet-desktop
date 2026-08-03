@@ -14,6 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { deriveSeedFromMnemonic, generateMnemonic, signTransaction } from '../src/signer/signing';
+import { parseSignatureResultForRequest } from '../src/shared/schemas';
 import type { UnsignedTransaction } from '../src/shared/schemas';
 
 const CHAIN_ID = 1337; // testnet v2
@@ -39,6 +40,11 @@ test('signTransaction signs a type-2 tx fully offline (no provider, no net_versi
   // No provider is set anywhere; if signing tried a live net_version call this
   // would reject. A clean resolve proves the networkId-offline path holds.
   const result = await signTransaction(hexSeed, tx, CHAIN_ID);
+  assert.deepEqual(
+    parseSignatureResultForRequest({ ...result }, { kind: 'transaction', tx }),
+    result,
+    'the real signer output must pass the strict process-boundary parser',
+  );
 
   assert.equal(result.kind, 'transaction');
   assert.equal(result.signer, address, 'signer must be the unlocked account');

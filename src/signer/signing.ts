@@ -5,9 +5,10 @@
  * `src/utils/signing/sign.ts` + `qrlStore.sendTransaction`) byte-for-byte so a
  * desktop-produced signature verifies identically to a web-wallet one.
  *
- *  - @theqrl/mldsa87 2.1.1 : Halborn/Trail-of-Bits-hardened FIPS-204 signer.
- *  - @theqrl/wallet.js 6.1.0 : seed -> ML-DSA-87 keypair derivation + address.
- *  - @theqrl/web3 1.0.1 : QRL v2 (type-2 / EIP-1559) transaction signing.
+ *  - @theqrl/mldsa87 2.x : Halborn/Trail-of-Bits-hardened FIPS-204 signer.
+ *  - @theqrl/wallet.js 6.x : seed -> ML-DSA-87 keypair derivation + address.
+ *  - @theqrl/web3 1.0.1 : current Q + 40 transaction signing. Keep exact until
+ *    the roadmap 64-byte address migration is implemented across every host.
  *
  * All three are pure JavaScript and synchronous (the research confirmed no
  * WASM init), so no async bootstrap is needed; the only runtime requirement is
@@ -15,13 +16,18 @@
  */
 import * as mldsa from '@theqrl/mldsa87';
 import { MLDSA87, newWalletFromExtendedSeed } from '@theqrl/wallet.js';
-// Use web3's EIP-55 checksummer for the legacy-20 address, exactly as the web
-// wallet's src/utils/signing/sign.ts does. wallet.js's own toChecksumAddress
-// targets the 64-byte next-gen address (Q + 128 hex) and rejects a 20-byte one.
+// Use web3's EIP-55 checksummer for the deployed 20-byte address, exactly as
+// the web wallet's src/utils/signing/sign.ts does. wallet.js exposes its full
+// 64-byte identity, while this release intentionally projects current Q + 40.
 import Web3, { utils as web3Utils } from '@theqrl/web3';
 import { shake256 } from '@noble/hashes/sha3.js';
 import { MLDSA87 as SIZES, SCHEME } from '../shared/constants';
-import type { SignatureRequest, SignatureResult, UnsignedTransaction } from '../shared/schemas';
+import type {
+  MessageSignatureResult,
+  SignatureRequest,
+  TransactionSignatureResult,
+  UnsignedTransaction,
+} from '../shared/schemas';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 
@@ -172,7 +178,7 @@ export function assertSessionSigner(request: SignatureRequest, sessionAddress: s
  *   sig    = ML-DSA-87.sign(digest, sk, hedged=true, ctx="QRL-SIGN-MSG-v1")
  * The Wallet (and thus the 4896-byte secret key) is zeroized on every path.
  */
-export function signMessage(hexSeed: string, messageHex: string): SignatureResult {
+export function signMessage(hexSeed: string, messageHex: string): MessageSignatureResult {
   const messageBytes = hexToBytes(messageHex);
   const digest = shake256(concat(SCHEME_TAG_MSG, messageBytes), { dkLen: SIZES.DIGEST_BYTES });
   const wallet = newWalletFromExtendedSeed(hexSeed);
@@ -189,6 +195,7 @@ export function signMessage(hexSeed: string, messageHex: string): SignatureResul
       kind: 'message',
       signature: bytesToHex(sig),
       publicKey: bytesToHex(wallet.pk),
+      descriptor: bytesToHex(wallet.getDescriptor().toBytes()),
       signer: addressOf(wallet),
       digest: bytesToHex(digest),
       schemeVersion: SCHEME.TAG_MSG,
@@ -222,7 +229,7 @@ export async function signTransaction(
   hexSeed: string,
   tx: UnsignedTransaction,
   chainId: number,
-): Promise<SignatureResult> {
+): Promise<TransactionSignatureResult> {
   // Derive the address to check tx.from in a wiped scope: this materialises a
   // full ML-DSA-87 wallet (incl. the 4896-byte secret key), so zeroize it
   // immediately like every other wallet materialisation in this module.

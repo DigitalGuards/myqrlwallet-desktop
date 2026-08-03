@@ -100,11 +100,11 @@ export const SIGNER_MSG = {
 export type SignerMsgType = (typeof SIGNER_MSG)[keyof typeof SIGNER_MSG];
 
 /**
- * ML-DSA-87 (FIPS 204, NIST L5) byte lengths, copied from @theqrl/mldsa87
- * 2.1.1. Hard-coded here as cross-checks so a silent dependency bump that
- * changes a size is caught by an assertion rather than producing malformed
- * signatures. (The stale `4595` in the frontend comments was the old
- * Dilithium5 size; ML-DSA-87 detached signatures are 4627 bytes.)
+ * ML-DSA-87 (FIPS 204, NIST L5) byte lengths, copied from the locked
+ * @theqrl/mldsa87 2.x implementation. Hard-coded here as cross-checks so a
+ * dependency bump that changes a size is caught by an assertion rather than
+ * producing malformed signatures. (The stale `4595` in the frontend comments
+ * was the old Dilithium5 size; ML-DSA-87 detached signatures are 4627 bytes.)
  */
 export const MLDSA87 = {
   PUBLIC_KEY_BYTES: 2592,
