@@ -45,7 +45,9 @@ not injecting into our signed process.
 - Control: encrypted seed at rest. AES-256-GCM under an Argon2id-derived KEK
   (`KDF_DEFAULTS`: Argon2id, 256 MiB, t=3; `src/shared/constants.ts`,
   `src/signer/kdf.ts`, `src/signer/aead.ts`). File is `0600`
-  (`src/main/seedFile.ts`).
+  (`src/main/seedFile.ts`). On every unlock the signer derives the deployed
+  `Q` + 40 address from the authenticated seed and rejects an envelope whose
+  plaintext address metadata names a different account (`src/signer/session.ts`).
 - Buys: stealing the file yields only an Argon2id-hardened blob. Offline cracking
   is bounded by the memory-hard KDF; a strong password is infeasible to brute.
 - Limit: a weak password is crackable offline once the file is exfiltrated. The

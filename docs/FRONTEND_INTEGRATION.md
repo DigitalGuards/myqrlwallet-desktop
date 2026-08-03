@@ -173,9 +173,9 @@ export const desktopSigner = {
   },
 
   // qrl_signMessage: the renderer hands over the message bytes only.
-  async signMessage(messageHex: string) {
-    return api.requestSignature({ kind: "message", messageHex });
-    // -> { signature, publicKey, signer, digest }
+  async signMessage(messageHex: string, signer: string) {
+    return api.requestSignature({ kind: "message", messageHex, signer });
+    // -> { signature, publicKey, descriptor, signer, digest, schemeVersion }
   },
 
   // Session lifecycle replaces in-page PIN decrypt / encrypt.

@@ -10,8 +10,11 @@
  */
 import { aesGcmDecrypt, type AeadEnvelope } from './aead';
 import { deriveKek } from './kdf';
+import { addressFromHexSeed } from './signing';
 import { wipe } from './zeroize';
 import type { EncryptedSeed } from '../shared/protocol';
+
+const DEPLOYED_ADDRESS_RE = /^Q[0-9a-fA-F]{40}$/;
 
 interface UnlockedState {
   kek: Buffer;
@@ -61,27 +64,48 @@ export class SignerSession {
     now: number,
   ): Promise<void> {
     this.lock(); // tear down any prior session first
+    if (!DEPLOYED_ADDRESS_RE.test(encrypted.address)) {
+      throw new Error('invalid wallet address metadata');
+    }
     let kek: Buffer;
     if ('password' in secret) {
       kek = await deriveKek(secret.password, Buffer.from(encrypted.salt, 'hex'), encrypted.kdf);
     } else {
       kek = Buffer.from(secret.kek); // copy so our wipe owns it
     }
-    // Validate the KEK by decrypting the seed segment once; wipe immediately.
-    const seed = aesGcmDecrypt(seedEnvelopeOf(encrypted), kek);
-    wipe(seed);
+    let retainedKek = false;
+    try {
+      // Authenticate the ciphertext and bind its decrypted seed to the public
+      // address metadata before that address can name an unlocked session.
+      // Without this check a locally edited envelope could make the trusted
+      // confirmation name one account while message signing used another key.
+      const seed = aesGcmDecrypt(seedEnvelopeOf(encrypted), kek);
+      try {
+        const derivedAddress = addressFromHexSeed(seed.toString('utf8'));
+        if (derivedAddress.toLowerCase() !== encrypted.address.toLowerCase()) {
+          throw new Error('encrypted seed identity does not match wallet metadata');
+        }
+      } finally {
+        wipe(seed);
+      }
 
-    const autolockTimer = setTimeout(() => this.handleAutoLock(), autolockMs);
-    // Do not keep the Node event loop alive solely for the autolock timer.
-    if (typeof autolockTimer.unref === 'function') autolockTimer.unref();
-    this.state = {
-      kek,
-      encrypted,
-      address: encrypted.address,
-      autolockMs,
-      expiresAt: now + autolockMs,
-      autolockTimer,
-    };
+      const autolockTimer = setTimeout(() => this.handleAutoLock(), autolockMs);
+      // Do not keep the Node event loop alive solely for the autolock timer.
+      if (typeof autolockTimer.unref === 'function') autolockTimer.unref();
+      this.state = {
+        kek,
+        encrypted,
+        address: encrypted.address,
+        autolockMs,
+        expiresAt: now + autolockMs,
+        autolockTimer,
+      };
+      retainedKek = true;
+    } finally {
+      // A wrong password, corrupt ciphertext, or identity mismatch must not
+      // leave an unowned derived KEK resident in the signer process.
+      if (!retainedKek) wipe(kek);
+    }
   }
 
   /**

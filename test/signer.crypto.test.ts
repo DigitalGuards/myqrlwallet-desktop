@@ -32,6 +32,7 @@ import {
   signMessage,
 } from '../src/signer/signing';
 import { KDF_DEFAULTS, MLDSA87 as SIZES, SCHEME } from '../src/shared/constants';
+import { parseSignatureResultForRequest } from '../src/shared/schemas';
 import type { KdfParams } from '../src/shared/constants';
 
 // A deliberately tiny memoryCost so the test is fast. We are checking
@@ -112,11 +113,22 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
 
   const messageHex = '0x' + Buffer.from('hello quantum world', 'utf8').toString('hex');
   const result = signMessage(hexSeed, messageHex);
+  assert.deepEqual(
+    parseSignatureResultForRequest({ ...result }, { kind: 'message', messageHex, signer: address }),
+    result,
+    'the real signer output must pass the strict process-boundary parser',
+  );
 
   assert.equal(result.kind, 'message');
   assert.ok(result.publicKey, 'message signature must include the public key');
+  assert.ok(result.descriptor, 'message signature must include the wallet descriptor');
   assert.ok(result.digest, 'message signature must include the digest');
   assert.equal(result.signer, address, 'signer must match the derived address');
+  assert.match(
+    result.signer,
+    /^Q[0-9a-fA-F]{40}$/,
+    'signer must use the deployed Q + 40-hex address shape',
+  );
   assert.equal(
     result.schemeVersion,
     'QRL-SIGN-MSG-v1',
@@ -124,9 +136,33 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
   );
 
   const sig = hexToBytes(result.signature);
-  const pk = hexToBytes(result.publicKey!);
+  const pk = hexToBytes(result.publicKey);
+  const descriptor = hexToBytes(result.descriptor);
   assert.equal(sig.length, SIZES.SIGNATURE_BYTES, 'signature must be 4627 bytes');
   assert.equal(pk.length, SIZES.PUBLIC_KEY_BYTES, 'public key must be 2592 bytes');
+  assert.equal(descriptor.length, 3, 'wallet descriptor must be 3 bytes');
+  assert.equal(
+    result.descriptor,
+    `0x${hexSeed.replace(/^0x/, '').slice(0, 6).toLowerCase()}`,
+    'descriptor must match the signed wallet extended seed',
+  );
+
+  const identityHash = shake256(concat(descriptor, pk), { dkLen: 20 });
+  const boundSigner = `Q${Buffer.from(identityHash).toString('hex')}`;
+  assert.equal(
+    boundSigner.toLowerCase(),
+    result.signer.toLowerCase(),
+    'descriptor and public key must derive the claimed current Q-address',
+  );
+
+  const wrongPublicKey = pk.slice();
+  wrongPublicKey[0] = (wrongPublicKey[0] ?? 0) ^ 0x01;
+  const wrongIdentity = shake256(concat(descriptor, wrongPublicKey), { dkLen: 20 });
+  assert.notEqual(
+    `Q${Buffer.from(wrongIdentity).toString('hex')}`.toLowerCase(),
+    result.signer.toLowerCase(),
+    'a different public key must not bind to the claimed signer',
+  );
 
   // Recompute the digest the signer hashed: SHAKE256(ctx || message, 64).
   const messageBytes = hexToBytes(messageHex);
@@ -199,7 +235,7 @@ test('generateMnemonic (signer create op) yields a usable, signing wallet', () =
   const ok = mldsa.cryptoSignVerify(
     hexToBytes(result.signature),
     shake256(concat(SCHEME_TAG_MSG, hexToBytes(messageHex)), { dkLen: SIZES.DIGEST_BYTES }),
-    hexToBytes(result.publicKey!),
+    hexToBytes(result.publicKey),
     SCHEME_TAG_MSG,
   );
   assert.equal(ok, true, 'a generated wallet must produce a verifiable signature');

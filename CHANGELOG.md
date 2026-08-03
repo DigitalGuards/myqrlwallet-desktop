@@ -2,6 +2,30 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Message-signing responses now include the wallet's three-byte ML-DSA
+  descriptor. Bound SDK verifiers can combine it with the returned public key
+  and confirm that the signature belongs to the claimed current `Q` + 40-hex
+  address. The roadmap 64-byte address format remains intentionally disabled.
+- The QRL web3 signer dependency is now pinned to the current-address-compatible
+  1.0.1 release. Version 1.0.3 requires the roadmap 64-byte address shape and
+  rejects deployed `Q` + 40 accounts.
+- Unlock now derives the address from the authenticated seed and rejects any
+  envelope whose public address metadata names a different account. Failed
+  unlock paths also wipe their unretained derived KEK.
+- Main strictly parses signer-process signing responses, including fixed cryptographic
+  widths, exact result arms, transaction alias equality, and request-account
+  binding, before returning a result across the renderer bridge.
+- Renderer builds now fail when the frontend source, lockfile, or staged entry
+  point is missing, always install frontend dependencies with `npm ci`, and
+  enforce the desktop meta CSP across multiline or absent frontend meta tags.
+- Linux packaging now resolves electron-builder's actual executable name before
+  flipping fuses. A missing binary aborts packaging so ASAR integrity and the
+  remaining production fuses cannot be silently skipped.
+
 ## 1.0.0
 
 Major testnet release. The desktop wallet has carried the full four-process
