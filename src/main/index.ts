@@ -459,7 +459,7 @@ app
         title: 'QRL v3 accounts',
         message: 'This release uses new 64-byte addresses and separate v3 wallet storage.',
         detail:
-          'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances remain on their original network.',
+          'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances do not carry over to v3.',
         buttons: ['Continue'],
       });
     }

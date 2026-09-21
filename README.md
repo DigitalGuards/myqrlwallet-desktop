@@ -40,14 +40,14 @@ To build the installers yourself, see "Packaging and signing" below.
 ### Version 1.1: QRL v3 accounts
 
 This release uses QIP-55 addresses: uppercase `Q` followed by 128 hexadecimal
-characters. It targets the private v3 test network and checks its chain ID and
+characters. It targets the v3 test network and checks its chain ID and
 genesis before account RPC calls and transaction broadcasts.
 
 V3 wallets and settings use a separate `v3-private` data directory. Earlier
 encrypted wallet files and browser state remain available to Desktop v1.0.0.
 Import your recovery phrase or extended seed to use its v3 account. If you need
 an earlier wallet backup, open v1.0.0 and export it there before importing it.
-Earlier testnet balances remain on their original network.
+Earlier testnet balances do not carry over to v3.
 
 ## Prerequisites
 
@@ -187,6 +187,8 @@ staging build just exports `VITE_NODE_ENV=development` and the `*_DEVELOPMENT`
 vars before building. The main-process CSP `connect-src` allowlist
 (`src/main/config.ts` `frontendOrigins`) is kept in sync with those origins;
 override it with `QRL_FRONTEND_ORIGINS` (space-separated) when repointing.
+All endpoints must serve the pinned v3 chain ID and genesis. Endpoint overrides
+select another provider for that same network.
 
 ## Directory map
 
@@ -254,11 +256,9 @@ npm run dist:win     # nsis, x64 + arm64
 npm run dist:linux   # AppImage + deb + rpm, x64
 ```
 
-`@node-rs/argon2` ships per-arch prebuilds, and npm installs only the current
-host's, so build each target on its own arch: cross-building (e.g. a Windows
-installer from Linux) would package the wrong `.node` and fail to load the
-signer's crypto at runtime. For the same reason, produce the `win` arm64 slice on
-an arm64 host (the x64 host lacks the arm64 argon2 prebuild). The Linux `rpm`
+`@node-rs/argon2` ships per-architecture prebuilds. The `predist:win` hook
+installs the matching x64 and arm64 Windows bindings when packaging from Linux;
+verify both bindings are included in their respective packages. The Linux `rpm`
 target additionally needs `rpmbuild` on PATH; without it, `AppImage` + `deb`
 still build.
 
