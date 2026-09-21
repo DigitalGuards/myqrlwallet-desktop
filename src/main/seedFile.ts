@@ -22,8 +22,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import type { EncryptedSeed } from '../shared/protocol';
-
-const ADDRESS_RE = /^Q[0-9a-fA-F]{40}$/;
+import { isLegacyQrlAddress, isQrlAddress } from '../shared/address';
 
 function walletDir(): string {
   return path.join(app.getPath('userData'), 'wallet');
@@ -45,12 +44,12 @@ function activePath(): string {
  * Per-wallet envelope path. The address doubles as the file name, so it is
  * validated against the strict address shape before ever touching a path
  * (defense against a tampered envelope smuggling path segments), and
- * LOWERCASED so two EIP-55 casings of the same account cannot become two
+ * LOWERCASED so two checksum casings of the same account cannot become two
  * files on a case-sensitive filesystem (or collide unpredictably on a
  * case-insensitive one).
  */
 function seedPathFor(address: string): string {
-  if (!ADDRESS_RE.test(address)) throw new Error('invalid wallet address');
+  if (!isQrlAddress(address)) throw new Error('invalid wallet address');
   return path.join(seedsDir(), `${address.toLowerCase()}.json`);
 }
 
@@ -71,14 +70,17 @@ function isAeadFields(v: unknown): boolean {
 }
 
 /** Structural check so a JSON-valid but wrong-shaped file counts as corrupt
- * here instead of surfacing as a confusing decrypt error in the signer. */
+ * here instead of surfacing as a confusing decrypt error in the signer.
+ * Pre-QIP-55 Q+40 envelopes deliberately fail this current-chain check and
+ * remain untouched on disk. Migrating one requires decrypting its seed and
+ * deriving the complete Q+128 identity with explicit user authorization. */
 function isEncryptedSeed(v: unknown): v is EncryptedSeed {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   return (
     typeof o['version'] === 'string' &&
     typeof o['address'] === 'string' &&
-    ADDRESS_RE.test(o['address'] as string) &&
+    isQrlAddress(o['address']) &&
     typeof o['salt'] === 'string' &&
     typeof o['kdf'] === 'object' &&
     o['kdf'] !== null &&
@@ -162,7 +164,7 @@ export async function listSeeds(): Promise<EncryptedSeed[]> {
 }
 
 export async function readSeedByAddress(address: string): Promise<EncryptedSeed | null> {
-  if (!ADDRESS_RE.test(address)) return null;
+  if (!isQrlAddress(address)) return null;
   return readEnvelopeFile(seedPathFor(address));
 }
 
@@ -179,17 +181,22 @@ export async function hasAnySeed(): Promise<boolean> {
  */
 export async function getActiveAddress(): Promise<string | null> {
   let pointed: string | null = null;
+  let hasLegacyPointer = false;
   try {
     const raw = await fs.readFile(activePath(), 'utf8');
     const parsed: unknown = JSON.parse(raw);
     const a = (parsed as { address?: unknown } | null)?.address;
-    if (typeof a === 'string' && ADDRESS_RE.test(a)) pointed = a;
+    if (isQrlAddress(a)) pointed = a;
+    else if (isLegacyQrlAddress(a)) hasLegacyPointer = true;
   } catch {
     /* absent or unreadable: fall through to self-heal */
   }
   if (pointed && (await readSeedByAddress(pointed))) return pointed;
   const first = (await listSeeds())[0] ?? null;
-  await setActiveAddress(first ? first.address : null);
+  if (first) await setActiveAddress(first.address);
+  // Retain a Q+40 pointer while no current account exists. Its encrypted
+  // envelope remains recoverable by a future seed-aware migration flow.
+  else if (!hasLegacyPointer) await setActiveAddress(null);
   return first ? first.address : null;
 }
 
@@ -198,7 +205,7 @@ export async function setActiveAddress(address: string | null): Promise<void> {
     await fs.rm(activePath(), { force: true });
     return;
   }
-  if (!ADDRESS_RE.test(address)) throw new Error('invalid wallet address');
+  if (!isQrlAddress(address)) throw new Error('invalid wallet address');
   await atomicWrite(activePath(), JSON.stringify({ address }));
 }
 
@@ -237,7 +244,7 @@ export async function writeSeed(enc: EncryptedSeed): Promise<void> {
  * unrecoverable without the recovery phrase.
  */
 export async function deleteSeed(address: string): Promise<void> {
-  if (!ADDRESS_RE.test(address)) return;
+  if (!isQrlAddress(address)) return;
   await fs.rm(seedPathFor(address), { force: true });
   // Heal the pointer if it referenced the removed wallet.
   await getActiveAddress();

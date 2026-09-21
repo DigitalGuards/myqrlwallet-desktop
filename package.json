@@ -1,6 +1,6 @@
 {
   "name": "myqrlwallet-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Post-quantum QRL desktop wallet: hardened Electron shell whose isolated signer process is the sole holder of plaintext keys.",
   "author": "DigitalGuards",
   "license": "MIT",
@@ -35,9 +35,9 @@
   "dependencies": {
     "@noble/hashes": "^2.2.0",
     "@node-rs/argon2": "^2.0.2",
-    "@theqrl/mldsa87": "^2.1.1",
-    "@theqrl/wallet.js": "^6.1.0",
-    "@theqrl/web3": "1.0.1",
+    "@theqrl/mldsa87": "^2.1.4",
+    "@theqrl/wallet.js": "^6.2.4",
+    "@theqrl/web3": "1.0.3",
     "zod": "^4.3.4"
   },
   "devDependencies": {

@@ -13,8 +13,7 @@ import { deriveKek } from './kdf';
 import { addressFromHexSeed } from './signing';
 import { wipe } from './zeroize';
 import type { EncryptedSeed } from '../shared/protocol';
-
-const DEPLOYED_ADDRESS_RE = /^Q[0-9a-fA-F]{40}$/;
+import { isQrlAddress } from '../shared/address';
 
 interface UnlockedState {
   kek: Buffer;
@@ -64,7 +63,7 @@ export class SignerSession {
     now: number,
   ): Promise<void> {
     this.lock(); // tear down any prior session first
-    if (!DEPLOYED_ADDRESS_RE.test(encrypted.address)) {
+    if (!isQrlAddress(encrypted.address)) {
       throw new Error('invalid wallet address metadata');
     }
     let kek: Buffer;

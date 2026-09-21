@@ -126,8 +126,8 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
   assert.equal(result.signer, address, 'signer must match the derived address');
   assert.match(
     result.signer,
-    /^Q[0-9a-fA-F]{40}$/,
-    'signer must use the deployed Q + 40-hex address shape',
+    /^Q[0-9a-fA-F]{128}$/,
+    'signer must use the native Q + 128-hex address shape',
   );
   assert.equal(
     result.schemeVersion,
@@ -147,7 +147,7 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
     'descriptor must match the signed wallet extended seed',
   );
 
-  const identityHash = shake256(concat(descriptor, pk), { dkLen: 20 });
+  const identityHash = shake256(concat(descriptor, pk), { dkLen: 64 });
   const boundSigner = `Q${Buffer.from(identityHash).toString('hex')}`;
   assert.equal(
     boundSigner.toLowerCase(),
@@ -157,7 +157,7 @@ test('signMessage produces an ML-DSA-87 signature that verifies', () => {
 
   const wrongPublicKey = pk.slice();
   wrongPublicKey[0] = (wrongPublicKey[0] ?? 0) ^ 0x01;
-  const wrongIdentity = shake256(concat(descriptor, wrongPublicKey), { dkLen: 20 });
+  const wrongIdentity = shake256(concat(descriptor, wrongPublicKey), { dkLen: 64 });
   assert.notEqual(
     `Q${Buffer.from(wrongIdentity).toString('hex')}`.toLowerCase(),
     result.signer.toLowerCase(),
@@ -206,7 +206,7 @@ test('assertSessionSigner binds every request arm to the unlocked account', () =
   assert.equal(expectedSignerOf(typed), A);
   assert.equal(expectedSignerOf(txReq), A, 'transactions bind via tx.from');
 
-  // Matching account: no throw. Casing must not matter (EIP-55 checksums).
+  // Matching account: no throw. Checksum casing must not affect account binding.
   assert.doesNotThrow(() => assertSessionSigner(msg, A));
   assert.doesNotThrow(() => assertSessionSigner(msg, A.toLowerCase()));
   assert.doesNotThrow(() => assertSessionSigner(txReq, A));
