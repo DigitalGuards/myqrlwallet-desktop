@@ -111,6 +111,11 @@ linux:
     - deb
     - rpm
 
+rpm:
+  fpm:
+    - --rpm-rpmbuild-define
+    - _buildhost release-builder.invalid
+
 # --- Build hooks ------------------------------------------------------------
 # afterPack: flip @electron/fuses on the packaged binary BEFORE signing.
 afterPack: scripts/afterPack.cjs
