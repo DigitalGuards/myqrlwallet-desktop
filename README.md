@@ -49,6 +49,9 @@ Import your recovery phrase or extended seed to use its v3 account. If you need
 an earlier wallet backup, open v1.0.0 and export it there before importing it.
 Earlier testnet balances do not carry over to v3.
 
+Version 1.1.1 refreshes the shared renderer for Connect 5 relay pairing and
+explicit transaction chain IDs. Upgrade from 1.1.0 before using connected dApps.
+
 ## Prerequisites
 
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
