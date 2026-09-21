@@ -7,19 +7,17 @@
  *
  *  - @theqrl/mldsa87 2.x : Halborn/Trail-of-Bits-hardened FIPS-204 signer.
  *  - @theqrl/wallet.js 6.x : seed -> ML-DSA-87 keypair derivation + address.
- *  - @theqrl/web3 1.0.1 : current Q + 40 transaction signing. Keep exact until
- *    the roadmap 64-byte address migration is implemented across every host.
+ *  - @theqrl/web3 : transaction envelope signing. QIP-55 requires the
+ *    64-byte-address upstream line represented by commit d5b4f2b8 or later.
  *
  * All three are pure JavaScript and synchronous (the research confirmed no
  * WASM init), so no async bootstrap is needed; the only runtime requirement is
  * a WebCrypto RNG for hedged signing, which Node >= 20.19 provides globally.
  */
 import * as mldsa from '@theqrl/mldsa87';
-import { MLDSA87, newWalletFromExtendedSeed } from '@theqrl/wallet.js';
-// Use web3's EIP-55 checksummer for the deployed 20-byte address, exactly as
-// the web wallet's src/utils/signing/sign.ts does. wallet.js exposes its full
-// 64-byte identity, while this release intentionally projects current Q + 40.
-import Web3, { utils as web3Utils } from '@theqrl/web3';
+import { assertValidQrlAddressCase } from './addressCase';
+import { MLDSA87, newWalletFromExtendedSeed, toChecksumAddress } from '@theqrl/wallet.js';
+import Web3 from '@theqrl/web3';
 import { shake256 } from '@noble/hashes/sha3.js';
 import { MLDSA87 as SIZES, SCHEME } from '../shared/constants';
 import type {
@@ -28,11 +26,9 @@ import type {
   TransactionSignatureResult,
   UnsignedTransaction,
 } from '../shared/schemas';
+import { QRL_ADDRESS_PATTERN } from '../shared/address';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
-
-// legacy20 derivation slice (myqrlwallet-frontend src/config/addressFormat.ts).
-const IDENTITY_SLICE: readonly [number, number] = [1, 41];
 
 function bytesToHex(bytes: Uint8Array): string {
   let s = '0x';
@@ -59,10 +55,13 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Derive the on-chain Q-address (EIP-55) from a wallet's full identity. */
+/** Derive the canonical QIP-55 address from a wallet's full identity. */
 function addressOf(wallet: { getAddressStr(): string }): string {
-  const [start, end] = IDENTITY_SLICE;
-  return web3Utils.toChecksumAddress(`Q${wallet.getAddressStr().slice(start, end)}`);
+  const address = toChecksumAddress(wallet.getAddressStr());
+  if (!QRL_ADDRESS_PATTERN.test(address)) {
+    throw new Error('wallet.js returned an invalid QIP-55 address');
+  }
+  return address;
 }
 
 /** The identity triple derived from either secret encoding. `hexSeed` and
@@ -161,7 +160,7 @@ export function expectedSignerOf(request: SignatureRequest): string {
  * can diverge (account switch, re-unlock into another wallet); without this
  * check the signer would silently sign with whatever key is unlocked, i.e. a
  * dApp could receive a signature (or a spend) from an account it never asked
- * for. Throws on mismatch; comparison is case-insensitive (EIP-55 casing).
+ * for. Throws on mismatch; comparison is case-insensitive across checksum casing.
  */
 export function assertSessionSigner(request: SignatureRequest, sessionAddress: string): void {
   const expected = expectedSignerOf(request);
@@ -247,6 +246,10 @@ export async function signTransaction(
   }
   const web3 = new Web3();
   const utils = web3.utils;
+  // Checksum-case gate: shared schemas are shape-only by design; the
+  // signer is the wallet boundary where wallet.js may be imported.
+  assertValidQrlAddressCase(tx.to, 'recipient');
+  assertValidQrlAddressCase(tx.from, 'sender');
   const transactionObject = {
     from: tx.from,
     to: tx.to,
@@ -262,8 +265,17 @@ export async function signTransaction(
     ...(tx.data ? { data: tx.data.startsWith('0x') ? tx.data : `0x${tx.data}` } : {}),
   };
   // web3.qrl.accounts.signTransaction treats the extended hex seed as the key.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const signed = await (web3.qrl.accounts as any).signTransaction(transactionObject, hexSeed);
+  type SignedTransaction = { rawTransaction?: string; transactionHash?: string };
+  const accounts = web3.qrl.accounts as unknown as {
+    signTransaction(
+      transaction: typeof transactionObject,
+      extendedSeed: string,
+    ): Promise<SignedTransaction>;
+  };
+  // The pinned @theqrl/web3 1.0.3 is already the 64-byte-address build, so
+  // a conversion error here indicates malformed input, not a wrong web3
+  // build; surface the original error rather than rewrapping it.
+  const signed: SignedTransaction = await accounts.signTransaction(transactionObject, hexSeed);
   if (!signed || !signed.rawTransaction) {
     throw new Error('transaction could not be signed');
   }

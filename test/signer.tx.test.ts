@@ -17,7 +17,7 @@ import { deriveSeedFromMnemonic, generateMnemonic, signTransaction } from '../sr
 import { parseSignatureResultForRequest } from '../src/shared/schemas';
 import type { UnsignedTransaction } from '../src/shared/schemas';
 
-const CHAIN_ID = 1337; // testnet v2
+const CHAIN_ID = 3151909; // private v3 testnet
 
 function unsignedTx(from: string, to: string): UnsignedTransaction {
   return {

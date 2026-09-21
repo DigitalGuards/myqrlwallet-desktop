@@ -101,7 +101,7 @@ linux:
   category: Finance
   synopsis: Post-quantum QRL desktop wallet
   description: >-
-    Self-custody desktop wallet for the quantum-resistant ledger (QRL v2).
+    Self-custody desktop wallet for the quantum-resistant ledger (QRL v3 testnet).
     Keys are encrypted with an Argon2id password-derived key and only ever
     decrypted inside an isolated signer process.
   maintainer: DigitalGuards <ops@digitalguards.nl>
@@ -110,6 +110,11 @@ linux:
     - AppImage
     - deb
     - rpm
+
+rpm:
+  fpm:
+    - --rpm-rpmbuild-define
+    - _buildhost release-builder.invalid
 
 # --- Build hooks ------------------------------------------------------------
 # afterPack: flip @electron/fuses on the packaged binary BEFORE signing.

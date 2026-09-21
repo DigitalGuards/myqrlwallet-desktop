@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import './unlock.css';
 import logoUrl from './logo.png';
+import { formatQrlAddressFingerprint, groupQrlAddress } from '../shared/address';
 
 interface UnlockResult {
   ok: boolean;
@@ -25,9 +26,9 @@ declare global {
   }
 }
 
-function shortAddress(address: string | null): string {
+function accountLabel(address: string | null): string {
   if (!address) return 'your wallet';
-  return address.length > 16 ? `${address.slice(0, 10)}...${address.slice(-4)}` : address;
+  return formatQrlAddressFingerprint(address);
 }
 
 function UnlockApp() {
@@ -103,6 +104,7 @@ function UnlockApp() {
           <select
             className="unlock-account-select"
             aria-label="Account to unlock"
+            title={selected ?? undefined}
             value={selected ?? ''}
             disabled={busy}
             onChange={(event) => {
@@ -112,16 +114,22 @@ function UnlockApp() {
           >
             {wallets.map((w) => (
               <option key={w.address} value={w.address}>
-                {shortAddress(w.address)}
+                {accountLabel(w.address)}
               </option>
             ))}
           </select>
         ) : (
-          <div className="unlock-account">
+          <div className="unlock-account" title={selected ?? undefined}>
             <span className="unlock-dot" />
-            {shortAddress(selected)}
+            {accountLabel(selected)}
           </div>
         )}
+        {selected ? (
+          <details className="unlock-address-disclosure">
+            <summary>Show full address</summary>
+            <p title={selected}>{groupQrlAddress(selected)}</p>
+          </details>
+        ) : null}
         <form className="unlock-form" onSubmit={(event) => void submit(event)}>
           <div className="unlock-input-wrap">
             <input

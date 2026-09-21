@@ -46,7 +46,7 @@ not injecting into our signed process.
   (`KDF_DEFAULTS`: Argon2id, 256 MiB, t=3; `src/shared/constants.ts`,
   `src/signer/kdf.ts`, `src/signer/aead.ts`). File is `0600`
   (`src/main/seedFile.ts`). On every unlock the signer derives the deployed
-  `Q` + 40 address from the authenticated seed and rejects an envelope whose
+  `Q` + 128 address from the authenticated seed and rejects an envelope whose
   plaintext address metadata names a different account (`src/signer/session.ts`).
 - Buys: stealing the file yields only an Argon2id-hardened blob. Offline cracking
   is bounded by the memory-hard KDF; a strong password is infeasible to brute.
@@ -133,12 +133,14 @@ A malicious dependency or a tampered build artifact.
 
 - Control: lockfile-pinned deps; pure-NAPI/JS crypto (no native build step to
   subvert); the spend path is confined to the Halborn-audited `@theqrl/mldsa87`;
-  unaudited `@noble/post-quantum` is kept off the spend path entirely. Releases
-  are Authenticode-signed (Windows), notarized (macOS), and PGP-detach-signed
-  (all platforms). ASAR integrity + `OnlyLoadAppFromAsar` fuse mean the app only
-  loads code from the signed archive.
-- Buys: a tampered artifact fails signature verification; a swapped dependency is
-  caught by the lockfile; users can verify the PGP `.asc` sidecars.
+  unaudited `@noble/post-quantum` is kept off the spend path entirely. Current
+  Windows/Linux releases are unsigned and provide SHA-256 checksums. Hooks for
+  Authenticode, macOS notarization and PGP signing are available when their
+  credentials are configured. ASAR integrity and the `OnlyLoadAppFromAsar`
+  fuse restrict packaged code loading.
+- Buys: a swapped dependency is caught by the lockfile; users can verify
+  downloaded artifacts against the published checksums. Signed builds can
+  additionally provide independently verifiable publisher provenance.
 - Limit: signing proves provenance, not the absence of a malicious upstream
   commit. Dependency review and reproducible builds (a Stage 3 goal) are the
   real defenses against a compromised upstream.

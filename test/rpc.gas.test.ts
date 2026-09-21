@@ -1,13 +1,8 @@
 /**
  * Gas policy for the transaction builder (src/main/rpc.ts buildTransaction):
  *
- *   - no calldata: fixed 21000, qrl_estimateGas is never consulted
- *   - calldata present: qrl_estimateGas result with a 1.2x buffer (web-wallet
- *     parity), replacing the old fixed 90k limit that starved real contract
- *     calls (an HTLC lock writes ~7 fresh slots, ~175k gas) into guaranteed
- *     on-chain reverts
- *   - an estimate rejection (the call would revert) propagates: refusing to
- *     build beats signing a transaction that burns its whole gas limit
+ * Every transfer uses qrl_estimateGas with a 1.2x buffer, including contract
+ * receivers reached through empty calldata. An estimate failure stops the build.
  *
  * fetch is mocked; the RPC endpoints are pinned via env BEFORE the module
  * import (config.ts reads env at import time), and rpc.ts is loaded with a
@@ -20,6 +15,7 @@ process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
 
 const rpc = await import('../src/main/rpc');
+const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
 
 interface RecordedCall {
   method: string;
@@ -34,7 +30,7 @@ const realFetch = globalThis.fetch;
 const READ_RESULTS: Record<string, string> = {
   qrl_getTransactionCount: '0x5',
   qrl_gasPrice: '0x3b9aca00', // 1 gwei
-  qrl_chainId: '0x539',
+  qrl_chainId: `0x${EXPECTED_CHAIN_ID.toString(16)}`,
 };
 
 const methodsCalled = () => calls.map((c) => c.method);
@@ -44,6 +40,13 @@ beforeEach(() => {
   estimateResponse = { result: '0x249f0' }; // 150000
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
     const { method, params } = JSON.parse(String(init?.body)) as RecordedCall;
+    if (method === 'qrl_getBlockByNumber') {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, result: { hash: EXPECTED_GENESIS_HASH } }),
+        ),
+      );
+    }
     calls.push({ method, params });
     const payload =
       method === 'qrl_estimateGas'
@@ -58,16 +61,39 @@ afterEach(() => {
 });
 
 const REQ = {
-  from: `Q${'11'.repeat(20)}`,
-  to: `Q${'22'.repeat(20)}`,
+  from: `Q${'11'.repeat(64)}`,
+  to: `Q${'22'.repeat(64)}`,
   value: '1000000000000000000',
   feeLevel: 'medium' as const,
 };
 
-test('buildTransaction uses fixed 21000 gas for native transfers (no estimate call)', async () => {
+test('buildTransaction estimates a simple value transfer', async () => {
+  estimateResponse = { result: '0x5208' }; // 21000
   const tx = await rpc.buildTransaction(REQ);
-  assert.equal(tx.gas, '21000');
-  assert.ok(!methodsCalled().includes('qrl_estimateGas'), 'no estimate for plain transfers');
+  assert.equal(tx.gas, '25200');
+  const estimate = calls.find((call) => call.method === 'qrl_estimateGas');
+  assert.deepEqual(estimate?.params, [
+    {
+      from: REQ.from,
+      to: REQ.to,
+      value: '0xde0b6b3a7640000',
+      data: '0x',
+      maxFeePerGas: '0x47868c00',
+      maxPriorityFeePerGas: '0x3b9aca00',
+    },
+  ]);
+});
+
+test('buildTransaction budgets receive-handler execution with empty calldata', async () => {
+  for (const data of [undefined, '0x']) {
+    const tx = await rpc.buildTransaction({ ...REQ, data });
+    assert.equal(tx.gas, '180000', 'contract execution needs the estimated gas');
+  }
+});
+
+test('buildTransaction rejects a value transfer whose recipient cannot receive it', async () => {
+  estimateResponse = { error: { code: -32000, message: 'execution reverted' } };
+  await assert.rejects(rpc.buildTransaction(REQ), /execution reverted/);
 });
 
 test('buildTransaction estimates contract calls and applies the 1.2x buffer', async () => {

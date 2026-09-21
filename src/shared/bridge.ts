@@ -30,6 +30,9 @@ import type {
 } from './schemas';
 
 export interface QrlWalletApi {
+  /** Address capability verified by the bundled renderer before using the signer. */
+  readonly addressScheme: 'qip55-64';
+
   // ---- read-only ----------------------------------------------------------
   getBalance(req: GetBalanceRequest): Promise<BalanceResult>;
 

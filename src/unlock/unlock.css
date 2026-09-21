@@ -146,6 +146,26 @@ body {
   box-shadow: 0 0 0 3px hsl(24 96% 55% / 0.3);
 }
 
+.unlock-address-disclosure {
+  width: 100%;
+  color: var(--muted-fg);
+  font-size: 11px;
+  text-align: left;
+}
+
+.unlock-address-disclosure summary {
+  cursor: pointer;
+  text-align: center;
+}
+
+.unlock-address-disclosure p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+  user-select: text;
+}
+
 .unlock-input-wrap {
   position: relative;
 }

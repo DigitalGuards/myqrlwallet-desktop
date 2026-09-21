@@ -23,9 +23,17 @@ import {
   UnsignedTransactionSchema,
   parseSignatureResultForRequest,
 } from '../src/shared/schemas';
+import { isLegacyQrlAddress, isQrlAddress } from '../src/shared/address';
 
-const ADDR = 'Q' + 'a'.repeat(40);
-const ADDR2 = 'Q' + 'b'.repeat(40);
+const ADDR = 'Q' + 'a'.repeat(128);
+const ADDR2 = 'Q' + 'b'.repeat(128);
+
+test('address helpers separate current accounts from preserved legacy metadata', () => {
+  assert.equal(isQrlAddress(ADDR), true);
+  assert.equal(isQrlAddress('Q' + 'a'.repeat(40)), false);
+  assert.equal(isLegacyQrlAddress('Q' + 'a'.repeat(40)), true);
+  assert.equal(isLegacyQrlAddress(ADDR), false);
+});
 
 const validTx = {
   from: ADDR,
@@ -43,6 +51,11 @@ test('GetBalanceRequest accepts a valid Q-address and rejects junk + extra keys'
   assert.equal(GetBalanceRequestSchema.safeParse({ address: ADDR }).success, true);
   assert.equal(GetBalanceRequestSchema.safeParse({ address: '0xdeadbeef' }).success, false);
   assert.equal(GetBalanceRequestSchema.safeParse({ address: ADDR + 'ff' }).success, false);
+  assert.equal(
+    GetBalanceRequestSchema.safeParse({ address: 'Q' + 'a'.repeat(40) }).success,
+    false,
+    'legacy 20-byte address rejected',
+  );
   // .strict(): an unexpected extra field is rejected, not ignored.
   assert.equal(GetBalanceRequestSchema.safeParse({ address: ADDR, evil: 1 }).success, false);
 });
@@ -358,9 +371,9 @@ test('Decimal + hex + address boundary values', () => {
     BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '0001' }).success,
     true,
   );
-  // Mixed-case Q-address is accepted (EIP-55 casing is tolerated by the schema).
+  // Mixed-case Q-address is accepted; checksum validation belongs at the wallet boundary.
   assert.equal(
-    GetBalanceRequestSchema.safeParse({ address: 'Q' + 'a'.repeat(20) + 'A'.repeat(20) }).success,
+    GetBalanceRequestSchema.safeParse({ address: 'Q' + 'a'.repeat(64) + 'A'.repeat(64) }).success,
     true,
     'mixed-case address accepted',
   );

@@ -19,10 +19,12 @@ process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
 
 const rpc = await import('../src/main/rpc');
+const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
 
 type FetchArgs = { url: string; body: unknown };
 let calls: FetchArgs[] = [];
 let responder: (url: string) => Response | Error;
+let identityOverride: ((url: string, method: string) => Response | undefined) | undefined;
 
 function rpcOk(result: unknown): Response {
   return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }), { status: 200 });
@@ -38,8 +40,18 @@ const realFetch = globalThis.fetch;
 
 beforeEach(() => {
   calls = [];
+  identityOverride = undefined;
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const { method } = JSON.parse(String(init?.body)) as { method: string };
+    const override = identityOverride?.(url, method);
+    if (override) return Promise.resolve(override);
+    if (method === 'qrl_getBlockByNumber') {
+      return Promise.resolve(rpcOk({ hash: EXPECTED_GENESIS_HASH }));
+    }
+    if (method === 'qrl_chainId') {
+      return Promise.resolve(rpcOk(`0x${EXPECTED_CHAIN_ID.toString(16)}`));
+    }
     calls.push({ url, body: init?.body });
     const out = responder(url);
     if (out instanceof Error) return Promise.reject(out);
@@ -103,8 +115,7 @@ test('transport failure on both endpoints names the endpoint and detail', async 
 
 test('reads fail over on ANY primary error, including JSON-RPC errors (unchanged semantics)', async () => {
   responder = (url) => (url.includes('primary') ? rpcErr('boom') : rpcOk('0x539'));
-  const chainId = await rpc.getChainId();
-  assert.equal(chainId, 1337);
+  assert.equal(await rpc.getBalance(`Q${'a'.repeat(128)}`), '1337');
   assert.equal(calls.length, 2);
 });
 
@@ -119,7 +130,7 @@ test('a 200 non-JSON body on the primary fails over to the secondary (broadcast)
 
 test('a 200 non-JSON body on the primary fails over (reads)', async () => {
   responder = (url) => (url.includes('primary') ? htmlInterstitial() : rpcOk('0x539'));
-  assert.equal(await rpc.getChainId(), 1337);
+  assert.equal(await rpc.getBalance(`Q${'a'.repeat(128)}`), '1337');
   assert.equal(calls.length, 2);
 });
 
@@ -172,4 +183,35 @@ test('a dual transport failure chains the primary error as cause', async () => {
     assert.match((err.cause as Error).message, /primary\.example/);
     return true;
   });
+});
+
+test('broadcast rejects a primary with the wrong chain before sending raw bytes', async () => {
+  responder = () => rpcOk('0xnever');
+  identityOverride = (_url, method) => (method === 'qrl_chainId' ? rpcOk('0x539') : undefined);
+  await assert.rejects(rpc.sendRawTransaction('0xdead'), rpc.RpcIdentityError);
+  assert.equal(calls.length, 0);
+});
+
+test('broadcast rejects same-chain wrong-genesis fallback without sending raw bytes there', async () => {
+  responder = () => connReset();
+  identityOverride = (url, method) =>
+    url.includes('secondary') && method === 'qrl_getBlockByNumber'
+      ? rpcOk({ hash: `0x${'0'.repeat(64)}` })
+      : undefined;
+  await assert.rejects(rpc.sendRawTransaction('0xdead'), /does not match this v3 network/);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0]?.url.includes('primary'));
+});
+
+test('account reads only fail over to an endpoint matching the pinned genesis', async () => {
+  responder = () => rpcOk('0x42');
+  identityOverride = (url, method) =>
+    url.includes('primary') && method === 'qrl_getBlockByNumber' ? rpcOk(null) : undefined;
+  assert.equal(await rpc.getBalance(`Q${'a'.repeat(128)}`), '66');
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0]?.url.includes('secondary'));
+});
+
+test('the main broker returns only the pinned v3 chain ID', async () => {
+  assert.equal(await rpc.getChainId(), EXPECTED_CHAIN_ID);
 });

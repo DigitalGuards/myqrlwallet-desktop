@@ -92,9 +92,9 @@ test('unlock rejects address metadata that does not match the encrypted seed', a
   const tampered: EncryptedSeed = {
     ...encrypted,
     address:
-      encrypted.address.toLowerCase() === `q${'a'.repeat(40)}`
-        ? `Q${'b'.repeat(40)}`
-        : `Q${'a'.repeat(40)}`,
+      encrypted.address.toLowerCase() === `q${'a'.repeat(128)}`
+        ? `Q${'b'.repeat(128)}`
+        : `Q${'a'.repeat(128)}`,
   };
   const session = new SignerSession(() => {});
 
@@ -105,11 +105,16 @@ test('unlock rejects address metadata that does not match the encrypted seed', a
   assert.equal(session.unlocked, false, 'an identity mismatch must leave the session locked');
 });
 
-test('unlock enforces the deployed uppercase-Q plus 40-hex address shape', async () => {
+test('unlock enforces the native uppercase-Q plus 128-hex address shape', async () => {
   const { encrypted } = await makeFixture();
   const session = new SignerSession(() => {});
 
-  for (const address of [encrypted.address.toLowerCase(), `Q${'a'.repeat(128)}`]) {
+  for (const address of [
+    encrypted.address.toLowerCase(),
+    `Q${'a'.repeat(40)}`,
+    `Q${'a'.repeat(127)}`,
+    `Q${'a'.repeat(129)}`,
+  ]) {
     await assert.rejects(
       () => session.unlock({ ...encrypted, address }, 60_000, { password: PASSWORD }, 0),
       /invalid wallet address metadata/,

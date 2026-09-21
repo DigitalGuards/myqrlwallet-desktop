@@ -11,14 +11,15 @@
  */
 import { z } from 'zod';
 import { MLDSA87, SCHEME } from './constants';
+import { QRL_ADDRESS_PATTERN } from './address';
 
-/** The deployed QRL v2 address: `Q` + 40 hex chars (EIP-55 casing tolerated).
- * Roadmap 64-byte identities are intentionally rejected. Any future migration
- * must update this schema, `addressOf` (signer/signing.ts), and every signature
- * account-binding check as one atomic change. */
+/** A native QIP-55 address: uppercase `Q` plus 128 hexadecimal characters.
+ * Shape-only by design: checksum-case enforcement lives at the wallet
+ * boundary in the signer (src/signer/addressCase.ts), inside the crypto
+ * fence, so shared schemas stay free of crypto imports. */
 export const AddressSchema = z
   .string()
-  .regex(/^Q[0-9a-fA-F]{40}$/, 'must be a Q-prefixed 20-byte hex address');
+  .regex(QRL_ADDRESS_PATTERN, 'must be an uppercase-Q-prefixed 64-byte hex address');
 
 /** A wallet.js 51-byte hex extended seed (3-byte descriptor || 48-byte seed). */
 export const HexSeedSchema = z
@@ -56,7 +57,7 @@ export const BuildTransactionRequestSchema = z
 
 /**
  * A fully-assembled unsigned transaction (output of buildTransaction).
- * QRL v2 uses EIP-1559 type-2 transactions, matching the web wallet
+ * QRL v3 uses EIP-1559 type-2 transactions, matching the web wallet
  * (`qrlStore.sendTransaction`): a `maxFeePerGas` / `maxPriorityFeePerGas`
  * pair rather than a legacy `gasPrice`. All amounts are decimal strings in
  * the smallest unit; the signer converts to the hex shape web3 expects.
@@ -303,7 +304,7 @@ const TransactionSignatureResultSchema = z
      * compatibility. The union-level refinement requires exact equality. */
     signature: RawTransactionSchema,
     rawTransaction: RawTransactionSchema,
-    /** Signer address in the deployed `Q` + 40-hex-character form. */
+    /** Signer address in the native `Q` + 128-hex-character form. */
     signer: AddressSchema,
     /** Signer-computed transaction hash when supplied by web3. */
     transactionHash: fixedHexSchema(32).optional(),
@@ -317,7 +318,7 @@ const AccountBoundSignatureFields = {
   publicKey: fixedHexSchema(MLDSA87.PUBLIC_KEY_BYTES),
   /** Three-byte ML-DSA wallet descriptor used with the key to derive `signer`. */
   descriptor: z.string().regex(/^0x01[0-9a-fA-F]{4}$/, 'must be a 3-byte ML-DSA descriptor'),
-  /** Signer address in the deployed `Q` + 40-hex-character form. */
+  /** Signer address in the native `Q` + 128-hex-character form. */
   signer: AddressSchema,
   /** SHAKE256 digest that was signed (exactly 64 bytes). */
   digest: fixedHexSchema(MLDSA87.DIGEST_BYTES),

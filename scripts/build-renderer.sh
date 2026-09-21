@@ -66,12 +66,27 @@ export VITE_NODE_ENV="${VITE_NODE_ENV:-production}"
 # https://qrlwallet.com/api/qrl-rpc/testnet. Pointing at the bare host makes
 # the frontend POST to /testnet, which the edge answers 405 ("Connection failed").
 export VITE_RPC_URL_PRODUCTION="${VITE_RPC_URL_PRODUCTION:-https://qrlwallet.com/api/qrl-rpc}"
-export VITE_SERVER_URL_PRODUCTION="${VITE_SERVER_URL_PRODUCTION:-https://qrlwallet.com}"
-export VITE_EXPLORER_URL_PRODUCTION="${VITE_EXPLORER_URL_PRODUCTION:-https://zondscan.com}"
+# SERVER_URL is an API base; history and IPFS consumers append their own paths.
+export VITE_SERVER_URL_PRODUCTION="${VITE_SERVER_URL_PRODUCTION:-https://qrlwallet.com/api}"
+export VITE_EXPLORER_URL_PRODUCTION="${VITE_EXPLORER_URL_PRODUCTION:-https://v3.zondscan.com}"
 # Staging fallbacks used when VITE_NODE_ENV=development is exported.
 export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwallet.com/api/qrl-rpc}"
-export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com}"
-export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://zondscan.com}"
+export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com/api}"
+export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://v3.zondscan.com}"
+
+# The renderer and native broker ship the same qualified v3 network identity.
+export VITE_WALLET_PROFILE=v3-private
+export VITE_V3_CHAIN_ID=0x301825
+export VITE_V3_GENESIS_HASH=0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4
+if [[ "${VITE_NODE_ENV}" == "production" ]]; then
+  export VITE_V3_RPC_URL="${VITE_RPC_URL_PRODUCTION}/testnet"
+  export VITE_V3_SERVER_URL="${VITE_SERVER_URL_PRODUCTION}"
+  export VITE_V3_EXPLORER_URL="${VITE_EXPLORER_URL_PRODUCTION}"
+else
+  export VITE_V3_RPC_URL="${VITE_RPC_URL_DEVELOPMENT}/testnet"
+  export VITE_V3_SERVER_URL="${VITE_SERVER_URL_DEVELOPMENT}"
+  export VITE_V3_EXPLORER_URL="${VITE_EXPLORER_URL_DEVELOPMENT}"
+fi
 
 echo "[build-renderer] building frontend (VITE_DESKTOP=1, VITE_NODE_ENV=${VITE_NODE_ENV})..."
 if [[ "${VITE_NODE_ENV}" == "production" ]]; then

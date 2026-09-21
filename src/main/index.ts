@@ -6,7 +6,7 @@
  * plaintext key material; it brokers IPC, draws the trusted confirmation modal,
  * proxies RPC, and owns the encrypted seed file on disk.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
@@ -104,6 +104,11 @@ const dappIngress = new DappUriIngress({
 });
 
 app.setName('MyQRLWallet');
+// Keep v2 ciphertext, settings and browser state intact for recovery in v1.0.0.
+const legacyUserData = app.getPath('userData');
+const currentUserData = path.join(legacyUserData, 'v3-private');
+mkdirSync(currentUserData, { recursive: true, mode: 0o700 });
+app.setPath('userData', currentUserData);
 // Hardening: a single instance, and no remote-content surprises.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -448,6 +453,16 @@ app
     // Resolve the locked-at-startup decision BEFORE creating the window so its
     // ready-to-show is gated deterministically (no race against showUnlockWindow).
     const lockedAtStartup = await hasAnySeed();
+    if (!lockedAtStartup && existsSync(path.join(legacyUserData, 'wallet'))) {
+      await dialog.showMessageBox({
+        type: 'info',
+        title: 'QRL v3 accounts',
+        message: 'This release uses new 64-byte addresses and separate v3 wallet storage.',
+        detail:
+          'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances do not carry over to v3.',
+        buttons: ['Continue'],
+      });
+    }
     createWindow(lockedAtStartup);
 
     // Cold start via a protocol click (Windows/Linux): the URI is in OUR argv.
