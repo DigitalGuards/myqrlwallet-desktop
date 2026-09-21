@@ -16,6 +16,7 @@ import { BRIDGE_KEY, EVENTS, IPC } from '../shared/constants';
 import type { QrlWalletApi } from '../shared/bridge';
 
 const api: QrlWalletApi = {
+  addressScheme: 'qip55-64',
   getBalance: (req) => ipcRenderer.invoke(IPC.GET_BALANCE, req),
   buildTransaction: (req) => ipcRenderer.invoke(IPC.BUILD_TRANSACTION, req),
   requestSignature: (req) => ipcRenderer.invoke(IPC.REQUEST_SIGNATURE, req),

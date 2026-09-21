@@ -43,10 +43,15 @@ function envUrlOptional(name: string, fallback: string): string | undefined {
   }
 }
 
-/** Primary JSON-RPC endpoint (QRL v2 `qrl_*` namespace): the prod backend's
+/** Primary JSON-RPC endpoint (QRL v3 `qrl_*` namespace): the prod backend's
  * RPC proxy, matching the bundled renderer's provider URL. Export QRL_RPC_URL
  * (and the VITE_* dev vars for the renderer) to build/run a staging app. */
 export const RPC_URL = envUrl('QRL_RPC_URL', 'https://qrlwallet.com/api/qrl-rpc/testnet');
+
+/** Network identity for this release, independently checked by the main broker. */
+export const EXPECTED_CHAIN_ID = 3151909;
+export const EXPECTED_GENESIS_HASH =
+  '0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4';
 
 /** Secondary endpoint for failover: the dev backend's RPC proxy (an
  * independent deployment over the same node pool). Set QRL_RPC_URL_SECONDARY
@@ -77,7 +82,7 @@ function frontendOrigins(): string[] {
     'https://qrlwallet.com',
     'wss://qrlwallet.com',
     // block explorer API (token + NFT discovery).
-    'https://zondscan.com',
+    'https://v3.zondscan.com',
   ];
 }
 

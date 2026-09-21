@@ -37,6 +37,18 @@ follow-up; there is no macOS build yet. Builds target production
 
 To build the installers yourself, see "Packaging and signing" below.
 
+### Version 1.1: QRL v3 accounts
+
+This release uses QIP-55 addresses: uppercase `Q` followed by 128 hexadecimal
+characters. It targets the private v3 test network and checks its chain ID and
+genesis before account RPC calls and transaction broadcasts.
+
+V3 wallets and settings use a separate `v3-private` data directory. Earlier
+encrypted wallet files and browser state remain available to Desktop v1.0.0.
+Import your recovery phrase or extended seed to use its v3 account. If you need
+an earlier wallet backup, open v1.0.0 and export it there before importing it.
+Earlier testnet balances remain on their original network.
+
 ## Prerequisites
 
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in

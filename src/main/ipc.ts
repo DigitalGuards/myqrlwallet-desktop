@@ -70,15 +70,6 @@ interface Deps {
   showSettings: () => void;
 }
 
-// Cache ONLY a successful read: rpc.getChainId throws on an unreachable node,
-// so a transient RPC failure can never poison the signing chain id for the
-// rest of the process lifetime.
-let cachedChainId: number | null = null;
-async function chainId(): Promise<number> {
-  if (cachedChainId === null) cachedChainId = await rpc.getChainId();
-  return cachedChainId;
-}
-
 const sameAccount = (a: string | null | undefined, b: string | null | undefined): boolean =>
   typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
 
@@ -202,7 +193,7 @@ export function registerIpcHandlers(deps: Deps): void {
     // the signer ignores the chain id on that arm.
     let signingChainId = 0;
     if (req.kind === 'transaction') {
-      signingChainId = await chainId();
+      signingChainId = await rpc.getChainId();
       if (req.tx.chainId !== signingChainId) {
         throw new Error('transaction chain id does not match the node; rebuild the transaction');
       }

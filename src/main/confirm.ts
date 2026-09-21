@@ -7,6 +7,7 @@
  */
 import { type BrowserWindow, dialog } from 'electron';
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
+import { groupQrlAddress } from '../shared/address';
 
 /** Format a smallest-unit integer string as Quanta (18 decimals), trimmed. */
 function formatQuanta(smallestUnit: string): string {
@@ -46,8 +47,8 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
       const { tx } = req;
       const detail = [
         `Amount:   ${formatQuanta(tx.value)}`,
-        `To:       ${tx.to}`,
-        `From:     ${tx.from}`,
+        `To:       ${groupQrlAddress(tx.to)}`,
+        `From:     ${groupQrlAddress(tx.from)}`,
         `Nonce:    ${tx.nonce}`,
         `Gas:      ${tx.gas}`,
         `Max fee:  ${tx.maxFeePerGas} (priority ${tx.maxPriorityFeePerGas})`,
@@ -67,7 +68,7 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
         // req.signer is trustworthy to display: main verified it against the
         // unlocked session before this modal, and the signer re-enforces it.
         detail:
-          `Account:  ${req.signer}\n` +
+          `Account:  ${groupQrlAddress(req.signer)}\n` +
           `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
           originDetail(req.origin),
       };
@@ -76,7 +77,7 @@ function summarise(req: SignatureRequest): { title: string; message: string; det
         title: 'Confirm typed-data signature',
         message: 'Sign this structured data with your wallet key?',
         detail:
-          `Account:  ${req.signer}\n` +
+          `Account:  ${groupQrlAddress(req.signer)}\n` +
           `Payload keys: ${Object.keys(req.payload).join(', ')}` +
           originDetail(req.origin),
       };
@@ -124,7 +125,7 @@ export async function confirmRemoveWallet(
     title: 'Remove wallet from this device?',
     message: 'Permanently remove this wallet from this device?',
     detail:
-      `Account: ${address}\n\n` +
+      `Account: ${groupQrlAddress(address)}\n\n` +
       'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
     noLink: true,
   });

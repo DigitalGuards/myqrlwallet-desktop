@@ -1,7 +1,7 @@
 /**
  * Minimal JSON-RPC client + transaction assembly. This is the seed of the
  * "bundled local RPC proxy" the desktop app becomes (Stage 3 of the research
- * roadmap): today it talks to the configured QRL v2 `qrl_*` endpoints (by
+ * roadmap): today it talks to the configured QRL v3 `qrl_*` endpoints (by
  * default the wallet backend's RPC proxies, see config.ts), reads failing
  * over to the secondary and broadcast failing over on transport errors only.
  * Signing stays separate (in the signer); broadcast is `sendRawTransaction`
@@ -9,7 +9,7 @@
  *
  * No secrets pass through this module.
  */
-import { RPC_URL, RPC_URL_SECONDARY } from './config';
+import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH, RPC_URL, RPC_URL_SECONDARY } from './config';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
 
 interface JsonRpcResponse<T> {
@@ -26,6 +26,8 @@ interface JsonRpcResponse<T> {
  * transport failures are safe to fail over on for a broadcast.
  */
 export class RpcTransportError extends Error {}
+
+export class RpcIdentityError extends Error {}
 
 /** Pull a usable detail (ECONNRESET, ETIMEDOUT, ...) out of undici's opaque
  * "TypeError: fetch failed" wrapper so the surfaced error names the problem. */
@@ -82,13 +84,32 @@ async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Pro
   return body.result;
 }
 
-/** Read-only call with failover to the secondary endpoint. */
+/** Verify each endpoint before using its account data or sending a signed transaction. */
+async function assertEndpointIdentity(url: string): Promise<void> {
+  const [chainId, genesis] = await Promise.all([
+    rpcCallOn<unknown>(url, 'qrl_chainId', []),
+    rpcCallOn<{ hash?: unknown } | null>(url, 'qrl_getBlockByNumber', ['0x0', false]),
+  ]);
+  if (
+    typeof chainId !== 'string' ||
+    !/^0x[0-9a-f]+$/i.test(chainId) ||
+    BigInt(chainId) !== BigInt(EXPECTED_CHAIN_ID) ||
+    typeof genesis?.hash !== 'string' ||
+    genesis.hash.toLowerCase() !== EXPECTED_GENESIS_HASH
+  ) {
+    throw new RpcIdentityError(`rpc endpoint ${new URL(url).host} does not match this v3 network`);
+  }
+}
+
+/** Read-only call with independently qualified primary and secondary endpoints. */
 async function rpcRead<T>(method: string, params: unknown[]): Promise<T> {
   try {
+    await assertEndpointIdentity(RPC_URL);
     return await rpcCallOn<T>(RPC_URL, method, params);
   } catch (primaryErr) {
     if (RPC_URL_SECONDARY && RPC_URL_SECONDARY !== RPC_URL) {
       try {
+        await assertEndpointIdentity(RPC_URL_SECONDARY);
         return await rpcCallOn<T>(RPC_URL_SECONDARY, method, params);
       } catch {
         /* fall through to throw the primary error */
@@ -106,7 +127,9 @@ const hexToBigInt = (h: string): bigint => BigInt(h);
  * fail the build/sign loudly rather than bind transactions to a guessed chain.
  */
 export async function getChainId(): Promise<number> {
-  return Number(hexToBigInt(await rpcRead<string>('qrl_chainId', [])));
+  const chainId = Number(hexToBigInt(await rpcRead<string>('qrl_chainId', [])));
+  if (chainId !== EXPECTED_CHAIN_ID) throw new RpcIdentityError('rpc chain identity changed');
+  return chainId;
 }
 
 export async function getBalance(address: string): Promise<string> {
@@ -127,17 +150,17 @@ async function getGasPrice(): Promise<bigint> {
   }
 }
 
-/** Fee-level multiplier, mirroring the web wallet's `applyFeeLevel`. Exported
- * for unit testing (pure bigint arithmetic; no network). */
+/** Desktop fee tiers. Keep the priority tip within the selected total fee cap. */
 export function applyFeeLevel(
   base: bigint,
   level: FeeLevel,
 ): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
   const mult: Record<FeeLevel, bigint> = { low: 100n, medium: 120n, high: 150n };
   const maxFeePerGas = (base * mult[level]) / 100n;
-  // Priority tip = 10% of base, floored at 1 gwei.
+  // Prefer 10% of base with a 1 gwei floor, subject to the total fee cap.
   const tip = base / 10n;
-  const maxPriorityFeePerGas = tip > 1_000_000_000n ? tip : 1_000_000_000n;
+  const preferredTip = tip > 1_000_000_000n ? tip : 1_000_000_000n;
+  const maxPriorityFeePerGas = preferredTip > maxFeePerGas ? maxFeePerGas : preferredTip;
   return { maxFeePerGas, maxPriorityFeePerGas };
 }
 
@@ -145,12 +168,15 @@ export function applyFeeLevel(
 const GAS_ESTIMATE_BUFFER_PCT = 120n;
 
 /**
- * Estimate gas for a contract call via qrl_estimateGas, with the web wallet's
- * 1.2x buffer. A JSON-RPC error here (typically: the call would revert)
- * propagates on purpose: refusing to build is strictly better than signing a
- * transaction that burns its whole gas limit and reverts on-chain.
+ * Estimate the complete transfer via qrl_estimateGas, with a 1.2x buffer.
+ * Empty calldata can still execute a recipient contract's receive handler.
+ * An estimate error propagates so construction stops when execution would fail.
  */
-async function estimateGas(req: BuildTransactionRequest, data: string): Promise<bigint> {
+async function estimateGas(
+  req: BuildTransactionRequest,
+  data: string,
+  fees: ReturnType<typeof applyFeeLevel>,
+): Promise<bigint> {
   const estimated = hexToBigInt(
     await rpcRead<string>('qrl_estimateGas', [
       {
@@ -158,6 +184,8 @@ async function estimateGas(req: BuildTransactionRequest, data: string): Promise<
         to: req.to,
         value: `0x${BigInt(req.value).toString(16)}`,
         data,
+        maxFeePerGas: `0x${fees.maxFeePerGas.toString(16)}`,
+        maxPriorityFeePerGas: `0x${fees.maxPriorityFeePerGas.toString(16)}`,
       },
     ]),
   );
@@ -169,18 +197,14 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
   // HexSchema admits bare hex; JSON-RPC wants the 0x-prefixed form, so
   // canonicalize once and use it for both the estimate and the built tx.
   const data = req.data ? (req.data.startsWith('0x') ? req.data : `0x${req.data}`) : undefined;
-  // Native transfer = 21000; contract calls are estimated via qrl_estimateGas.
-  // A fixed 90k limit starved anything beyond a few storage writes (e.g. an
-  // HTLC lock writes ~7 fresh slots, ~175k gas) into guaranteed reverts.
-  // The estimate depends only on the request, so it runs in parallel with
-  // the other reads.
-  const [nonce, base, chainId, gas] = await Promise.all([
+  // Estimate every recipient, including value transfers with empty calldata.
+  const [nonce, base, chainId] = await Promise.all([
     getTransactionCount(req.from),
     getGasPrice(),
     getChainId(),
-    data && data !== '0x' ? estimateGas(req, data) : Promise.resolve(21_000n),
   ]);
   const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, req.feeLevel);
+  const gas = await estimateGas(req, data ?? '0x', { maxFeePerGas, maxPriorityFeePerGas });
   return {
     from: req.from,
     to: req.to,
@@ -223,6 +247,7 @@ export async function sendRawTransaction(
   expectedHash?: string,
 ): Promise<{ transactionHash: string }> {
   const broadcastOn = async (url: string): Promise<{ transactionHash: string }> => {
+    await assertEndpointIdentity(url);
     try {
       const hash = await rpcCallOn<string>(url, 'qrl_sendRawTransaction', [rawTx]);
       return { transactionHash: hash };

@@ -54,6 +54,9 @@ function writeMockNpm(binDir: string, includeCsp = true) {
 set -euo pipefail
 printf '%s\\n' "$*" >> "$NPM_CALL_LOG"
 if [[ "$3" == "run" && "$4" == "build" ]]; then
+  if [[ -n "\${NPM_ENV_LOG:-}" ]]; then
+    printf '%s\\n' "$VITE_SERVER_URL_PRODUCTION" "$VITE_SERVER_URL_DEVELOPMENT" > "$NPM_ENV_LOG"
+  fi
   mkdir -p "$2/dist"
   printf '%s\\n' '${html}' > "$2/dist/index.html"
 fi
@@ -132,6 +135,44 @@ test('renderer build inserts the desktop CSP when the frontend meta tag is absen
   assert.match(rendererHtml, /<head>\s*<meta http-equiv="Content-Security-Policy"/);
   assert.match(rendererHtml, /script-src 'self' 'wasm-unsafe-eval'/);
 });
+
+for (const mode of ['production', 'development']) {
+  test(`renderer ${mode} build supplies API bases and preserves overrides`, (t) => {
+    const fixture = makeFixture(t);
+    const binDir = join(fixture.root, 'bin');
+    const callLog = join(fixture.root, 'npm-calls.log');
+    const envLog = join(fixture.root, 'npm-env.log');
+    mkdirSync(fixture.frontendDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+    writeMockNpm(binDir);
+
+    const env = {
+      NPM_CALL_LOG: callLog,
+      NPM_ENV_LOG: envLog,
+      VITE_NODE_ENV: mode,
+      VITE_SERVER_URL_PRODUCTION: '',
+      VITE_SERVER_URL_DEVELOPMENT: '',
+    };
+    const defaults = runScript(fixture.scriptPath, binDir, env);
+    assert.equal(defaults.status, 0, defaults.stderr);
+    assert.deepEqual(readFileSync(envLog, 'utf8').trim().split('\n'), [
+      'https://qrlwallet.com/api',
+      'https://dev.qrlwallet.com/api',
+    ]);
+
+    const overridden = runScript(fixture.scriptPath, binDir, {
+      ...env,
+      VITE_SERVER_URL_PRODUCTION: 'https://wallet.example/custom-api',
+      VITE_SERVER_URL_DEVELOPMENT: 'https://staging.example/custom-api',
+    });
+    assert.equal(overridden.status, 0, overridden.stderr);
+    assert.deepEqual(readFileSync(envLog, 'utf8').trim().split('\n'), [
+      'https://wallet.example/custom-api',
+      'https://staging.example/custom-api',
+    ]);
+  });
+}
 
 test('renderer build fails when copying does not stage index.html', (t) => {
   const fixture = makeFixture(t);

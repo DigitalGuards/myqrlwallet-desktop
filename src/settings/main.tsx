@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './settings.css';
 import logoUrl from '../unlock/logo.png';
+import { groupQrlAddress } from '../shared/address';
 
 type SettingsAction = 'reregister-protocol' | 'open-logs';
 
@@ -295,7 +296,9 @@ function SettingsApp() {
                 will need the recovery phrase (or hex seed) to restore it. Other accounts on this
                 device are not affected. You will be asked to confirm.
               </p>
-              <p className="settings-address">{wallet.activeAddress}</p>
+              <p className="settings-address" title={wallet.activeAddress}>
+                {groupQrlAddress(wallet.activeAddress)}
+              </p>
             </section>
           )}
 

@@ -249,7 +249,9 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--muted-fg);
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
   margin: 0;
 }
 
