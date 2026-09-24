@@ -6,7 +6,7 @@
  * to defaults, never throws at startup).
  *
  * File: userData/settings.json. Versioned zod-strict envelope
- * `{ v: 1, autolockMs?, biometricUnlock? }`. NO SECRETS, EVER: same-user
+ * `{ v: 1, autolockMs?, biometricUnlock?, legacyNoticeAckV1? }`. NO SECRETS, EVER: same-user
  * malware can read this file; the worst it learns is a timeout preference.
  *
  * Autolock resolution order (getEffectiveAutolockMs):
@@ -35,6 +35,8 @@ const StoredSettingsSchema = z.strictObject({
   v: z.literal(1),
   autolockMs: z.number().int().optional(),
   biometricUnlock: z.boolean().optional(),
+  /** The one-time v3 storage notice has been shown and dismissed. */
+  legacyNoticeAckV1: z.boolean().optional(),
 });
 
 export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
@@ -43,6 +45,7 @@ export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
 export interface SettingsPatch {
   autolockMs?: number;
   biometricUnlock?: boolean;
+  legacyNoticeAckV1?: boolean;
 }
 
 export const SETTINGS_DEFAULTS: StoredSettings = { v: 1 };
@@ -57,6 +60,7 @@ function normalise(s: StoredSettings): StoredSettings {
   const out: StoredSettings = { v: 1 };
   if (s.autolockMs !== undefined) out.autolockMs = clampAutolockMs(s.autolockMs);
   if (s.biometricUnlock !== undefined) out.biometricUnlock = s.biometricUnlock;
+  if (s.legacyNoticeAckV1 !== undefined) out.legacyNoticeAckV1 = s.legacyNoticeAckV1;
   return out;
 }
 
@@ -148,6 +152,7 @@ export async function updateSettingsFile(
   const next: StoredSettings = { ...current };
   if (patch.autolockMs !== undefined) next.autolockMs = patch.autolockMs;
   if (patch.biometricUnlock !== undefined) next.biometricUnlock = patch.biometricUnlock;
+  if (patch.legacyNoticeAckV1 !== undefined) next.legacyNoticeAckV1 = patch.legacyNoticeAckV1;
   const validated = normalise(next);
   await atomicWrite(filePath, JSON.stringify(validated, null, 2));
   return validated;

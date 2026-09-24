@@ -41,6 +41,8 @@ import {
   type UnlockDeps,
 } from './unlockWindow';
 import { hasAnySeed, migrateLegacySeed } from './seedFile';
+import { hasLegacyWalletData } from './legacyData';
+import { readSettings, updateSettings } from './settingsFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
 
@@ -109,6 +111,23 @@ const legacyUserData = app.getPath('userData');
 const currentUserData = path.join(legacyUserData, 'v3-private');
 mkdirSync(currentUserData, { recursive: true, mode: 0o700 });
 app.setPath('userData', currentUserData);
+
+/**
+ * Whether to draw the one-time "QRL v3 accounts" notice at startup. Both
+ * conditions must hold: a pre-v3 wallet envelope is still on disk, and the
+ * notice has not been acknowledged yet. Never throws, so a settings-store
+ * problem cannot stop the app from opening.
+ */
+async function shouldShowLegacyDataNotice(): Promise<boolean> {
+  try {
+    if ((await readSettings()).legacyNoticeAckV1 === true) return false;
+    return await hasLegacyWalletData(legacyUserData);
+  } catch (err: unknown) {
+    logMain(`[boot] legacy-data check failed: ${String(err)}`);
+    return false;
+  }
+}
+
 // Hardening: a single instance, and no remote-content surprises.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -453,7 +472,13 @@ app
     // Resolve the locked-at-startup decision BEFORE creating the window so its
     // ready-to-show is gated deterministically (no race against showUnlockWindow).
     const lockedAtStartup = await hasAnySeed();
-    if (!lockedAtStartup && existsSync(path.join(legacyUserData, 'wallet'))) {
+    // The v3 storage notice only makes sense when there is pre-v3 wallet data
+    // to talk about, so it is gated on an actual envelope still being on disk
+    // (a bare leftover directory is not enough), and it is shown ONCE: the
+    // acknowledgement is persisted so it cannot nag on every launch while the
+    // v3 account is still to be imported. A clean install has no legacy wallet
+    // directory at all and therefore never sees it.
+    if (!lockedAtStartup && (await shouldShowLegacyDataNotice())) {
       await dialog.showMessageBox({
         type: 'info',
         title: 'QRL v3 accounts',
@@ -461,6 +486,11 @@ app
         detail:
           'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances do not carry over to v3.',
         buttons: ['Continue'],
+      });
+      // Best-effort: failing to record the acknowledgement only means the
+      // notice appears again next launch, which must never block startup.
+      await updateSettings({ legacyNoticeAckV1: true }).catch((err: unknown) => {
+        logMain(`[boot] legacy-notice acknowledgement not persisted: ${String(err)}`);
       });
     }
     createWindow(lockedAtStartup);
