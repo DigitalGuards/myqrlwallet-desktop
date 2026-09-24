@@ -10,6 +10,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
+import { windowIcon } from './appIcon';
 import { APP_ID, connectSrcOrigins } from './config';
 import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
 import { logMain } from './log';
@@ -342,7 +343,8 @@ function createWindow(startLocked = false): void {
     minWidth: 720,
     minHeight: 560,
     show: false,
-    backgroundColor: '#0b0d12',
+    backgroundColor: '#080c16',
+    ...windowIcon,
     title: 'MyQRLWallet',
     autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preloadPath),

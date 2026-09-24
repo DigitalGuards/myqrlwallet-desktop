@@ -23,6 +23,7 @@ import path from 'node:path';
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
+import { windowIcon } from './appIcon';
 import { confirmRemoveWallet } from './confirm';
 import { logMain, logsDir } from './log';
 import { deleteSeed, getActiveAddress, hasAnySeed, listSeeds, readSeedByAddress } from './seedFile';
@@ -287,9 +288,10 @@ export function showSettingsWindow(deps: SettingsDeps): void {
     maximizable: false,
     fullscreenable: false,
     show: false,
-    // Pre-paint color = the design-system canvas (--background, #020817) so
-    // the first frame matches settings.css instead of flashing a shade off.
-    backgroundColor: '#020817',
+    // Pre-paint color = the design-system canvas (--background, #080c16) so
+    // the first frame matches settings.css exactly.
+    backgroundColor: '#080c16',
+    ...windowIcon,
     title: 'MyQRLWallet Settings',
     autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preload),

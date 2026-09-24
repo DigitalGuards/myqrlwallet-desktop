@@ -4,6 +4,21 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Adopted the new MyQRLWallet 3A brand mark across the shell. New app icons
+  (`build/icon.png` 1024, `build/icon.ico` at 16/24/32/48/64/128/256, and the
+  `build/icons/` set for Linux), branded NSIS installer and uninstaller
+  graphics, and the mark in the native unlock and settings windows. The
+  16/24/32 icon entries are pixel-snapped renders: at those sizes the brand's
+  inter-block gap falls below one device pixel and a plain vector downscale
+  blurs.
+- The native unlock and settings windows now use the QRL Blue palette so they
+  match the current renderer. Colour tokens only: layout, the window CSPs, the
+  preload surfaces, and the trusted main-drawn confirmations are unchanged.
+- Linux windows now set the app icon explicitly, so an AppImage run without an
+  installed desktop entry shows the brand mark instead of a generic icon.
+
 ### Security
 
 - Message-signing responses now include the wallet's three-byte ML-DSA

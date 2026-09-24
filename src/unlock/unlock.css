@@ -1,22 +1,22 @@
 /*
- * Unlock-window styling, matched to the MyQRLWallet renderer's design language
- * (the frontend's Obsidian & Ember theme in myqrlwallet-frontend/src/index.css):
- * deep warm-ink background, warm near-white text, soft borders, 0.75rem radius,
- * the wallet's ember action color (--primary) on the primary button, and the
- * orange QRL logo as the brand mark. This is NOT a generic/Proton look: it
+ * Unlock-window styling, matched to the MyQRLWallet renderer's design language:
+ * the QRL Blue palette, near-white text, soft borders, 0.75rem radius, the
+ * brand blue (--primary) on the primary button, and the 3A brand mark. It
  * should read as the wallet itself, locked.
  */
 :root {
-  --bg: hsl(235 15% 4%); /* --background */
-  --fg: hsl(36 20% 95%); /* --foreground */
-  --muted-fg: hsl(234 8% 64%); /* --muted-foreground */
-  --faint: hsl(234 8% 45%);
-  --border: hsl(235 10% 15%); /* --border / --input */
-  --panel: hsl(235 11% 10%); /* slightly elevated input surface */
-  --brand: hsl(24 96% 55%); /* --primary: the wallet's ember action color */
-  --brand-hover: hsl(24 96% 62%);
-  --brand-fg: hsl(24 90% 6%); /* dark text on ember, as on renderer CTAs */
-  --error: hsl(0 84% 67%);
+  --bg: #080c16; /* --background */
+  --fg: #f2f5f8; /* --foreground */
+  --muted-fg: #9ba6b5; /* --muted-foreground */
+  --faint: #6e7887;
+  --border: #1e2738; /* --border / --input */
+  --panel: #0e1420; /* --card: slightly elevated input surface */
+  --brand: #33ade6; /* --primary: QRL Blue */
+  --brand-hover: #52b9ea;
+  --brand-fg: #041725; /* dark text on QRL Blue, as on renderer CTAs */
+  --brand-ring: rgb(51 173 230 / 0.35);
+  --brand-tint: rgb(51 173 230 / 0.1);
+  --error: #f26464;
   --radius: 0.75rem;
 }
 
@@ -40,8 +40,7 @@ body {
 }
 
 /* Full-bleed lock screen: the wallet background fills the window with a centered
- * prompt, so it reads as "the app is locked", not a small floating dialog. A very
- * low-opacity brand wash at the top keeps it from looking dead-flat. */
+ * prompt, so it reads as "the app is locked". Flat canvas, no wash. */
 .unlock-root {
   position: relative;
   height: 100%;
@@ -49,9 +48,7 @@ body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background:
-    radial-gradient(58% 38% at 50% 0%, hsl(24 96% 55% / 0.1), transparent 70%),
-    var(--bg);
+  background: var(--bg);
 }
 
 .unlock-card {
@@ -143,7 +140,7 @@ body {
 
 .unlock-account-select:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px hsl(24 96% 55% / 0.3);
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 .unlock-address-disclosure {
@@ -186,7 +183,7 @@ body {
 
 .unlock-input:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px hsl(24 96% 55% / 0.3);
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 .unlock-input::placeholder {
@@ -257,7 +254,7 @@ body {
 
 .unlock-biometric:hover:not(:disabled) {
   border-color: var(--brand);
-  background: hsl(24 96% 55% / 0.08);
+  background: var(--brand-tint);
 }
 
 .unlock-error {

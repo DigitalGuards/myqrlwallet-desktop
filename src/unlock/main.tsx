@@ -98,7 +98,7 @@ function UnlockApp() {
     <div className="unlock-root">
       <main className="unlock-card">
         <img className="unlock-logo" src={logoUrl} alt="" aria-hidden="true" />
-        <h1 className="unlock-wordmark">MyQRLwallet</h1>
+        <h1 className="unlock-wordmark">MyQRLWallet</h1>
         <p className="unlock-subtitle">Enter your password to unlock</p>
         {wallets.length > 1 ? (
           <select
