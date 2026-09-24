@@ -279,3 +279,10 @@ body {
   font-size: 12px;
   color: var(--faint);
 }
+
+/* Form controls do not inherit the page font by default. */
+input,
+button,
+select {
+  font: inherit;
+}
