@@ -24,6 +24,7 @@ import {
   readSeedByAddress,
   setActiveAddress,
 } from './seedFile';
+import { windowIcon } from './appIcon';
 import { hardenedWebPreferences } from './security';
 import { EVENTS } from '../shared/constants';
 import type { EncryptedSeed } from '../shared/protocol';
@@ -259,8 +260,9 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     maximizable: false,
     fullscreenable: false,
     show: false,
-    backgroundColor: '#0b0d12',
-    title: 'Unlock MyQRLwallet',
+    backgroundColor: '#080c16',
+    ...windowIcon,
+    title: 'Unlock MyQRLWallet',
     autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preload),
   });

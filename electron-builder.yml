@@ -39,11 +39,14 @@ asar: true
 asarUnpack:
   - '**/*.node'
 
-# App icon. electron-builder auto-detects build/icon.* from buildResources, but
-# set it explicitly per platform so a future buildResources change cannot
-# silently drop the icon (and to fix the Linux "application icon is not set"
-# warning). Source: the MyQRLWallet brand mark, build/icon.png (1024) +
-# build/icon.ico (multi-size, 16-256) for Windows.
+# App icon: the MyQRLWallet 3A brand mark (blue tile, dark omega). Set
+# explicitly per platform so a future buildResources change cannot silently
+# drop it (and to fix the Linux "application icon is not set" warning).
+#   build/icon.png   1024, also the source electron-builder converts to .icns
+#   build/icon.ico   multi-size 16/24/32/48/64/128/256 for Windows
+#   build/icons/     <size>x<size>.png set for the Linux desktop entry
+# 16/24/32 are pixel-snapped renders of the mark: at those sizes the brand's
+# inter-block gap is under one device pixel, so a plain vector downscale blurs.
 
 # --- macOS: sign + notarize + staple, app-bound keychain helper -------------
 mac:
@@ -94,10 +97,18 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-Setup-${version}.${ext}
+  # Branded installer chrome. The header sits on the wizard's light strip so it
+  # keeps a white ground; the sidebars are full panels, so they are dark.
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  installerHeader: build/installerHeader.bmp
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/uninstallerSidebar.bmp
 
 # --- Linux ------------------------------------------------------------------
 linux:
-  icon: build/icon.png
+  icon: build/icons
   category: Finance
   synopsis: Post-quantum QRL desktop wallet
   description: >-

@@ -10,10 +10,12 @@
       IPC), so connect-src stays 'self'. No 'unsafe-eval'; style-src allows
       'unsafe-inline' only for the bundled stylesheet's needs, never inline
       script.
+      The brand fonts are bundled woff2 files served from the same origin, so
+      font-src stays at 'self' with no data: source.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>MyQRLWallet Settings</title>
   </head>
