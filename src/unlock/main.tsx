@@ -125,12 +125,7 @@ function UnlockApp() {
               </option>
             ))}
           </select>
-        ) : (
-          <div className="unlock-account" title={selected ?? undefined}>
-            <span className="unlock-dot" />
-            {accountLabel(selected)}
-          </div>
-        )}
+        ) : null}
         <form className="unlock-form" onSubmit={(event) => void submit(event)}>
           <div className="unlock-input-wrap">
             <input
