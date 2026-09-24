@@ -82,7 +82,7 @@ function frontendOrigins(): string[] {
     'https://qrlwallet.com',
     'wss://qrlwallet.com',
     // block explorer API (token + NFT discovery).
-    'https://v3.zondscan.com',
+    'https://zondscan.com',
   ];
 }
 
