@@ -122,3 +122,14 @@ test('autolock resolution order: env > store > default', () => {
   // Nothing configured: the default.
   assert.equal(resolveAutolockMs(undefined, undefined), DEFAULT_AUTOLOCK_MS);
 });
+
+test('the legacy-notice acknowledgement round-trips and leaves other keys alone', async () => {
+  const file = await tmpSettingsPath();
+  await writeSettingsFile(file, { v: 1, autolockMs: 900_000 });
+  assert.equal((await readSettingsFile(file)).legacyNoticeAckV1, undefined);
+
+  const stored = await updateSettingsFile(file, { legacyNoticeAckV1: true });
+  assert.equal(stored.legacyNoticeAckV1, true);
+  assert.equal(stored.autolockMs, 900_000, 'an unrelated setting survives the patch');
+  assert.equal((await readSettingsFile(file)).legacyNoticeAckV1, true);
+});
