@@ -19,6 +19,10 @@
   --error: #f26464;
   --ok: #4ddb81;
   --radius: 0.75rem;
+  /* Type: the renderer's faces, self-hosted (imported in main.tsx). */
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
 }
 
 * {
@@ -35,7 +39,7 @@ body,
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -74,8 +78,9 @@ body {
 }
 
 .settings-title {
+  font-family: var(--font-display);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -246,7 +251,7 @@ body {
 }
 
 .settings-address {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted-fg);
   overflow-wrap: anywhere;

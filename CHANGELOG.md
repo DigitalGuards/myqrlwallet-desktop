@@ -16,6 +16,11 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - The native unlock and settings windows now use the QRL Blue palette so they
   match the current renderer. Colour tokens only: layout, the window CSPs, the
   preload surfaces, and the trusted main-drawn confirmations are unchanged.
+- The native windows now use the brand typefaces, self-hosted and bundled as
+  local woff2 (Sora for the wordmark and titles, Instrument Sans for body copy,
+  JetBrains Mono for addresses), matching the renderer. No remote font load:
+  `font-src` is now explicit at `'self'` in both window policies, and renderer
+  asset inlining is off so no font is emitted as a blocked `data:` URL.
 - Linux windows now set the app icon explicitly, so an AppImage run without an
   installed desktop entry shows the brand mark instead of a generic icon.
 
