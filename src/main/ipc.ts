@@ -35,7 +35,7 @@ import {
   writeSeed,
 } from './seedFile';
 import { isTrustedSender } from './security';
-import { closeSettingsWindow } from './settingsWindow';
+import { closeSettingsView } from './settingsView';
 import { isUnlockWindowShown } from './unlockWindow';
 import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
@@ -65,8 +65,8 @@ interface Deps {
   /** Tear down a live native unlock window after a renderer-driven unlock, so
    * the two unlock paths cannot desync (window shown while already unlocked). */
   notifyUnlocked: () => void;
-  /** Show/focus the native desktop settings window (no data crosses; the
-   * window itself refuses to open while locked). */
+  /** Show/focus the native desktop settings panel inside the wallet window
+   * (no data crosses; the panel itself refuses to open while locked). */
   showSettings: () => void;
 }
 
@@ -288,7 +288,7 @@ export function registerIpcHandlers(deps: Deps): void {
   // from disk and clear its OS-keychain entry. Reachable only behind the
   // renderer's confirmation UI, and gated by the trusted main-drawn
   // confirmation (default Cancel), exactly like the signing path. The flow
-  // itself (ordering invariants) is shared with the native settings window:
+  // itself (ordering invariants) is shared with the native settings panel:
   // src/main/walletRemoval.ts.
   handle(IPC.REMOVE_WALLET, RemoveWalletRequestSchema, async (req) => {
     await removeWalletFlow(
@@ -385,8 +385,8 @@ export function registerIpcHandlers(deps: Deps): void {
     rpc.sendRawTransaction(req.rawTx, recallSignedTxHash(req.rawTx)),
   );
 
-  // ---- desktop settings window ---------------------------------------------
-  // The renderer may only ASK main to show/focus the native settings window;
+  // ---- desktop settings panel ----------------------------------------------
+  // The renderer may only ASK main to show/focus the native settings panel;
   // no data crosses in either direction and no main-owned setting is readable
   // or writable over the renderer bridge. Rejected while locked: the unlock
   // window must stay the only surface on screen.
@@ -412,11 +412,11 @@ export function registerIpcHandlers(deps: Deps): void {
     // focus-steal, so no focusUnlockWindow here either.
     if (isUnlockWindowShown()) return;
     // The dApp approval modal lives in the wallet renderer: if the settings
-    // window is the visible surface (wallet hidden behind it), give the
-    // surface back so the request is actually seeable. Worst case for a
-    // malicious renderer spamming this: the user's settings window closes,
-    // rate-limited; same nuisance tier as the flash itself.
-    closeSettingsWindow();
+    // panel covers it, give the surface back so the request is actually
+    // seeable. Worst case for a malicious renderer spamming this: the user's
+    // settings panel closes, rate-limited; same nuisance tier as the flash
+    // itself.
+    closeSettingsView();
     const win = requireWindow();
     if (!win.isVisible()) win.showInactive();
     if (process.platform === 'darwin') {

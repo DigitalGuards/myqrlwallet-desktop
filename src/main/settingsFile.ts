@@ -188,7 +188,7 @@ export async function getBiometricUnlockEnabled(): Promise<boolean> {
 }
 
 /** True only when the user EXPLICITLY enabled biometric quick unlock in the
- * settings window (stored `true`, not the undefined default). Gates KEK
+ * settings panel (stored `true`, not the undefined default). Gates KEK
  * re-provisioning on a password unlock: the toggle-off sweep deletes stored
  * KEKs and import-time provisioning alone could never restore them, but a
  * password unlock must not push the KEK into the OS vault for users who never

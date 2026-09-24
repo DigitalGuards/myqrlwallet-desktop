@@ -181,39 +181,54 @@ WALLET_INFO), or spam the wallet with pairing prompts.
   `signerBridge` enforces this via per-request timeouts and rejecting all
   pending requests on signer exit.
 
-## The settings window and the settings store
+## The settings panel and the settings store
 
 The desktop's security-relevant preferences (auto-lock timeout, biometric
-quick-unlock) live outside the renderer's reach, in a second app-owned surface:
+quick-unlock) live outside the renderer's reach, in a separate app-owned
+surface. That surface is an embedded view: a `WebContentsView` main attaches to
+the wallet window and stacks above the wallet renderer, sized to the window's
+content area and re-laid-out on resize. One window, one title, one taskbar
+entry; the trust boundary is the same one the earlier separate settings window
+had, and none of it depends on being a window:
 
-- **Settings window is main-owned** (`src/main/settingsWindow.ts`,
-  `src/settings/`), built on the unlock-window pattern: hardened
-  webPreferences, its own preload exposing only `window.settingsBridge`
-  (`get`/`set`/`action`/`removeWallet`), a no-network meta CSP, and every IPC handler gated by
-  a live-sender check (`fromSettingsWindow`) plus a zod-strict argument parse.
-  The wallet renderer cannot draw over it, inject into it, or read/write any
-  setting: its only capability is asking main to show the window
+- **Settings is main-owned** (`src/main/settingsView.ts`, its pure decision
+  helpers in `src/main/settingsViewPolicy.ts`, and `src/settings/`): its own
+  web contents with the same `hardenedWebPreferences`, its own preload exposing
+  only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`), a
+  no-network meta CSP, and every IPC handler gated by a live-sender check
+  (`fromSettingsView`: the event sender must BE this view's web contents) plus
+  a zod-strict argument parse. The wallet renderer is a different web contents
+  underneath: it cannot draw into the panel, script it, read its DOM, or
+  read/write any setting. Its only capability is asking main to show the panel
   (`IPC.OPEN_DESKTOP_SETTINGS`, sender-gated, no data in either direction).
-- **Cannot open while locked, and closes when the lock takes over**: when the
-  unlock window owns the display (`isUnlockWindowShown()`), both the menu entry
-  and the renderer request refuse and focus the unlock window instead; opening
-  settings never reveals the hidden main window. Conversely, every
-  `showUnlockWindow` call fires the `setOnUnlockShown` hook, which closes a
-  live settings window: the lock screen is the ONLY surface while locked, and
-  no settings action (autolock change, wallet removal) stays reachable.
-  Settings itself uses the unlock-window takeover pattern (covers the wallet
-  window's bounds, hides it underneath); its close handler restores the wallet
-  window ONLY when the lock screen is not up, so a lock-triggered close never
-  reveals the hidden wallet. A qrlconnect:// delivery or a dApp
-  attention request closes settings first, so the consent/approval UI is never
-  hidden behind it.
-- **Wallet removal from settings uses the same trusted gate**: the settings
-  window's remove-account action runs the identical flow as the renderer's
+  Keyboard focus moves into the panel when it opens and returns to the wallet
+  renderer when it closes; tab traversal does not cross web contents, so it
+  cannot reach the covered renderer.
+- **Cannot open while locked, and is destroyed when the lock takes over**: when
+  the unlock window owns the display (`isUnlockWindowShown()`), both the menu
+  entry and the renderer request refuse and focus the unlock window instead
+  (`resolveOpenAction` checks the lock ahead of everything else); the refusal
+  path never touches the hidden main window, and a panel that finishes loading
+  after a lock landed is discarded and never attached. Conversely, every
+  `showUnlockWindow` call fires the `setOnUnlockShown` hook, which removes and
+  destroys the view: the lock screen is the ONLY surface while locked, and no
+  settings action (autolock change, wallet removal) stays reachable. Closing
+  the panel only ever removes a view from a window that is already on screen,
+  so it can never reveal a wallet window the lock hid, and it declines to hand
+  focus back to a hidden or locked window (`shouldRestoreWalletFocus`). A
+  qrlconnect:// delivery or a dApp attention request closes the panel first, so
+  the consent/approval UI is never hidden behind it.
+- **Wallet removal from settings uses the same trusted gate**: the panel's
+  remove-account action runs the identical flow as the renderer's
   `REMOVE_WALLET` (`src/main/walletRemoval.ts`): a main-drawn confirmation
   (default Cancel) precedes any deletion, the ciphertext is deleted before the
   keychain entry, and the unlock window is raised when the removed account
-  owned the open session. The wallet renderer is reloaded afterwards so its
-  account list re-hydrates from the signer's seed files; it never has to be
+  owned the open session. The confirmation is parented to the wallet window
+  (the panel has no window of its own), so it outlives its surface: an approval
+  is therefore re-checked against the live state and abandoned when the panel
+  was torn down mid-dialog or the lock screen took over
+  (`isRemovalStillAuthorized`). The wallet renderer is reloaded afterwards so
+  its account list re-hydrates from the signer's seed files; it never has to be
   trusted to clean up after a removal it did not perform.
 - **Settings store holds no secrets** (`src/main/settingsFile.ts`,
   `userData/settings.json`): a versioned, zod-strict envelope

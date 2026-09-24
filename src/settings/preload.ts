@@ -1,10 +1,12 @@
 /**
- * Preload for the native desktop settings window. Runs sandboxed +
+ * Preload for the native desktop settings panel, the WebContentsView main
+ * stacks over the wallet renderer (src/main/settingsView.ts). Runs sandboxed +
  * context-isolated like every other preload, exposing ONLY the narrow
  * `window.settingsBridge` surface over contextBridge. Raw ipcRenderer is never
  * exposed, and no secret ever crosses here: the settings are a timeout
- * preference, a biometric toggle, data-free maintenance actions, and the
- * trusted-confirmed removal of the active wallet (main draws the gate).
+ * preference, a biometric toggle, data-free maintenance actions, closing the
+ * panel, and the trusted-confirmed removal of the active wallet (main draws
+ * the gate).
  */
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -50,6 +52,10 @@ const api = {
    * user declines. Resolves to the self-healed active address afterwards. */
   removeWallet: (): Promise<{ activeAddress: string | null }> =>
     ipcRenderer.invoke('settings:removeWallet'),
+  /** Dismiss the panel and hand focus back to the wallet renderer. The panel
+   * has no window of its own, so closing is an IPC ask like everything else
+   * here. It gates nothing. */
+  close: (): Promise<void> => ipcRenderer.invoke('settings:close'),
 };
 
 contextBridge.exposeInMainWorld('settingsBridge', api);
