@@ -1,6 +1,6 @@
 /**
  * The destructive remove-wallet flow, shared by the renderer IPC handler
- * (IPC.REMOVE_WALLET) and the native settings window. Both entry points gate
+ * (IPC.REMOVE_WALLET) and the native settings panel. Both entry points gate
  * on the same trusted, main-drawn confirmation dialog; the flow never deletes
  * anything without it.
  *

@@ -75,9 +75,10 @@ export function setOnUnlocked(cb: () => void): void {
 
 /**
  * Register a hook that fires whenever the lock screen takes over the display
- * (every showUnlockWindow call). Used by index.ts to close the native settings
- * window: while locked, the unlock window must be the ONLY surface on screen,
- * and settings actions (autolock, wallet removal) must not be reachable.
+ * (every showUnlockWindow call). Used by index.ts to tear down the native
+ * settings panel: while locked, the unlock window must be the ONLY surface on
+ * screen, and settings actions (autolock, wallet removal) must not be
+ * reachable.
  */
 export function setOnUnlockShown(cb: () => void): void {
   onUnlockShownCallback = cb;
@@ -222,9 +223,9 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 /** Show (or focus) the app-owned unlock window; hide the main window while locked. */
 export function showUnlockWindow(deps: UnlockDeps): void {
   // The lock screen is taking over: give the registered hook the chance to
-  // tear down any other app-owned surface (the settings window) FIRST, so the
+  // tear down any other app-owned surface (the settings panel) FIRST, so the
   // unlock window is the only thing on screen. Runs on the focus
-  // short-circuit too: it must hold even if the settings window somehow
+  // short-circuit too: it must hold even if the settings panel somehow
   // appeared after the lock.
   onUnlockShownCallback?.();
   // Short-circuit only to an EXISTING, still-locked window. A window mid-close

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 // Self-hosted variable fonts, the same faces the wallet renderer uses
 // (myqrlwallet-frontend): Sora = display, Instrument Sans = body, JetBrains
@@ -32,6 +32,7 @@ interface SettingsWalletInfo {
 }
 
 interface SettingsBridge {
+  close(): Promise<void>;
   get(): Promise<{
     settings: DesktopSettings;
     wallet: SettingsWalletInfo;
@@ -72,16 +73,30 @@ function SettingsApp() {
   const [removing, setRemoving] = useState(false);
   const [removeStatus, setRemoveStatus] = useState<ActionState | null>(null);
 
-  // The window takes over the wallet's bounds, so give it the native-screen
-  // escape hatch: Esc closes it (main restores the wallet window underneath).
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // The panel covers the wallet renderer inside the same window, so it owns
+  // two ways back: the Back control in the header and the Escape key. Both ask
+  // main to remove the view; the page has no window of its own to close.
+  function closePanel(): void {
+    void window.settingsBridge.close().catch(() => undefined);
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') window.close();
+      if (event.key === 'Escape') closePanel();
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
     };
+  }, []);
+
+  // Land keyboard focus at the top of the panel, so the first Tab reaches the
+  // way back. Tab traversal never crosses into the covered wallet renderer:
+  // that is a separate web contents.
+  useEffect(() => {
+    rootRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -162,172 +177,184 @@ function SettingsApp() {
   const envMinutes = caps ? Math.max(1, Math.round(caps.effectiveAutolockMs / 60_000)) : 0;
 
   return (
-    <div className="settings-root">
-      <header className="settings-header">
-        <img className="settings-logo" src={logoUrl} alt="" aria-hidden="true" />
-        <h1 className="settings-title">Settings</h1>
-        <button
-          className="settings-button settings-close"
-          type="button"
-          onClick={() => window.close()}
-        >
-          Back to wallet
-        </button>
+    <div className="settings-root" ref={rootRef} tabIndex={-1}>
+      <header className="settings-topbar">
+        <div className="settings-topbar-inner">
+          <button className="settings-back" type="button" onClick={closePanel}>
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path
+                d="M9.5 3.5 5 8l4.5 4.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Back to wallet
+          </button>
+          <span className="settings-topbar-divider" aria-hidden="true" />
+          <img className="settings-logo" src={logoUrl} alt="" aria-hidden="true" />
+          <h1 className="settings-title">Settings</h1>
+          <span className="settings-version">{caps ? `v${caps.appVersion}` : ''}</span>
+        </div>
       </header>
 
       {loading ? (
-        <div className="settings-body">
-          <p className="settings-help">Loading...</p>
-          {saveStatus && !saveStatus.ok && (
-            <p className="settings-status error">{saveStatus.message}</p>
-          )}
+        <div className="settings-scroll">
+          <div className="settings-body">
+            <p className="settings-help">Loading...</p>
+            {saveStatus && !saveStatus.ok && (
+              <p className="settings-status error">{saveStatus.message}</p>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="settings-body">
-          <section className="settings-card">
-            <div className="settings-row">
-              <span className="settings-label">Auto-lock timeout</span>
-              <select
-                className="settings-select"
-                aria-label="Auto-lock timeout"
-                value={autolockMinutes}
-                disabled={saving || caps.autolockEnvOverride}
-                onChange={(event) =>
-                  void apply({ autolockMs: Number(event.target.value) * 60_000 })
-                }
-              >
-                {!knownChoice && (
-                  <option value={autolockMinutes} disabled>
-                    {minutesLabel(autolockMinutes)}
-                  </option>
-                )}
-                {AUTOLOCK_MINUTES.map((m) => (
-                  <option key={m} value={m}>
-                    {minutesLabel(m)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p className="settings-help">
-              The wallet locks and requires your password again after this long without activity.
-            </p>
-            {caps.autolockEnvOverride && (
-              <p className="settings-note">
-                Overridden by the QRL_AUTOLOCK_MS environment variable (currently about{' '}
-                {minutesLabel(envMinutes)}). Unset it to manage the timeout here.
-              </p>
-            )}
-          </section>
-
-          {caps.biometricsAvailable && (
+        <div className="settings-scroll">
+          <div className="settings-body">
             <section className="settings-card">
               <div className="settings-row">
-                <span className="settings-label">Biometric quick unlock</span>
-                <label className="settings-toggle">
-                  <input
-                    type="checkbox"
-                    aria-label="Biometric quick unlock"
-                    checked={settings.biometricUnlock}
-                    disabled={saving}
-                    onChange={(event) => void apply({ biometricUnlock: event.target.checked })}
-                  />
-                  <span className="settings-toggle-track" />
-                </label>
+                <span className="settings-label">Auto-lock timeout</span>
+                <select
+                  className="settings-select"
+                  aria-label="Auto-lock timeout"
+                  value={autolockMinutes}
+                  disabled={saving || caps.autolockEnvOverride}
+                  onChange={(event) =>
+                    void apply({ autolockMs: Number(event.target.value) * 60_000 })
+                  }
+                >
+                  {!knownChoice && (
+                    <option value={autolockMinutes} disabled>
+                      {minutesLabel(autolockMinutes)}
+                    </option>
+                  )}
+                  {AUTOLOCK_MINUTES.map((m) => (
+                    <option key={m} value={m}>
+                      {minutesLabel(m)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <p className="settings-help">
-                Unlock with your device instead of typing the password. Turning this off removes the
-                stored unlock key; turning it on takes effect at your next password unlock.
+                The wallet locks and requires your password again after this long without activity.
               </p>
+              {caps.autolockEnvOverride && (
+                <p className="settings-note">
+                  Overridden by the QRL_AUTOLOCK_MS environment variable (currently about{' '}
+                  {minutesLabel(envMinutes)}). Unset it to manage the timeout here.
+                </p>
+              )}
             </section>
-          )}
 
-          <section className="settings-card">
-            <div className="settings-row">
-              <span className="settings-label">qrlconnect:// links</span>
-              <button
-                className="settings-button"
-                type="button"
-                disabled={busyAction !== null}
-                onClick={() => void runAction('reregister-protocol', setProtocolStatus)}
-              >
-                Re-register handler
-              </button>
-            </div>
-            <p className="settings-help">
-              Make this app the handler for qrlconnect:// dApp links again if another application
-              took them over.
-            </p>
-            {protocolStatus && (
-              <p className={`settings-status ${protocolStatus.ok ? 'ok' : 'error'}`}>
-                {protocolStatus.message}
-              </p>
+            {caps.biometricsAvailable && (
+              <section className="settings-card">
+                <div className="settings-row">
+                  <span className="settings-label">Biometric quick unlock</span>
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      aria-label="Biometric quick unlock"
+                      checked={settings.biometricUnlock}
+                      disabled={saving}
+                      onChange={(event) => void apply({ biometricUnlock: event.target.checked })}
+                    />
+                    <span className="settings-toggle-track" />
+                  </label>
+                </div>
+                <p className="settings-help">
+                  Unlock with your device instead of typing the password. Turning this off removes
+                  the stored unlock key; turning it on takes effect at your next password unlock.
+                </p>
+              </section>
             )}
-          </section>
 
-          <section className="settings-card">
-            <div className="settings-row">
-              <span className="settings-label">Diagnostics</span>
-              <button
-                className="settings-button"
-                type="button"
-                disabled={busyAction !== null}
-                onClick={() => void runAction('open-logs', setLogsStatus)}
-              >
-                Open logs folder
-              </button>
-            </div>
-            <p className="settings-help">
-              Logs contain decisions only, never keys, passwords, or addresses in full.
-            </p>
-            {logsStatus && (
-              <p className={`settings-status ${logsStatus.ok ? 'ok' : 'error'}`}>
-                {logsStatus.message}
-              </p>
-            )}
-          </section>
-
-          {wallet?.activeAddress && (
-            <section className="settings-card danger">
+            <section className="settings-card">
               <div className="settings-row">
-                <span className="settings-label">Remove account</span>
+                <span className="settings-label">qrlconnect:// links</span>
                 <button
-                  className="settings-button danger"
+                  className="settings-button"
                   type="button"
-                  disabled={removing}
-                  onClick={() => void removeAccount()}
+                  disabled={busyAction !== null}
+                  onClick={() => void runAction('reregister-protocol', setProtocolStatus)}
                 >
-                  {removing ? 'Removing...' : 'Remove from this device'}
+                  Re-register handler
                 </button>
               </div>
               <p className="settings-help">
-                Permanently deletes the active account&apos;s encrypted seed from this device. You
-                will need the recovery phrase (or hex seed) to restore it. Other accounts on this
-                device are not affected. You will be asked to confirm.
+                Make this app the handler for qrlconnect:// dApp links again if another application
+                took them over.
               </p>
-              <p className="settings-address" title={wallet.activeAddress}>
-                {groupQrlAddress(wallet.activeAddress)}
-              </p>
+              {protocolStatus && (
+                <p className={`settings-status ${protocolStatus.ok ? 'ok' : 'error'}`}>
+                  {protocolStatus.message}
+                </p>
+              )}
             </section>
-          )}
 
-          {/* Outside the address-gated section: after the LAST wallet is
+            <section className="settings-card">
+              <div className="settings-row">
+                <span className="settings-label">Diagnostics</span>
+                <button
+                  className="settings-button"
+                  type="button"
+                  disabled={busyAction !== null}
+                  onClick={() => void runAction('open-logs', setLogsStatus)}
+                >
+                  Open logs folder
+                </button>
+              </div>
+              <p className="settings-help">
+                Logs contain decisions only, never keys, passwords, or addresses in full.
+              </p>
+              {logsStatus && (
+                <p className={`settings-status ${logsStatus.ok ? 'ok' : 'error'}`}>
+                  {logsStatus.message}
+                </p>
+              )}
+            </section>
+
+            {wallet?.activeAddress && (
+              <section className="settings-card danger">
+                <div className="settings-row">
+                  <span className="settings-label">Remove account</span>
+                  <button
+                    className="settings-button danger"
+                    type="button"
+                    disabled={removing}
+                    onClick={() => void removeAccount()}
+                  >
+                    {removing ? 'Removing...' : 'Remove from this device'}
+                  </button>
+                </div>
+                <p className="settings-help">
+                  Permanently deletes the active account&apos;s encrypted seed from this device. You
+                  will need the recovery phrase (or hex seed) to restore it. Other accounts on this
+                  device are not affected. You will be asked to confirm.
+                </p>
+                <p className="settings-address" title={wallet.activeAddress}>
+                  {groupQrlAddress(wallet.activeAddress)}
+                </p>
+              </section>
+            )}
+
+            {/* Outside the address-gated section: after the LAST wallet is
               removed that section unmounts, and this confirmation must
               survive it. */}
-          {removeStatus && (
-            <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
-              {removeStatus.message}
-            </p>
-          )}
+            {removeStatus && (
+              <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
+                {removeStatus.message}
+              </p>
+            )}
 
-          {saveStatus && (
-            <p className={`settings-status ${saveStatus.ok ? 'ok' : 'error'}`}>
-              {saveStatus.message}
-            </p>
-          )}
+            {saveStatus && (
+              <p className={`settings-status ${saveStatus.ok ? 'ok' : 'error'}`}>
+                {saveStatus.message}
+              </p>
+            )}
+          </div>
         </div>
       )}
-
-      <footer className="settings-footer">MyQRLWallet {caps ? `v${caps.appVersion}` : ''}</footer>
     </div>
   );
 }

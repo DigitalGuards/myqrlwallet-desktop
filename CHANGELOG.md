@@ -6,6 +6,17 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ### Changed
 
+- Settings now opens inside the wallet window as an embedded panel over the
+  wallet view, so the app keeps one window, one title and one taskbar entry,
+  and stays resizable. The panel is still a separate, main-owned web contents
+  with its own preload, its own no-network CSP and the same sender-gated IPC,
+  so the renderer still cannot read or write any desktop setting; it can only
+  ask for the panel to be shown. Its header carries a Back control, Escape
+  closes it, and keyboard focus moves into the panel on open and back to the
+  wallet on close. Every previous guarantee holds: the panel refuses to open
+  while the lock screen is up, a lock takeover destroys it, and an incoming
+  qrlconnect:// link or a dApp attention request closes it so the approval UI
+  is never hidden behind it.
 - Adopted the new MyQRLWallet 3A brand mark across the shell. New app icons
   (`build/icon.png` 1024, `build/icon.ico` at 16/24/32/48/64/128/256, and the
   `build/icons/` set for Linux), branded NSIS installer and uninstaller

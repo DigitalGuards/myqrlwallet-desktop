@@ -77,7 +77,7 @@ export interface QrlWalletApi {
   dappRequestAttention(): Promise<void>;
 
   // ---- desktop settings -----------------------------------------------------
-  /** Ask main to show/focus the native desktop settings window. Fire-and-ask:
+  /** Ask main to show/focus the native desktop settings panel. Fire-and-ask:
    * no data crosses in either direction (main-owned settings are never
    * readable or writable from the renderer) and the request is rejected while
    * the wallet is locked. */
