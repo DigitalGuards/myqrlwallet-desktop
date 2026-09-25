@@ -67,6 +67,12 @@ export default defineConfig({
       // the target there: vite 7 changed the default build target (from 'modules'
       // to a broad browser baseline) and the explicit pin avoids that drift.
       target: 'chrome148',
+      // Emit every asset as a file. Vite's default inlines assets under 4 kB as
+      // `data:` URLs, and these windows run under `default-src 'self'` with no
+      // `data:` source for fonts, so an inlined woff2 subset is blocked at load
+      // time and the face silently falls back. Keeping assets as files keeps
+      // them inside 'self' and leaves the CSP untouched.
+      assetsInlineLimit: 0,
       outDir: resolve(__dirname, 'out'),
       // out/ also holds the main + preload bundles built earlier in the same
       // electron-vite run; NEVER let the renderer build empty it.

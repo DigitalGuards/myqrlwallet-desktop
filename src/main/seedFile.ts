@@ -123,7 +123,7 @@ async function atomicWrite(p: string, contents: string): Promise<void> {
 /** Every readable wallet envelope on disk, ordered by creation time.
  *
  * Error contract: this list is AUTHORITATIVE for consumers (the renderer
- * destructively reconciles its account list against it; the settings window's
+ * destructively reconciles its account list against it; the settings panel's
  * remove UI keys off it), so an I/O failure must THROW rather than masquerade
  * as "no wallets": a swallowed EACCES/EBUSY (antivirus lock on userData is a
  * classic) would read as every wallet having been removed. Only two

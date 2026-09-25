@@ -1,8 +1,16 @@
 import { StrictMode, useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
+// Self-hosted variable fonts, the same faces the wallet renderer uses
+// (myqrlwallet-frontend): Sora = display, Instrument Sans = body, JetBrains
+// Mono = data (addresses). Imported here so Vite rewrites the woff2 URLs and
+// emits them as local assets: no remote load, and the window CSP stays as it
+// is (font-src 'self' data:).
+import '@fontsource-variable/sora/index.css';
+import '@fontsource-variable/instrument-sans/index.css';
+import '@fontsource-variable/jetbrains-mono/index.css';
 import './unlock.css';
 import logoUrl from './logo.png';
-import { formatQrlAddressFingerprint, groupQrlAddress } from '../shared/address';
+import { formatQrlAddressFingerprint } from '../shared/address';
 
 interface UnlockResult {
   ok: boolean;
@@ -98,8 +106,7 @@ function UnlockApp() {
     <div className="unlock-root">
       <main className="unlock-card">
         <img className="unlock-logo" src={logoUrl} alt="" aria-hidden="true" />
-        <h1 className="unlock-wordmark">MyQRLwallet</h1>
-        <p className="unlock-subtitle">Enter your password to unlock</p>
+        <h1 className="unlock-wordmark">MyQRLWallet</h1>
         {wallets.length > 1 ? (
           <select
             className="unlock-account-select"
@@ -118,17 +125,6 @@ function UnlockApp() {
               </option>
             ))}
           </select>
-        ) : (
-          <div className="unlock-account" title={selected ?? undefined}>
-            <span className="unlock-dot" />
-            {accountLabel(selected)}
-          </div>
-        )}
-        {selected ? (
-          <details className="unlock-address-disclosure">
-            <summary>Show full address</summary>
-            <p title={selected}>{groupQrlAddress(selected)}</p>
-          </details>
         ) : null}
         <form className="unlock-form" onSubmit={(event) => void submit(event)}>
           <div className="unlock-input-wrap">
@@ -136,7 +132,8 @@ function UnlockApp() {
               autoFocus
               className="unlock-input"
               type={show ? 'text' : 'password'}
-              placeholder="Password"
+              placeholder="Enter password"
+              aria-label="Enter password"
               value={password}
               disabled={busy}
               onChange={(event) => {
@@ -168,9 +165,7 @@ function UnlockApp() {
             </button>
           )}
         </form>
-        <p className="unlock-hint">
-          Forgot your password? You will need to re-import your recovery phrase.
-        </p>
+        <p className="unlock-hint">Forgot password? Re-import your recovery phrase.</p>
       </main>
     </div>
   );

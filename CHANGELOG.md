@@ -2,7 +2,50 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.2.0 - 2026-09-25
+
+### Changed
+
+- Settings now opens inside the wallet window as an embedded panel over the
+  wallet view, so the app keeps one window, one title and one taskbar entry,
+  and stays resizable. The panel is still a separate, main-owned web contents
+  with its own preload, its own no-network CSP and the same sender-gated IPC,
+  so the renderer still cannot read or write any desktop setting; it can only
+  ask for the panel to be shown. Its header carries a Back control, Escape
+  closes it, and keyboard focus moves into the panel on open and back to the
+  wallet on close. Every previous guarantee holds: the panel refuses to open
+  while the lock screen is up, a lock takeover destroys it, and an incoming
+  qrlconnect:// link or a dApp attention request closes it so the approval UI
+  is never hidden behind it.
+- Adopted the new MyQRLWallet 3A brand mark across the shell. New app icons
+  (`build/icon.png` 1024, `build/icon.ico` at 16/24/32/48/64/128/256, and the
+  `build/icons/` set for Linux), branded NSIS installer and uninstaller
+  graphics, and the mark in the native unlock and settings windows. The
+  16/24/32 icon entries are pixel-snapped renders: at those sizes the brand's
+  inter-block gap falls below one device pixel and a plain vector downscale
+  blurs.
+- The native unlock and settings windows now use the QRL Blue palette so they
+  match the current renderer. Colour tokens only: layout, the window CSPs, the
+  preload surfaces, and the trusted main-drawn confirmations are unchanged.
+- The native windows now use the brand typefaces, self-hosted and bundled as
+  local woff2 (Sora for the wordmark and titles, Instrument Sans for body copy,
+  JetBrains Mono for addresses), matching the renderer. No remote font load:
+  `font-src` is now explicit at `'self'` in both window policies, and renderer
+  asset inlining is off so no font is emitted as a blocked `data:` URL.
+- Linux windows now set the app icon explicitly, so an AppImage run without an
+  installed desktop entry shows the brand mark instead of a generic icon.
+
+### Fixed
+
+- Token and NFT discovery points at zondscan.com, and the renderer default is
+  pinned to the main-process connect-src so the two cannot drift apart.
+- The v3 storage notice at boot shows only when legacy wallet data exists, so
+  a clean install starts without it.
+- The unlock window is trimmed to the essentials: no subtitle, no account chip
+  for a single wallet (the picker stays when several wallets exist), and form
+  controls use the brand font.
+
+## 1.1.0 - 2026-09-21
 
 ### Security
 
