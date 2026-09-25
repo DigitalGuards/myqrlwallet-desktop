@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.2.0 - 2026-09-25
 
 ### Changed
 
@@ -34,6 +34,18 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   asset inlining is off so no font is emitted as a blocked `data:` URL.
 - Linux windows now set the app icon explicitly, so an AppImage run without an
   installed desktop entry shows the brand mark instead of a generic icon.
+
+### Fixed
+
+- Token and NFT discovery points at zondscan.com, and the renderer default is
+  pinned to the main-process connect-src so the two cannot drift apart.
+- The v3 storage notice at boot shows only when legacy wallet data exists, so
+  a clean install starts without it.
+- The unlock window is trimmed to the essentials: no subtitle, no account chip
+  for a single wallet (the picker stays when several wallets exist), and form
+  controls use the brand font.
+
+## 1.1.0 - 2026-09-21
 
 ### Security
 
