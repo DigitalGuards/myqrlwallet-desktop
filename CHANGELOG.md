@@ -2,6 +2,16 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.2.1 - 2026-09-25
+
+### Fixed
+
+- The full address on the Account List no longer draws over itself. The
+  revealed address now lays its 16 groups out in 2, 4 or 8 columns to fit
+  the card, and the account card moves its buttons below the address while
+  it is revealed. Renderer refresh from the web wallet; no change to the
+  desktop shell.
+
 ## 1.2.0 - 2026-09-25
 
 ### Changed
