@@ -56,7 +56,7 @@ test('GetBalanceRequest accepts a valid Q-address and rejects junk + extra keys'
     false,
     'legacy 20-byte address rejected',
   );
-  // .strict(): an unexpected extra field is rejected, not ignored.
+  // .strict(): an unexpected extra field fails the whole parse.
   assert.equal(GetBalanceRequestSchema.safeParse({ address: ADDR, evil: 1 }).success, false);
 });
 
@@ -358,6 +358,84 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
     }).success,
     false,
     'message over the length bound is rejected',
+  );
+});
+
+test('BuildTransactionRequest accepts only a canonical positive dApp gas limit', () => {
+  const withGas = (gas: unknown): boolean =>
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10', gas }).success;
+
+  assert.equal(withGas('250000'), true, 'a plain decimal gas limit is accepted');
+  assert.equal(withGas('1'), true, 'the smallest positive limit is accepted');
+  assert.equal(withGas('9'.repeat(18)), true, '18 digits is the cap and is accepted');
+
+  assert.equal(withGas('0'), false, 'zero can never produce an executable transaction');
+  assert.equal(withGas('0250000'), false, 'leading zeros are not canonical');
+  assert.equal(withGas('0x3d090'), false, 'hex quantities are rejected; the field is decimal');
+  assert.equal(withGas('-250000'), false, 'a negative limit is rejected');
+  assert.equal(withGas(' 250000'), false, 'surrounding whitespace is rejected');
+  assert.equal(withGas('250000\n'), false, 'a trailing newline is rejected');
+  assert.equal(withGas('2.5e5'), false, 'exponent notation is rejected');
+  assert.equal(withGas('9'.repeat(19)), false, 'past the 18-digit cap is rejected');
+  assert.equal(withGas(250000), false, 'a number is rejected; the wire form is a string');
+  assert.equal(withGas(null), false, 'null is rejected');
+
+  const absent = BuildTransactionRequestSchema.safeParse({
+    from: ADDR,
+    to: ADDR2,
+    value: '10',
+  });
+  assert.equal(absent.success, true);
+  assert.equal(absent.success && absent.data.gas, undefined, 'gas stays optional');
+
+  // .strict() means an OLDER main rejects the whole request when a newer
+  // renderer adds an unknown field. That is exactly why the bridge advertises
+  // `features.dappGasLimit`; assert the strictness the guard exists for.
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({
+      from: ADDR,
+      to: ADDR2,
+      value: '10',
+      gasLimit: '250000',
+    }).success,
+    false,
+    'an unknown gas-ish key is rejected at the boundary',
+  );
+});
+
+test('UnsignedTransaction requires a canonical gas limit on the signing path', () => {
+  const withGas = (gas: unknown): boolean =>
+    UnsignedTransactionSchema.safeParse({ ...validTx, gas }).success;
+
+  assert.equal(withGas('21000'), true);
+  assert.equal(withGas('350000'), true);
+
+  // REQUEST_SIGNATURE takes a renderer-supplied transaction, and the gas limit
+  // it carries drives the fee and max cost the user is shown. A second
+  // spelling of the same number, or a value no build could have produced, must
+  // die at the boundary before it can be displayed or signed.
+  assert.equal(withGas('0'), false, 'a zero gas limit can never execute');
+  assert.equal(withGas('000000000000350000'), false, 'leading zeros are a second spelling');
+  assert.equal(withGas('9'.repeat(80)), false, 'an 80-digit limit is rejected');
+  assert.equal(withGas('9'.repeat(19)), false, 'past the 18-digit cap is rejected');
+  assert.equal(withGas('9'.repeat(18)), true, '18 digits is the cap and is accepted');
+  assert.equal(withGas('0x55730'), false, 'hex is rejected; the field is decimal');
+  assert.equal(withGas(350000), false, 'a number is rejected; the wire form is a string');
+  assert.equal(withGas(' 350000'), false, 'surrounding whitespace is rejected');
+
+  // The same bound reaches the full signing request, which is what the IPC
+  // handler actually parses.
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'transaction', tx: { ...validTx, gas: '0' } }).success,
+    false,
+    'the signing request inherits the gas bound',
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({
+      kind: 'transaction',
+      tx: { ...validTx, gas: '9'.repeat(80) },
+    }).success,
+    false,
   );
 });
 

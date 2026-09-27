@@ -37,6 +37,27 @@ const DecimalAmountSchema = z.string().regex(/^\d+$/, 'must be a base-10 integer
 
 export const FeeLevelSchema = z.enum(['low', 'medium', 'high']);
 
+/**
+ * A gas limit, in gas units, as a canonical base-10 string.
+ *
+ * Canonical means no `0x`, no leading zeros, no sign and no whitespace, so a
+ * single decimal spelling reaches the builder, the signer and the trusted
+ * confirm window: `350000` and `000000000000350000` can never both be shown
+ * for the same limit. Zero is rejected, because a zero gas limit can never
+ * produce an executable transaction. The 18-digit cap keeps the value far
+ * below the BigInt range the builder does arithmetic in while staying orders
+ * of magnitude above any real block gas limit; the authoritative upper bound
+ * is the latest block's gas limit, which needs an RPC read and so is enforced
+ * in `src/main/rpc.ts` on the build path and in `REQUEST_SIGNATURE`.
+ *
+ * Used for BOTH the dApp-requested limit on a build request and the limit on
+ * the assembled transaction handed to `REQUEST_SIGNATURE`. Every renderer call
+ * site passes main's own build output back, which is always in this form.
+ */
+export const GasLimitSchema = z
+  .string()
+  .regex(/^[1-9][0-9]{0,17}$/, 'must be a canonical positive base-10 gas limit');
+
 // ---------------------------------------------------------------------------
 // Renderer -> main request payloads
 // ---------------------------------------------------------------------------
@@ -52,6 +73,18 @@ export const BuildTransactionRequestSchema = z
     feeLevel: FeeLevelSchema.optional().default('medium'),
     /** Optional contract calldata. */
     data: HexSchema.max(2 * 128 * 1024).optional(),
+    /**
+     * Optional dApp-requested gas limit (canonical decimal gas units).
+     *
+     * Some contract flows need headroom the wallet's own estimate cannot see:
+     * QuantaSwap's HTLCv3 settlement asks for `estimateGas + 250000` because a
+     * claim/refund/release that runs out of gas defers the payout into a
+     * credit. The builder therefore takes `max(this value, its own buffered
+     * estimate)`: a request below the estimate cannot produce a failing
+     * transaction, and a request above it is honoured exactly as asked.
+     * Absent means "estimate it", which is the pre-existing behaviour.
+     */
+    gas: GasLimitSchema.optional(),
   })
   .strict();
 
@@ -68,7 +101,9 @@ export const UnsignedTransactionSchema = z
     to: AddressSchema,
     value: DecimalAmountSchema,
     nonce: z.number().int().nonnegative(),
-    gas: DecimalAmountSchema,
+    /** Canonical decimal gas limit: main's own build output, round-tripped by
+     * the renderer. See {@link GasLimitSchema}. */
+    gas: GasLimitSchema,
     maxFeePerGas: DecimalAmountSchema,
     maxPriorityFeePerGas: DecimalAmountSchema,
     chainId: z.number().int().positive(),
