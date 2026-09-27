@@ -29,9 +29,31 @@ import type {
   WalletStatus,
 } from './schemas';
 
+/**
+ * Optional request fields the renderer may only send once it knows this shell
+ * understands them.
+ *
+ * The IPC schemas are `.strict()`, so an unknown key is REJECTED at the
+ * boundary; it is not ignored. A renderer newer than the shell it runs in
+ * therefore has to feature-detect before adding an optional field. Packaged
+ * builds always ship shell and renderer together (`scripts/build-renderer.sh`
+ * builds the sibling frontend checkout into `out/renderer`), so the skew this
+ * guards is a development or hand-assembled pairing.
+ *
+ * Each flag is `true` when present. Renderers read it defensively
+ * (`features?.dappGasLimit === true`) because an older shell exposes no
+ * `features` object at all.
+ */
+export interface QrlWalletFeatures {
+  /** `buildTransaction` accepts an optional dApp-requested `gas` limit. */
+  readonly dappGasLimit: true;
+}
+
 export interface QrlWalletApi {
   /** Address capability verified by the bundled renderer before using the signer. */
   readonly addressScheme: 'qip55-64';
+  /** Optional-field capability flags; see {@link QrlWalletFeatures}. */
+  readonly features: QrlWalletFeatures;
 
   // ---- read-only ----------------------------------------------------------
   getBalance(req: GetBalanceRequest): Promise<BalanceResult>;

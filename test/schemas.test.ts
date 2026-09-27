@@ -361,6 +361,48 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
   );
 });
 
+test('BuildTransactionRequest accepts only a canonical positive dApp gas limit', () => {
+  const withGas = (gas: unknown): boolean =>
+    BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10', gas }).success;
+
+  assert.equal(withGas('250000'), true, 'a plain decimal gas limit is accepted');
+  assert.equal(withGas('1'), true, 'the smallest positive limit is accepted');
+  assert.equal(withGas('9'.repeat(18)), true, '18 digits is the cap and is accepted');
+
+  assert.equal(withGas('0'), false, 'zero can never produce an executable transaction');
+  assert.equal(withGas('0250000'), false, 'leading zeros are not canonical');
+  assert.equal(withGas('0x3d090'), false, 'hex quantities are rejected; the field is decimal');
+  assert.equal(withGas('-250000'), false, 'a negative limit is rejected');
+  assert.equal(withGas(' 250000'), false, 'surrounding whitespace is rejected');
+  assert.equal(withGas('250000\n'), false, 'a trailing newline is rejected');
+  assert.equal(withGas('2.5e5'), false, 'exponent notation is rejected');
+  assert.equal(withGas('9'.repeat(19)), false, 'past the 18-digit cap is rejected');
+  assert.equal(withGas(250000), false, 'a number is rejected; the wire form is a string');
+  assert.equal(withGas(null), false, 'null is rejected');
+
+  const absent = BuildTransactionRequestSchema.safeParse({
+    from: ADDR,
+    to: ADDR2,
+    value: '10',
+  });
+  assert.equal(absent.success, true);
+  assert.equal(absent.success && absent.data.gas, undefined, 'gas stays optional');
+
+  // .strict() means an OLDER main rejects the whole request when a newer
+  // renderer adds an unknown field. That is exactly why the bridge advertises
+  // `features.dappGasLimit`; assert the strictness the guard exists for.
+  assert.equal(
+    BuildTransactionRequestSchema.safeParse({
+      from: ADDR,
+      to: ADDR2,
+      value: '10',
+      gasLimit: '250000',
+    }).success,
+    false,
+    'an unknown gas-ish key is rejected at the boundary',
+  );
+});
+
 test('Decimal + hex + address boundary values', () => {
   // Zero transfer and leading-zero decimals are valid amounts.
   assert.equal(

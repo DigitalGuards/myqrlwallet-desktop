@@ -4,6 +4,11 @@
  * Every transfer uses qrl_estimateGas with a 1.2x buffer, including contract
  * receivers reached through empty calldata. An estimate failure stops the build.
  *
+ * A dApp-requested gas limit (BuildTransactionRequest.gas) changes the rule to
+ * max(request, buffered estimate), bounded above by the latest block's gas
+ * limit: a too-low request cannot yield an out-of-gas transaction, a larger one
+ * is honoured exactly, and an impossible one is refused.
+ *
  * fetch is mocked; the RPC endpoints are pinned via env BEFORE the module
  * import (config.ts reads env at import time), and rpc.ts is loaded with a
  * dynamic import so the pin is in place first.
@@ -24,6 +29,8 @@ interface RecordedCall {
 
 let calls: RecordedCall[] = [];
 let estimateResponse: { result?: string; error?: { code: number; message: string } };
+/** The latest block's gasLimit the mocked node reports (30,000,000 by default). */
+let latestBlockGasLimit: string | undefined;
 
 const realFetch = globalThis.fetch;
 
@@ -38,9 +45,13 @@ const methodsCalled = () => calls.map((c) => c.method);
 beforeEach(() => {
   calls = [];
   estimateResponse = { result: '0x249f0' }; // 150000
+  latestBlockGasLimit = '0x1c9c380'; // 30,000,000
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
     const { method, params } = JSON.parse(String(init?.body)) as RecordedCall;
-    if (method === 'qrl_getBlockByNumber') {
+    // The genesis read is the endpoint-identity probe every call makes; the
+    // 'latest' read is the block-gas-limit ceiling, which only the dApp-gas
+    // path takes, so record that one.
+    if (method === 'qrl_getBlockByNumber' && params[0] === '0x0') {
       return Promise.resolve(
         new Response(
           JSON.stringify({ jsonrpc: '2.0', id: 1, result: { hash: EXPECTED_GENESIS_HASH } }),
@@ -48,6 +59,17 @@ beforeEach(() => {
       );
     }
     calls.push({ method, params });
+    if (method === 'qrl_getBlockByNumber') {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            result: latestBlockGasLimit === undefined ? {} : { gasLimit: latestBlockGasLimit },
+          }),
+        ),
+      );
+    }
     const payload =
       method === 'qrl_estimateGas'
         ? { jsonrpc: '2.0', id: 1, ...estimateResponse }
@@ -115,4 +137,68 @@ test('buildTransaction canonicalizes bare-hex calldata to 0x form (schema admits
 test('buildTransaction surfaces an estimate rejection instead of building a doomed tx', async () => {
   estimateResponse = { error: { code: -32000, message: 'execution reverted' } };
   await assert.rejects(rpc.buildTransaction({ ...REQ, data: '0xdeadbeef' }), /execution reverted/);
+});
+
+// ---------------------------------------------------------------------------
+// dApp-requested gas limit: max(request, buffered estimate), block-bounded
+// ---------------------------------------------------------------------------
+
+test('a dApp gas limit above the buffered estimate is honoured exactly', async () => {
+  estimateResponse = { result: '0x186a0' }; // 100000 -> 120000 buffered
+  // QuantaSwap HTLCv3 settlement asks for estimateGas + 250000.
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '350000' });
+  assert.equal(tx.gas, '350000', 'the request wins when it exceeds the estimate');
+});
+
+test('a dApp gas limit below the buffered estimate is floored by the estimate', async () => {
+  estimateResponse = { result: '0x186a0' }; // 100000 -> 120000 buffered
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '21000' });
+  assert.equal(tx.gas, '120000', 'a too-low request cannot produce an out-of-gas transaction');
+});
+
+test('a dApp gas limit equal to the buffered estimate builds that exact limit', async () => {
+  estimateResponse = { result: '0x186a0' }; // 100000 -> 120000 buffered
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '120000' });
+  assert.equal(tx.gas, '120000');
+});
+
+test('a dApp gas limit is still refused when the estimate itself reverts', async () => {
+  estimateResponse = { error: { code: -32000, message: 'execution reverted' } };
+  await assert.rejects(
+    rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '350000' }),
+    /execution reverted/,
+    'a requested limit never substitutes for a successful estimate',
+  );
+});
+
+test('a dApp gas limit above the block gas limit is rejected', async () => {
+  estimateResponse = { result: '0x186a0' };
+  latestBlockGasLimit = '0x1c9c380'; // 30,000,000
+  await assert.rejects(
+    rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '30000001' }),
+    /exceeds the block gas limit 30000000/,
+  );
+  // The ceiling itself is allowed.
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '30000000' });
+  assert.equal(tx.gas, '30000000');
+});
+
+test('an unusable block gas limit fails the build; the ceiling is never skipped', async () => {
+  estimateResponse = { result: '0x186a0' };
+  latestBlockGasLimit = undefined; // node answers without a gasLimit field
+  await assert.rejects(
+    rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '350000' }),
+    /no usable gas limit/,
+  );
+});
+
+test('no dApp gas limit means no extra block read and the unchanged 1.2x rule', async () => {
+  estimateResponse = { result: '0x186a0' }; // 100000
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381' });
+  assert.equal(tx.gas, '120000');
+  assert.equal(
+    methodsCalled().filter((m) => m === 'qrl_getBlockByNumber').length,
+    0,
+    'the ordinary send keeps its existing RPC round trips',
+  );
 });

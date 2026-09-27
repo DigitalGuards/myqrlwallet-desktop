@@ -37,6 +37,22 @@ const DecimalAmountSchema = z.string().regex(/^\d+$/, 'must be a base-10 integer
 
 export const FeeLevelSchema = z.enum(['low', 'medium', 'high']);
 
+/**
+ * A dApp-requested gas limit, in gas units, as a canonical base-10 string.
+ *
+ * Canonical means no `0x`, no leading zeros, no sign and no whitespace, so a
+ * single decimal spelling reaches the builder and the trusted confirm window.
+ * Zero is rejected: a zero gas limit can never produce an executable
+ * transaction, and the renderer drops it before forwarding. The 18-digit cap
+ * keeps the value far below the BigInt range the builder does arithmetic in
+ * while staying orders of magnitude above any real block gas limit; the
+ * authoritative upper bound is the latest block's gas limit, enforced in
+ * `src/main/rpc.ts` at build time because it needs an RPC read.
+ */
+export const DAppGasLimitSchema = z
+  .string()
+  .regex(/^[1-9][0-9]{0,17}$/, 'must be a canonical positive base-10 gas limit');
+
 // ---------------------------------------------------------------------------
 // Renderer -> main request payloads
 // ---------------------------------------------------------------------------
@@ -52,6 +68,18 @@ export const BuildTransactionRequestSchema = z
     feeLevel: FeeLevelSchema.optional().default('medium'),
     /** Optional contract calldata. */
     data: HexSchema.max(2 * 128 * 1024).optional(),
+    /**
+     * Optional dApp-requested gas limit (canonical decimal gas units).
+     *
+     * Some contract flows need headroom the wallet's own estimate cannot see:
+     * QuantaSwap's HTLCv3 settlement asks for `estimateGas + 250000` because a
+     * claim/refund/release that runs out of gas defers the payout into a
+     * credit. The builder therefore takes `max(this value, its own buffered
+     * estimate)`: a request below the estimate cannot produce a failing
+     * transaction, and a request above it is honoured exactly as asked.
+     * Absent means "estimate it", which is the pre-existing behaviour.
+     */
+    gas: DAppGasLimitSchema.optional(),
   })
   .strict();
 

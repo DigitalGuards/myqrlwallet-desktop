@@ -17,6 +17,9 @@ import type { QrlWalletApi } from '../shared/bridge';
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
+  // Frozen so a compromised renderer cannot rewrite the flags it then reads
+  // (contextBridge clones the value, but freezing keeps this side honest too).
+  features: Object.freeze({ dappGasLimit: true as const }),
   getBalance: (req) => ipcRenderer.invoke(IPC.GET_BALANCE, req),
   buildTransaction: (req) => ipcRenderer.invoke(IPC.BUILD_TRANSACTION, req),
   requestSignature: (req) => ipcRenderer.invoke(IPC.REQUEST_SIGNATURE, req),

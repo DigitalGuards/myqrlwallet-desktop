@@ -6,83 +6,9 @@
  * from the validated request, and only then does main ask the signer to sign.
  */
 import { type BrowserWindow, dialog } from 'electron';
-import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
+import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
-
-/** Format a smallest-unit integer string as Quanta (18 decimals), trimmed. */
-function formatQuanta(smallestUnit: string): string {
-  const v = BigInt(smallestUnit);
-  const DECIMALS = 18n;
-  const base = 10n ** DECIMALS;
-  const whole = v / base;
-  const frac = v % base;
-  if (frac === 0n) return `${whole.toString()} Quanta`;
-  const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
-  return `${whole.toString()}.${fracStr} Quanta`;
-}
-
-/**
- * Render the dApp provenance block for a request that arrived over a
- * dApp-connect session. The values are renderer-supplied (ultimately from the
- * dApp's ORIGINATOR_INFO), so they are labelled unverified: they tell the
- * user WHO CLAIMS to be asking, while the amounts/addresses above remain
- * main-computed facts. Schema-bounded upstream (length caps, no control
- * chars), so they are safe to render verbatim.
- */
-function originDetail(origin: DAppOrigin | undefined): string {
-  if (!origin) return '';
-  return [
-    '',
-    'Requested by dApp (unverified, dApp-supplied):',
-    `  Name:    ${origin.name}`,
-    `  URL:     ${origin.url || '(not provided)'}`,
-    `  Channel: ${origin.channelId}`,
-    'Only approve if you initiated this action in that dApp.',
-  ].join('\n');
-}
-
-function summarise(req: SignatureRequest): { title: string; message: string; detail: string } {
-  switch (req.kind) {
-    case 'transaction': {
-      const { tx } = req;
-      const detail = [
-        `Amount:   ${formatQuanta(tx.value)}`,
-        `To:       ${groupQrlAddress(tx.to)}`,
-        `From:     ${groupQrlAddress(tx.from)}`,
-        `Nonce:    ${tx.nonce}`,
-        `Gas:      ${tx.gas}`,
-        `Max fee:  ${tx.maxFeePerGas} (priority ${tx.maxPriorityFeePerGas})`,
-        `Chain id: ${tx.chainId}`,
-        tx.data && tx.data !== '0x' ? `Data:     ${tx.data.slice(0, 66)}…` : 'Data:     (none)',
-      ].join('\n');
-      return {
-        title: 'Confirm transaction',
-        message: `Send ${formatQuanta(tx.value)}?`,
-        detail: detail + originDetail(req.origin),
-      };
-    }
-    case 'message':
-      return {
-        title: 'Confirm message signature',
-        message: 'Sign this message with your wallet key?',
-        // req.signer is trustworthy to display: main verified it against the
-        // unlocked session before this modal, and the signer re-enforces it.
-        detail:
-          `Account:  ${groupQrlAddress(req.signer)}\n` +
-          `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
-          originDetail(req.origin),
-      };
-    case 'typedData':
-      return {
-        title: 'Confirm typed-data signature',
-        message: 'Sign this structured data with your wallet key?',
-        detail:
-          `Account:  ${groupQrlAddress(req.signer)}\n` +
-          `Payload keys: ${Object.keys(req.payload).join(', ')}` +
-          originDetail(req.origin),
-      };
-  }
-}
+import { summariseSignatureRequest } from './confirmSummary';
 
 /**
  * Show the modal confirmation and return whether the user approved. The dialog
@@ -92,7 +18,7 @@ export async function confirmSignature(
   parent: BrowserWindow,
   req: SignatureRequest,
 ): Promise<boolean> {
-  const { title, message, detail } = summarise(req);
+  const { title, message, detail } = summariseSignatureRequest(req);
   const { response } = await dialog.showMessageBox(parent, {
     type: 'warning',
     buttons: ['Approve & sign', 'Cancel'],
