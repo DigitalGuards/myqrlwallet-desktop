@@ -403,6 +403,42 @@ test('BuildTransactionRequest accepts only a canonical positive dApp gas limit',
   );
 });
 
+test('UnsignedTransaction requires a canonical gas limit on the signing path', () => {
+  const withGas = (gas: unknown): boolean =>
+    UnsignedTransactionSchema.safeParse({ ...validTx, gas }).success;
+
+  assert.equal(withGas('21000'), true);
+  assert.equal(withGas('350000'), true);
+
+  // REQUEST_SIGNATURE takes a renderer-supplied transaction, and the gas limit
+  // it carries drives the fee and max cost the user is shown. A second
+  // spelling of the same number, or a value no build could have produced, must
+  // die at the boundary before it can be displayed or signed.
+  assert.equal(withGas('0'), false, 'a zero gas limit can never execute');
+  assert.equal(withGas('000000000000350000'), false, 'leading zeros are a second spelling');
+  assert.equal(withGas('9'.repeat(80)), false, 'an 80-digit limit is rejected');
+  assert.equal(withGas('9'.repeat(19)), false, 'past the 18-digit cap is rejected');
+  assert.equal(withGas('9'.repeat(18)), true, '18 digits is the cap and is accepted');
+  assert.equal(withGas('0x55730'), false, 'hex is rejected; the field is decimal');
+  assert.equal(withGas(350000), false, 'a number is rejected; the wire form is a string');
+  assert.equal(withGas(' 350000'), false, 'surrounding whitespace is rejected');
+
+  // The same bound reaches the full signing request, which is what the IPC
+  // handler actually parses.
+  assert.equal(
+    SignatureRequestSchema.safeParse({ kind: 'transaction', tx: { ...validTx, gas: '0' } }).success,
+    false,
+    'the signing request inherits the gas bound',
+  );
+  assert.equal(
+    SignatureRequestSchema.safeParse({
+      kind: 'transaction',
+      tx: { ...validTx, gas: '9'.repeat(80) },
+    }).success,
+    false,
+  );
+});
+
 test('Decimal + hex + address boundary values', () => {
   // Zero transfer and leading-zero decimals are valid amounts.
   assert.equal(

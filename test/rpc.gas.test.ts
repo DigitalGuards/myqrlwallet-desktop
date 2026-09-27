@@ -20,6 +20,7 @@ process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
 
 const rpc = await import('../src/main/rpc');
+const { recallBuild, clearBuildRecords } = await import('../src/main/buildRecords');
 const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
 
 interface RecordedCall {
@@ -29,8 +30,9 @@ interface RecordedCall {
 
 let calls: RecordedCall[] = [];
 let estimateResponse: { result?: string; error?: { code: number; message: string } };
-/** The latest block's gasLimit the mocked node reports (30,000,000 by default). */
-let latestBlockGasLimit: string | undefined;
+/** The latest block's gasLimit the mocked node reports (30,000,000 by default).
+ * A number models a non-conforming node answer; undefined omits the field. */
+let latestBlockGasLimit: string | number | undefined;
 
 const realFetch = globalThis.fetch;
 
@@ -44,6 +46,7 @@ const methodsCalled = () => calls.map((c) => c.method);
 
 beforeEach(() => {
   calls = [];
+  clearBuildRecords();
   estimateResponse = { result: '0x249f0' }; // 150000
   latestBlockGasLimit = '0x1c9c380'; // 30,000,000
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
@@ -201,4 +204,83 @@ test('no dApp gas limit means no extra block read and the unchanged 1.2x rule', 
     0,
     'the ordinary send keeps its existing RPC round trips',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Block-gas-limit ceiling: parsing and the buffered-estimate clamp
+// ---------------------------------------------------------------------------
+
+test('an unusable latest-block gas limit is refused in every shape', async () => {
+  estimateResponse = { result: '0x186a0' };
+  for (const bad of ['0x0', '0x', 'not-hex', '30000000']) {
+    latestBlockGasLimit = bad;
+    await assert.rejects(
+      rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '350000' }),
+      /gas limit/,
+      `latest block gasLimit ${JSON.stringify(bad)} must not pass`,
+    );
+  }
+});
+
+test('getBlockGasLimit rejects a zero, non-hex or decimal-string ceiling', async () => {
+  for (const [bad, pattern] of [
+    ['0x0', /zero gas limit/],
+    ['0x', /no usable gas limit/],
+    ['0xzz', /no usable gas limit/],
+    ['30000000', /no usable gas limit/],
+  ] as const) {
+    latestBlockGasLimit = bad;
+    await assert.rejects(rpc.getBlockGasLimit(), pattern, `ceiling ${bad}`);
+  }
+  latestBlockGasLimit = '0x1c9c380';
+  assert.equal(await rpc.getBlockGasLimit(), 30_000_000n);
+});
+
+test('a numeric gasLimit from the node is refused, never coerced', async () => {
+  // The node is expected to answer with an RPC quantity. A number is a
+  // non-conforming answer, and coercing it would silently accept a ceiling
+  // read in the wrong base.
+  for (const bad of [30_000_000, 0]) {
+    latestBlockGasLimit = bad;
+    await assert.rejects(rpc.getBlockGasLimit(), /no usable gas limit/, `numeric ${bad}`);
+  }
+});
+
+test('the buffered estimate is clamped to the block gas limit on the dApp path', async () => {
+  // A near-block-sized call: 26,000,000 estimate buffers to 31,200,000, past a
+  // 30,000,000 ceiling the requested value was already checked against.
+  estimateResponse = { result: `0x${(26_000_000).toString(16)}` };
+  latestBlockGasLimit = '0x1c9c380'; // 30,000,000
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '21000' });
+  assert.equal(tx.gas, '30000000', 'the floor never exceeds the ceiling');
+});
+
+test('the unbuffered estimate still wins when it fits under the ceiling', async () => {
+  estimateResponse = { result: `0x${(20_000_000).toString(16)}` }; // -> 24,000,000
+  latestBlockGasLimit = '0x1c9c380';
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '21000' });
+  assert.equal(tx.gas, '24000000');
+});
+
+// ---------------------------------------------------------------------------
+// Build records: what the trusted confirm window is told about the build
+// ---------------------------------------------------------------------------
+
+test('a dApp build records both the estimate and the request', async () => {
+  estimateResponse = { result: '0x186a0' }; // 100000 -> 120000 buffered
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '350000' });
+  assert.deepEqual(recallBuild(tx), { estimatedGas: '120000', requestedGas: '350000' });
+});
+
+test('a wallet-only build records the estimate and no request', async () => {
+  estimateResponse = { result: '0x186a0' };
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381' });
+  assert.deepEqual(recallBuild(tx), { estimatedGas: '120000' });
+});
+
+test('the recorded estimate is the comparison value, even when the request wins', async () => {
+  estimateResponse = { result: '0x186a0' };
+  const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '21000' });
+  assert.equal(tx.gas, '120000', 'the estimate floored the limit');
+  assert.deepEqual(recallBuild(tx), { estimatedGas: '120000', requestedGas: '21000' });
 });

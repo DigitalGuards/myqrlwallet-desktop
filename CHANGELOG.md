@@ -2,6 +2,33 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Added
+
+- A dApp connected over `@qrlwallet/connect` can now ask for a gas limit, which
+  the web and mobile wallets already honoured. The builder uses the larger of
+  the request and its own `qrl_estimateGas` result with the usual 1.2x buffer,
+  so a request below the estimate cannot produce an out-of-gas transaction and a
+  larger one is used exactly as asked. This unblocks QuantaSwap HTLCv3
+  settlement, which needs `estimateGas + 250000` because a claim, refund or
+  release that runs out of gas defers the payout into a credit. A request above
+  the latest block's gas limit is refused, and the same ceiling is re-checked
+  when a transaction reaches the signing path.
+
+### Changed
+
+- The trusted confirmation window now says where a transaction's gas limit came
+  from: the wallet's own estimate, or the dApp with the wallet's estimate shown
+  alongside it. It warns when a dApp asks for far more gas than the wallet
+  estimated, prices the worst case as gas limit times the fee cap, and repeats
+  the max cost in its headline, because for a zero-value contract call the fee
+  is the whole cost. When the wallet has no record of building the transaction
+  it says so plainly.
+- The gas limit on a transaction handed to the signer must now be a canonical
+  positive decimal, so a single number has exactly one spelling everywhere it is
+  displayed and signed.
+
 ## 1.2.1 - 2026-09-25
 
 ### Fixed

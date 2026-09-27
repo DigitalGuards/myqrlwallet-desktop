@@ -33,9 +33,11 @@ import type {
  * Optional request fields the renderer may only send once it knows this shell
  * understands them.
  *
- * The IPC schemas are `.strict()`, so an unknown key is REJECTED at the
- * boundary; it is not ignored. A renderer newer than the shell it runs in
- * therefore has to feature-detect before adding an optional field. Packaged
+ * A COMPATIBILITY HINT. The IPC schemas remain the authority on every value,
+ * so this changes what a renderer may SEND and nothing about what main
+ * accepts. Those schemas are `.strict()`, so an unknown key fails the whole
+ * request, and a renderer newer than the shell it runs in therefore has to
+ * feature-detect before adding an optional field. Packaged
  * builds always ship shell and renderer together (`scripts/build-renderer.sh`
  * builds the sibling frontend checkout into `out/renderer`), so the skew this
  * guards is a development or hand-assembled pairing.
