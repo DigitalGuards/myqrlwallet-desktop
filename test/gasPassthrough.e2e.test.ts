@@ -170,7 +170,7 @@ test('a dApp gas limit survives build, display and signing byte for byte', async
 
   // 2. The confirm window states that limit, attributes it, and prices it.
   const request = { kind: 'transaction', tx } as const;
-  const { message, detail } = summariseSignatureRequest(request, recallBuild(tx));
+  const { message, detail } = summariseSignatureRequest(request, { build: recallBuild(tx) });
   assert.equal(detailRow(detail, 'Gas limit:'), '350000 (set by the dApp; wallet estimate 120000)');
   const maxFee = BigInt(tx.gas) * BigInt(tx.maxFeePerGas);
   const displayedMaxFee = detailRow(detail, 'Max fee:').split(' (')[0];
@@ -209,7 +209,10 @@ test('without a dApp limit the same chain holds on the wallet estimate', async (
   });
   assert.equal(tx.gas, '120000', 'the 1.2x buffered estimate');
 
-  const { detail } = summariseSignatureRequest({ kind: 'transaction', tx }, recallBuild(tx));
+  const { detail } = summariseSignatureRequest(
+    { kind: 'transaction', tx },
+    { build: recallBuild(tx) },
+  );
   assert.equal(detailRow(detail, 'Gas limit:'), "120000 (this wallet's estimate)");
 
   const signed = await signTransaction(hexSeed, tx, EXPECTED_CHAIN_ID);

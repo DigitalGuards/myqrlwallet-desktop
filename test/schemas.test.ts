@@ -56,7 +56,7 @@ test('GetBalanceRequest accepts a valid Q-address and rejects junk + extra keys'
     false,
     'legacy 20-byte address rejected',
   );
-  // .strict(): an unexpected extra field is rejected, not ignored.
+  // .strict(): an unexpected extra field fails the whole parse.
   assert.equal(GetBalanceRequestSchema.safeParse({ address: ADDR, evil: 1 }).success, false);
 });
 

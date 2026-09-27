@@ -236,7 +236,7 @@ test('getBlockGasLimit rejects a zero, non-hex or decimal-string ceiling', async
   assert.equal(await rpc.getBlockGasLimit(), 30_000_000n);
 });
 
-test('a numeric gasLimit from the node is refused, never coerced', async () => {
+test('a numeric gasLimit from the node is refused at the read', async () => {
   // The node is expected to answer with an RPC quantity. A number is a
   // non-conforming answer, and coercing it would silently accept a ceiling
   // read in the wrong base.
@@ -278,7 +278,7 @@ test('a wallet-only build records the estimate and no request', async () => {
   assert.deepEqual(recallBuild(tx), { estimatedGas: '120000' });
 });
 
-test('the recorded estimate is the comparison value, even when the request wins', async () => {
+test('a request the estimate outgrew is still recorded next to that estimate', async () => {
   estimateResponse = { result: '0x186a0' };
   const tx = await rpc.buildTransaction({ ...REQ, data: '0xad4c2381', gas: '21000' });
   assert.equal(tx.gas, '120000', 'the estimate floored the limit');

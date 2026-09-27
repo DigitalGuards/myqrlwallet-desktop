@@ -8,24 +8,24 @@
 import { type BrowserWindow, dialog } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
-import type { GasBuildRecord } from './buildRecords';
-import { summariseSignatureRequest } from './confirmSummary';
+import { type ConfirmContext, summariseSignatureRequest } from './confirmSummary';
 
 /**
  * Show the modal confirmation and return whether the user approved. The dialog
  * is parented to (and modal over) the wallet window so it cannot be ignored.
  *
- * `build` is what main remembers about assembling this exact transaction; it
- * lets the dialog say whether the gas limit is the wallet's own estimate or a
- * dApp-requested one. Omitted (or a miss) makes the dialog state plainly that
- * the fee fields were not assembled by this wallet.
+ * `context` carries main's record of building this exact transaction, which
+ * lets the dialog say whether the gas limit is the wallet's own estimate, a
+ * dApp-requested one or the block ceiling, plus the block gas limit an
+ * unattributed limit is measured against. With no record the dialog states
+ * plainly that the fee fields were not assembled by this wallet.
  */
 export async function confirmSignature(
   parent: BrowserWindow,
   req: SignatureRequest,
-  build?: GasBuildRecord,
+  context: ConfirmContext = {},
 ): Promise<boolean> {
-  const { title, message, detail } = summariseSignatureRequest(req, build);
+  const { title, message, detail } = summariseSignatureRequest(req, context);
   const { response } = await dialog.showMessageBox(parent, {
     type: 'warning',
     buttons: ['Approve & sign', 'Cancel'],

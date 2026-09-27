@@ -145,15 +145,16 @@ settlement that runs out of gas defers the payout into a credit).
   maxFeePerGas, and repeats the max cost in its message line, because for a
   zero-value contract call the fee is the whole cost.
 - Buys: the fee the user approves is computed from the gas limit that will be
-  signed, and an inflated limit is visible and priced before approval. An
-  excessive limit costs gas the transaction does not use only in the sense of
-  what is reserved; the unused part is refunded.
+  signed, and an inflated limit is visible and priced before approval. Unused
+  gas is refunded; a call that fails out of gas or burns gas can consume the
+  whole limit, so the max fee shown is a reachable worst case.
 - Limit: the gas limit is renderer-supplied like the rest of the transaction.
   Main's own build record (`src/main/buildRecords.ts`, bounded FIFO with a
   10-minute TTL) is what lets the dialog attribute the limit; on a miss the
-  dialog states that the fee fields were not assembled by this wallet rather
-  than implying the wallet chose them. A dApp can still ask for a limit inside
-  the warning allowance, so the user remains the decision point.
+  dialog states plainly that the fee fields were not assembled by this wallet,
+  and flags a limit claiming more than a tenth of a block. A dApp can still ask
+  for a limit inside the warning allowance, so the user remains the decision
+  point.
 
 **`window.qrlWallet.features` is a compatibility hint.** It tells a renderer
 which optional request fields this shell's schemas understand, so a newer

@@ -75,23 +75,48 @@ test('formatQuanta trims to the shortest exact Quanta spelling', () => {
 });
 
 test('the confirm window shows the gas limit that is in the transaction', () => {
-  const { detail } = summariseSignatureRequest(
-    txRequest({ gas: '350000' }),
-    dappBuild('120000', '350000'),
-  );
+  const { detail } = summariseSignatureRequest(txRequest({ gas: '350000' }), {
+    build: dappBuild('120000', '350000'),
+  });
   assert.match(detailRow(detail, 'Gas limit:'), /^350000\b/);
 });
 
 test('the gas row names the dApp as the source and shows the wallet estimate', () => {
-  const { detail } = summariseSignatureRequest(
-    txRequest({ gas: '350000' }),
-    dappBuild('120000', '350000'),
-  );
+  const { detail } = summariseSignatureRequest(txRequest({ gas: '350000' }), {
+    build: dappBuild('120000', '350000'),
+  });
   assert.equal(detailRow(detail, 'Gas limit:'), '350000 (set by the dApp; wallet estimate 120000)');
 });
 
+test('the gas row names the wallet when the estimate floored a smaller request', () => {
+  // A dApp asking for less than the wallet estimates does not get to be
+  // credited with the limit the wallet's own floor produced.
+  const { detail } = summariseSignatureRequest(txRequest({ gas: '120000' }), {
+    build: dappBuild('120000', '21000'),
+  });
+  assert.equal(
+    detailRow(detail, 'Gas limit:'),
+    "120000 (this wallet's estimate; the dApp asked for 21000)",
+  );
+  assert.doesNotMatch(detail, /set by the dApp/);
+});
+
+test('the gas row names the block ceiling when it capped the floor', () => {
+  // The buffered estimate exceeded the block gas limit, so neither the request
+  // nor the estimate is the limit in the transaction.
+  const { detail } = summariseSignatureRequest(txRequest({ gas: '30000000' }), {
+    build: dappBuild('31200000', '21000'),
+  });
+  assert.equal(
+    detailRow(detail, 'Gas limit:'),
+    '30000000 (capped at the block gas limit; the dApp asked for 21000, wallet estimate 31200000)',
+  );
+});
+
 test('the gas row names the wallet when no dApp limit was involved', () => {
-  const { detail } = summariseSignatureRequest(txRequest({ gas: '120000' }), walletBuild('120000'));
+  const { detail } = summariseSignatureRequest(txRequest({ gas: '120000' }), {
+    build: walletBuild('120000'),
+  });
   assert.equal(detailRow(detail, 'Gas limit:'), "120000 (this wallet's estimate)");
   assert.doesNotMatch(detail, /set by the dApp/);
 });
@@ -103,6 +128,28 @@ test('with no build record the dialog says the wallet did not assemble the fees'
   assert.doesNotMatch(detail, /set by the dApp/);
 });
 
+test('an unattributed gas limit is measured against a tenth of a block', () => {
+  const BLOCK = 30_000_000n; // a tenth is 3,000,000
+
+  // Ordinary sizes stay quiet even with nothing to attribute them to.
+  for (const gas of ['21000', '350000', '3000000']) {
+    const { detail } = summariseSignatureRequest(txRequest({ gas }), { blockGasLimit: BLOCK });
+    assert.match(detail, /not assembled by this wallet/, `${gas} keeps the note`);
+    assert.doesNotMatch(detail, /WARNING/, `${gas} must stay quiet`);
+  }
+
+  const loud = summariseSignatureRequest(txRequest({ gas: '3000001' }), {
+    blockGasLimit: BLOCK,
+  }).detail;
+  assert.match(loud, /WARNING: this gas limit claims more than a tenth of a whole block/);
+  assert.match(loud, /a call that fails out of gas or burns/);
+  assert.match(loud, /not assembled by this wallet/, 'the note stays alongside the warning');
+
+  // With no ceiling to measure against there is nothing honest to say.
+  const noCeiling = summariseSignatureRequest(txRequest({ gas: '3000001' })).detail;
+  assert.doesNotMatch(noCeiling, /WARNING/);
+});
+
 test('ordinary settlement headroom does not raise a warning', () => {
   // QuantaSwap HTLCv3 asks for estimateGas + 250000 at every realistic size.
   for (const [estimate, requested] of [
@@ -110,35 +157,32 @@ test('ordinary settlement headroom does not raise a warning', () => {
     ['21000', '271000'],
     ['800000', '1050000'],
   ] as const) {
-    const { detail } = summariseSignatureRequest(
-      txRequest({ gas: requested }),
-      dappBuild(estimate, requested),
-    );
+    const { detail } = summariseSignatureRequest(txRequest({ gas: requested }), {
+      build: dappBuild(estimate, requested),
+    });
     assert.doesNotMatch(detail, /WARNING/, `estimate ${estimate} + 250000 must stay silent`);
   }
 });
 
 test('a gas limit far above the estimate raises a warning', () => {
   // 120000 estimate: the allowance is max(480000, 1120000) = 1120000.
-  const quiet = summariseSignatureRequest(
-    txRequest({ gas: '1120000' }),
-    dappBuild('120000', '1120000'),
-  ).detail;
+  const quiet = summariseSignatureRequest(txRequest({ gas: '1120000' }), {
+    build: dappBuild('120000', '1120000'),
+  }).detail;
   assert.doesNotMatch(quiet, /WARNING/, 'the threshold itself is not a warning');
 
-  const loud = summariseSignatureRequest(
-    txRequest({ gas: '1120001' }),
-    dappBuild('120000', '1120001'),
-  ).detail;
+  const loud = summariseSignatureRequest(txRequest({ gas: '1120001' }), {
+    build: dappBuild('120000', '1120001'),
+  }).detail;
   assert.match(loud, /WARNING: the dApp asked for far more gas/);
   // The warning stays truthful about what the excess costs.
-  assert.match(loud, /unused part is refunded/);
+  assert.match(loud, /Unused gas is refunded/);
+  assert.match(loud, /can consume the whole limit/);
 
   // On a large estimate the multiplicative term is the binding one.
-  const large = summariseSignatureRequest(
-    txRequest({ gas: '20000001' }),
-    dappBuild('5000000', '20000001'),
-  ).detail;
+  const large = summariseSignatureRequest(txRequest({ gas: '20000001' }), {
+    build: dappBuild('5000000', '20000001'),
+  }).detail;
   assert.match(large, /WARNING/);
 });
 
@@ -150,18 +194,16 @@ test('gasWarningThreshold takes the higher of 4x and +1,000,000', () => {
 
 test('max fee and max cost follow the honoured gas limit', () => {
   // 120000 gas at a 2 gwei cap = 0.00024 Quanta, on top of a 1 Quanta send.
-  const estimated = summariseSignatureRequest(
-    txRequest({ gas: '120000' }),
-    walletBuild('120000'),
-  ).detail;
+  const estimated = summariseSignatureRequest(txRequest({ gas: '120000' }), {
+    build: walletBuild('120000'),
+  }).detail;
   assert.equal(detailRow(estimated, 'Max fee:').split(' (')[0], '0.00024 Quanta');
   assert.equal(detailRow(estimated, 'Max cost:'), '1.00024 Quanta');
 
   // A dApp-requested 350000 raises the worst case the user is asked to accept.
-  const honoured = summariseSignatureRequest(
-    txRequest({ gas: '350000' }),
-    dappBuild('120000', '350000'),
-  ).detail;
+  const honoured = summariseSignatureRequest(txRequest({ gas: '350000' }), {
+    build: dappBuild('120000', '350000'),
+  }).detail;
   assert.equal(detailRow(honoured, 'Max fee:').split(' (')[0], '0.0007 Quanta');
   assert.equal(detailRow(honoured, 'Max cost:'), '1.0007 Quanta');
 });
@@ -175,10 +217,9 @@ test('the max-fee row names the per-gas caps it was computed from', () => {
 });
 
 test('the prominent message line carries the max cost', () => {
-  const { message } = summariseSignatureRequest(
-    txRequest({ gas: '350000', value: '0' }),
-    dappBuild('120000', '350000'),
-  );
+  const { message } = summariseSignatureRequest(txRequest({ gas: '350000', value: '0' }), {
+    build: dappBuild('120000', '350000'),
+  });
   // A zero-value contract call: the fee IS the whole cost, so a message that
   // only said "Send 0 Quanta?" would read as free.
   assert.equal(message, 'Send 0 Quanta? Max cost 0.0007 Quanta.');
@@ -191,7 +232,9 @@ test('max cost of a zero-value contract call is the fee alone', () => {
 });
 
 test('the transaction facts come from the transaction', () => {
-  const { title, detail } = summariseSignatureRequest(txRequest(), walletBuild('120000'));
+  const { title, detail } = summariseSignatureRequest(txRequest(), {
+    build: walletBuild('120000'),
+  });
   assert.equal(title, 'Confirm transaction');
   assert.equal(detailRow(detail, 'Nonce:'), '5');
   assert.equal(detailRow(detail, 'Chain id:'), '3151909');
@@ -210,7 +253,9 @@ test('dApp provenance stays present and labelled unverified alongside the fee bl
       channelId: 'abcdef01',
     },
   };
-  const { detail } = summariseSignatureRequest(withOrigin, dappBuild('120000', '350000'));
+  const { detail } = summariseSignatureRequest(withOrigin, {
+    build: dappBuild('120000', '350000'),
+  });
   assert.match(detail, /Requested by dApp \(unverified, dApp-supplied\):/);
   assert.match(detail, /Name: {4}QuantaSwap/);
   assert.match(detailRow(detail, 'Gas limit:'), /^350000\b/, 'the fee block is unaffected');

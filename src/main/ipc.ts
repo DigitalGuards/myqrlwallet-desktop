@@ -17,8 +17,9 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
-import { type GasBuildRecord, recallBuild } from './buildRecords';
+import { recallBuild } from './buildRecords';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
+import type { ConfirmContext } from './confirmSummary';
 import * as rpc from './rpc';
 import {
   getBiometricUnlockEnabled,
@@ -193,7 +194,7 @@ export function registerIpcHandlers(deps: Deps): void {
     // Message signing is fully offline and must not depend on RPC reachability;
     // the signer ignores the chain id on that arm.
     let signingChainId = 0;
-    let build: GasBuildRecord | undefined;
+    let confirmContext: ConfirmContext = {};
     if (req.kind === 'transaction') {
       // The block gas limit is checked HERE, alongside the chain id, because
       // the renderer supplies the transaction it asks to have signed. The
@@ -213,9 +214,11 @@ export function registerIpcHandlers(deps: Deps): void {
         );
       }
       // What main remembers about building this exact transaction, so the
-      // trusted confirm can name the gas limit's source. A miss is safe: the
-      // dialog then says the fee fields were not assembled by this wallet.
-      build = recallBuild(req.tx);
+      // trusted confirm can name the gas limit's source, plus the ceiling an
+      // unattributed limit is measured against. A miss is safe: the dialog
+      // then says the fee fields were not assembled by this wallet.
+      const build = recallBuild(req.tx);
+      confirmContext = { blockGasLimit, ...(build ? { build } : {}) };
     }
     // Fail fast when the request targets a different account than the
     // unlocked session, BEFORE drawing the modal: the signer enforces the
@@ -229,7 +232,7 @@ export function registerIpcHandlers(deps: Deps): void {
         'signing account mismatch: request targets a different account than the unlocked session',
       );
     }
-    const approved = await confirmSignature(requireWindow(), req, build);
+    const approved = await confirmSignature(requireWindow(), req, confirmContext);
     if (!approved) throw new Error('user rejected signature');
     const result = await signer.sign(req, signingChainId);
     // Remember the signer-computed hash for THIS raw tx so the subsequent

@@ -19,12 +19,13 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 ### Changed
 
 - The trusted confirmation window now says where a transaction's gas limit came
-  from: the wallet's own estimate, or the dApp with the wallet's estimate shown
-  alongside it. It warns when a dApp asks for far more gas than the wallet
-  estimated, prices the worst case as gas limit times the fee cap, and repeats
-  the max cost in its headline, because for a zero-value contract call the fee
-  is the whole cost. When the wallet has no record of building the transaction
-  it says so plainly.
+  from: the wallet's own estimate, the dApp with the wallet's estimate shown
+  alongside it, or the block gas limit when that capped the result. It warns
+  when a dApp asks for far more gas than the wallet estimated, prices the worst
+  case as gas limit times the fee cap, and repeats the max cost in its headline,
+  because for a zero-value contract call the fee is the whole cost. When the
+  wallet has no record of building the transaction it says so plainly, and
+  flags a limit claiming more than a tenth of a whole block.
 - The gas limit on a transaction handed to the signer must now be a canonical
   positive decimal, so a single number has exactly one spelling everywhere it is
   displayed and signed.

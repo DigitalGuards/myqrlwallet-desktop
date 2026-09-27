@@ -75,38 +75,94 @@ export interface ConfirmSummary {
   detail: string;
 }
 
+/** What main knows beyond the request itself when it draws the confirmation. */
+export interface ConfirmContext {
+  /** Main's record of building this exact transaction, when it still holds one. */
+  build?: GasBuildRecord;
+  /** The latest block's gas limit, already read on the transaction path. */
+  blockGasLimit?: bigint;
+}
+
+/**
+ * Share of the block gas limit above which a gas limit is worth flagging when
+ * main has no build of its own to compare against. A tenth of a block is far
+ * above any ordinary transfer or settlement call, so it fires on the shape of
+ * request that deserves a second look and stays quiet otherwise.
+ */
+const UNATTRIBUTED_GAS_BLOCK_SHARE = 10n;
+
+/** The wording that explains what an over-large gas limit can actually cost. */
+const REFUND_NOTE = [
+  '         Unused gas is refunded, but a call that fails out of gas or burns',
+  '         gas can consume the whole limit, so the cost below is reachable.',
+];
+
 /** The gas-limit row plus any provenance or warning lines that belong with it. */
-function gasLines(gas: string, build: GasBuildRecord | undefined): string[] {
+function gasLines(
+  gas: string,
+  build: GasBuildRecord | undefined,
+  blockGasLimit: bigint | undefined,
+): string[] {
   if (!build) {
-    return [
+    const lines = [
       row('Gas limit:', gas),
       'NOTE: the fee fields were not assembled by this wallet, so it cannot say',
       '      how this gas limit was chosen.',
     ];
+    if (blockGasLimit !== undefined && BigInt(gas) > blockGasLimit / UNATTRIBUTED_GAS_BLOCK_SHARE) {
+      lines.push(
+        'WARNING: this gas limit claims more than a tenth of a whole block.',
+        ...REFUND_NOTE,
+      );
+    }
+    return lines;
   }
   if (build.requestedGas === undefined) {
     return [row('Gas limit:', `${gas} (this wallet's estimate)`)];
   }
+  const built = BigInt(gas);
   const requested = BigInt(build.requestedGas);
   const estimated = BigInt(build.estimatedGas);
-  const lines = [
-    row('Gas limit:', `${gas} (set by the dApp; wallet estimate ${build.estimatedGas})`),
-  ];
-  if (requested > gasWarningThreshold(estimated)) {
-    lines.push(
-      'WARNING: the dApp asked for far more gas than this wallet estimated. The',
-      '         unused part is refunded, so the cost below is the worst case.',
-      '         Approve only if you know why this call needs that much.',
-    );
+  // Three outcomes, each named for what actually happened. Saying "set by the
+  // dApp" when the wallet's own floor or the block ceiling decided the limit
+  // would credit the dApp with a number it did not choose.
+  if (built === requested) {
+    const lines = [
+      row('Gas limit:', `${gas} (set by the dApp; wallet estimate ${build.estimatedGas})`),
+    ];
+    if (requested > gasWarningThreshold(estimated)) {
+      lines.push(
+        'WARNING: the dApp asked for far more gas than this wallet estimated.',
+        ...REFUND_NOTE,
+        '         Approve only if you know why this call needs that much.',
+      );
+    }
+    return lines;
   }
-  return lines;
+  if (built === estimated) {
+    return [
+      row(
+        'Gas limit:',
+        `${gas} (this wallet's estimate; the dApp asked for ${build.requestedGas})`,
+      ),
+    ];
+  }
+  // Neither the request nor the estimate: the block gas limit capped the floor.
+  return [
+    row(
+      'Gas limit:',
+      `${gas} (capped at the block gas limit; the dApp asked for ${build.requestedGas}, wallet estimate ${build.estimatedGas})`,
+    ),
+  ];
 }
 
 /**
  * Compute the confirm-window text for a signature request.
  *
- * `build` is what main remembers about assembling this exact transaction, and
- * it is what lets the gas row name its own source. For a transaction the fee
+ * `context.build` is what main remembers about assembling this exact
+ * transaction, and it is what lets the gas row name its own source;
+ * `context.blockGasLimit` gives an unattributed limit something to be measured
+ * against. For a transaction the fee
  * block is derived from the gas limit that is in the transaction, which may be
  * a dApp-requested limit the builder honoured over its own estimate (see
  * `resolveGasLimit` in rpc.ts). The user therefore sees the worst case they
@@ -118,8 +174,9 @@ function gasLines(gas: string, build: GasBuildRecord | undefined): string[] {
  */
 export function summariseSignatureRequest(
   req: SignatureRequest,
-  build?: GasBuildRecord,
+  context: ConfirmContext = {},
 ): ConfirmSummary {
+  const { build, blockGasLimit } = context;
   switch (req.kind) {
     case 'transaction': {
       const { tx } = req;
@@ -130,7 +187,7 @@ export function summariseSignatureRequest(
         row('To:', groupQrlAddress(tx.to)),
         row('From:', groupQrlAddress(tx.from)),
         row('Nonce:', String(tx.nonce)),
-        ...gasLines(tx.gas, build),
+        ...gasLines(tx.gas, build, blockGasLimit),
         row(
           'Max fee:',
           `${formatQuanta(maxFee)} (up to ${tx.maxFeePerGas} per gas, priority ${tx.maxPriorityFeePerGas})`,
