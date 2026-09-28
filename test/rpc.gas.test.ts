@@ -39,6 +39,8 @@ let latestBaseFee: string | number | undefined;
 let latestBlockError: string | undefined;
 /** The node's qrl_maxPriorityFeePerGas answer (2.5 gwei by default). */
 let tipResponse: { result?: unknown; error?: { code: number; message: string } };
+/** When false, the node refuses qrl_gasPrice. */
+let gasPriceAvailable: boolean;
 
 const realFetch = globalThis.fetch;
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   latestBaseFee = '0x7';
   latestBlockError = undefined;
   tipResponse = { result: '0x9502f900' }; // 2.5 gwei
+  gasPriceAvailable = true;
   globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
     const { method, params } = JSON.parse(String(init?.body)) as RecordedCall;
     // The genesis read is the endpoint-identity probe every call makes; the
@@ -97,11 +100,13 @@ beforeEach(() => {
       );
     }
     const payload =
-      method === 'qrl_estimateGas'
-        ? { jsonrpc: '2.0', id: 1, ...estimateResponse }
-        : method === 'qrl_maxPriorityFeePerGas'
-          ? { jsonrpc: '2.0', id: 1, ...tipResponse }
-          : { jsonrpc: '2.0', id: 1, result: READ_RESULTS[method] ?? '0x0' };
+      method === 'qrl_gasPrice' && !gasPriceAvailable
+        ? { jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'the method does not exist' } }
+        : method === 'qrl_estimateGas'
+          ? { jsonrpc: '2.0', id: 1, ...estimateResponse }
+          : method === 'qrl_maxPriorityFeePerGas'
+            ? { jsonrpc: '2.0', id: 1, ...tipResponse }
+            : { jsonrpc: '2.0', id: 1, result: READ_RESULTS[method] ?? '0x0' };
     return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }));
   }) as typeof fetch;
 });
@@ -364,6 +369,32 @@ test('a node without qrl_maxPriorityFeePerGas falls back to the gasPrice tiers',
   const tx = await rpc.buildTransaction(REQ);
   assert.equal(tx.maxFeePerGas, '1200000000', '1 gwei gasPrice * 1.2 (medium)');
   assert.equal(tx.maxPriorityFeePerGas, '1000000000');
+});
+
+test('the gasPrice fallback applies each level tier', async () => {
+  tipResponse = { error: { code: -32601, message: 'the method does not exist' } };
+  const expected = {
+    low: ['1000000000', '1000000000'],
+    medium: ['1000000000', '1200000000'],
+    high: ['1000000000', '1500000000'],
+  } as const;
+  for (const feeLevel of ['low', 'medium', 'high'] as const) {
+    const tx = await rpc.buildTransaction({ ...REQ, feeLevel });
+    assert.deepEqual([tx.maxPriorityFeePerGas, tx.maxFeePerGas], expected[feeLevel], feeLevel);
+  }
+});
+
+test('with neither fee read available the 1 gwei last resort still builds', async () => {
+  tipResponse = { error: { code: -32601, message: 'the method does not exist' } };
+  gasPriceAvailable = false;
+  READ_RESULTS['qrl_gasPrice'] = '0x77359400'; // 2 gwei, which must go unread
+  try {
+    const tx = await rpc.buildTransaction(REQ);
+    assert.equal(tx.maxPriorityFeePerGas, '1000000000');
+    assert.equal(tx.maxFeePerGas, '1200000000');
+  } finally {
+    READ_RESULTS['qrl_gasPrice'] = '0x3b9aca00';
+  }
 });
 
 test('a latest block without a base fee falls back to the gasPrice tiers', async () => {
