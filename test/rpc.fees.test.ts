@@ -1,13 +1,16 @@
 /**
- * Fee-level math for the RPC transaction builder. applyFeeLevel is pure bigint
- * arithmetic (no network), so it runs under `node --test --import tsx` directly.
- * Desktop tiers apply a multiplier to the gas price and keep the priority tip
- * within that total cap, including when the node quotes less than 1 gwei.
+ * Fee math for the RPC transaction builder. marketFees and applyFeeLevel are
+ * pure bigint arithmetic (no network), so they run under `node --test --import
+ * tsx` directly. marketFees is the web wallet's quoteFees policy (suggested tip
+ * times a level multiplier, plus 2x base-fee headroom). applyFeeLevel is the
+ * gasPrice fallback: it applies a multiplier to the gas price and keeps the
+ * priority tip within that total cap, including when the node quotes less
+ * than 1 gwei.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyFeeLevel } from '../src/main/rpc';
+import { applyFeeLevel, marketFees } from '../src/main/rpc';
 
 const GWEI = 1_000_000_000n;
 
@@ -47,6 +50,43 @@ test('applyFeeLevel keeps maxFeePerGas >= maxPriorityFeePerGas (EIP-1559 validit
       const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, level);
       assert.ok(maxFeePerGas >= maxPriorityFeePerGas, `level ${level}, base ${base}`);
       assert.ok(maxPriorityFeePerGas >= 0n, 'priority fee must be nonnegative');
+    }
+  }
+});
+
+test('marketFees scales the suggested tip per level and adds 2x base-fee headroom', () => {
+  const tip = 2n * GWEI;
+  const base = 3n * GWEI;
+  assert.deepEqual(marketFees(tip, base, 'low'), {
+    maxPriorityFeePerGas: 2n * GWEI,
+    maxFeePerGas: 8n * GWEI,
+  });
+  assert.deepEqual(marketFees(tip, base, 'medium'), {
+    maxPriorityFeePerGas: 3n * GWEI,
+    maxFeePerGas: 9n * GWEI,
+  });
+  assert.deepEqual(marketFees(tip, base, 'high'), {
+    maxPriorityFeePerGas: 4n * GWEI,
+    maxFeePerGas: 10n * GWEI,
+  });
+});
+
+test('marketFees matches the web wallet on the live devnet quote', () => {
+  // qrl_maxPriorityFeePerGas 0x9502f900 (2.5 gwei), baseFeePerGas 0x7.
+  assert.deepEqual(marketFees(2_500_000_000n, 7n, 'medium'), {
+    maxPriorityFeePerGas: 3_750_000_000n,
+    maxFeePerGas: 3_750_000_014n,
+  });
+});
+
+test('marketFees keeps maxFeePerGas >= maxPriorityFeePerGas (EIP-1559 validity)', () => {
+  for (const tip of [0n, 1n, GWEI, 100n * GWEI]) {
+    for (const base of [0n, 7n, GWEI, 100n * GWEI]) {
+      for (const level of ['low', 'medium', 'high'] as const) {
+        const { maxFeePerGas, maxPriorityFeePerGas } = marketFees(tip, base, level);
+        assert.ok(maxFeePerGas >= maxPriorityFeePerGas, `tip ${tip}, base ${base}, ${level}`);
+        assert.ok(maxFeePerGas - maxPriorityFeePerGas >= base, 'covers at least the base fee');
+      }
     }
   }
 });

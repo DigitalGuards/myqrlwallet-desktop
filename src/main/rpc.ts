@@ -147,11 +147,36 @@ async function getGasPrice(): Promise<bigint> {
   try {
     return hexToBigInt(await rpcRead<string>('qrl_gasPrice', []));
   } catch {
+    console.warn('fees: qrl_gasPrice unavailable, using the 1 gwei default');
     return 1_000_000_000n; // 1 gwei fallback, matches the web wallet default
   }
 }
 
-/** Desktop fee tiers. Keep the priority tip within the selected total fee cap. */
+/** An EIP-1559 fee pair for one transaction. */
+export interface FeeQuote {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
+
+/** Multipliers on the node's suggested tip (percent), matching the web wallet. */
+const TIP_MULTIPLIERS: Record<FeeLevel, bigint> = { low: 100n, medium: 150n, high: 200n };
+
+/**
+ * Fee-market pricing, the web wallet's `quoteFees` policy: the tip scales the
+ * node's suggestion (`qrl_maxPriorityFeePerGas`), and maxFee = 2 * baseFee +
+ * tip leaves headroom for several base-fee rises before the transaction
+ * could stall. Only base fee + tip is charged; the node refunds the rest.
+ */
+export function marketFees(suggestedTip: bigint, baseFeePerGas: bigint, level: FeeLevel): FeeQuote {
+  const maxPriorityFeePerGas = (suggestedTip * TIP_MULTIPLIERS[level]) / 100n;
+  return { maxFeePerGas: 2n * baseFeePerGas + maxPriorityFeePerGas, maxPriorityFeePerGas };
+}
+
+/**
+ * Fallback tiers on `qrl_gasPrice`, for a node or proxy that does not serve
+ * `qrl_maxPriorityFeePerGas` or a latest block without a base fee. Keeps the
+ * priority tip within the selected total fee cap.
+ */
 export function applyFeeLevel(
   base: bigint,
   level: FeeLevel,
@@ -165,6 +190,46 @@ export function applyFeeLevel(
   return { maxFeePerGas, maxPriorityFeePerGas };
 }
 
+/** The fields of the latest block a build reads. Node output, so unvalidated. */
+interface LatestBlock {
+  gasLimit?: unknown;
+  baseFeePerGas?: unknown;
+}
+
+const QUANTITY_RE = /^0x[0-9a-fA-F]+$/;
+
+async function getLatestBlock(): Promise<LatestBlock> {
+  const block = await rpcRead<LatestBlock | null>('qrl_getBlockByNumber', ['latest', false]);
+  return block ?? {};
+}
+
+/**
+ * Price a build at the selected level. Prefers the fee market (suggested tip
+ * plus the latest base fee) and falls back to the `qrl_gasPrice` tiers when
+ * either read fails or the block reports no usable base fee.
+ */
+async function quoteFees(level: FeeLevel, latestBlock: Promise<LatestBlock>): Promise<FeeQuote> {
+  try {
+    const [tip, block] = await Promise.all([
+      rpcRead<unknown>('qrl_maxPriorityFeePerGas', []),
+      latestBlock,
+    ]);
+    const baseFee = block.baseFeePerGas;
+    if (typeof tip !== 'string' || !QUANTITY_RE.test(tip)) {
+      throw new Error('rpc qrl_maxPriorityFeePerGas: no usable tip');
+    }
+    if (typeof baseFee !== 'string' || !QUANTITY_RE.test(baseFee)) {
+      throw new Error('rpc qrl_getBlockByNumber: latest block reported no usable base fee');
+    }
+    return marketFees(hexToBigInt(tip), hexToBigInt(baseFee), level);
+  } catch (err) {
+    console.warn(
+      `fees: fee-market quote unavailable, using gasPrice tiers (${err instanceof Error ? err.message : 'unknown error'})`,
+    );
+    return applyFeeLevel(await getGasPrice(), level);
+  }
+}
+
 /** Gas-estimate buffer, mirroring the web wallet's GAS_ESTIMATE_BUFFER_MULTIPLIER. */
 const GAS_ESTIMATE_BUFFER_PCT = 120n;
 
@@ -176,7 +241,7 @@ const GAS_ESTIMATE_BUFFER_PCT = 120n;
 async function estimateGas(
   req: BuildTransactionRequest,
   data: string,
-  fees: ReturnType<typeof applyFeeLevel>,
+  fees: FeeQuote,
 ): Promise<bigint> {
   const estimated = hexToBigInt(
     await rpcRead<string>('qrl_estimateGas', [
@@ -197,21 +262,21 @@ async function estimateGas(
  * The latest block's gas limit: the ceiling a single transaction's gas limit
  * can usefully claim, since a block can never include more.
  *
- * Read on the dApp-gas build path to bound a requested limit, and again in
- * `REQUEST_SIGNATURE` to bound whatever gas limit actually reaches the signer.
- * The build-time check alone would only cover transactions main assembled; the
- * renderer supplies the transaction it asks to have signed, so the
- * signing-time check is the one that holds for every signature. The ordinary
- * send keeps its existing build-path round trips, because the build-time read
- * happens only when a dApp gas limit is present.
+ * Every build reads the latest block once: its base fee prices the
+ * transaction, and on the dApp-gas path its gas limit bounds a requested
+ * limit. `REQUEST_SIGNATURE` reads it again to bound whatever gas limit
+ * actually reaches the signer. The build-time check alone would only cover
+ * transactions main assembled; the renderer supplies the transaction it asks
+ * to have signed, so the signing-time check is the one that holds for every
+ * signature.
  */
 export async function getBlockGasLimit(): Promise<bigint> {
-  const block = await rpcRead<{ gasLimit?: unknown } | null>('qrl_getBlockByNumber', [
-    'latest',
-    false,
-  ]);
-  const raw = block?.gasLimit;
-  if (typeof raw !== 'string' || !/^0x[0-9a-fA-F]+$/.test(raw)) {
+  return blockGasLimit(await getLatestBlock());
+}
+
+function blockGasLimit(block: LatestBlock): bigint {
+  const raw = block.gasLimit;
+  if (typeof raw !== 'string' || !QUANTITY_RE.test(raw)) {
     throw new Error('rpc qrl_getBlockByNumber: latest block reported no usable gas limit');
   }
   const limit = hexToBigInt(raw);
@@ -246,24 +311,21 @@ export async function getBlockGasLimit(): Promise<bigint> {
 async function resolveGasLimit(
   req: BuildTransactionRequest,
   data: string,
-  fees: ReturnType<typeof applyFeeLevel>,
+  fees: FeeQuote,
+  latestBlock: Promise<LatestBlock>,
 ): Promise<{ gas: bigint; estimated: bigint }> {
-  if (req.gas === undefined) {
-    const estimated = await estimateGas(req, data, fees);
-    return { gas: estimated, estimated };
-  }
+  const estimated = await estimateGas(req, data, fees);
+  if (req.gas === undefined) return { gas: estimated, estimated };
   const requested = BigInt(req.gas);
-  // Independent reads, so issue them together and pay for one round trip.
-  const [estimated, blockGasLimit] = await Promise.all([
-    estimateGas(req, data, fees),
-    getBlockGasLimit(),
-  ]);
-  if (requested > blockGasLimit) {
+  // The fee quote tolerates a failed block read by falling back; the ceiling
+  // never does, so a failed read fails the build here.
+  const ceiling = blockGasLimit(await latestBlock);
+  if (requested > ceiling) {
     throw new Error(
-      `requested gas limit ${requested.toString(10)} exceeds the block gas limit ${blockGasLimit.toString(10)}`,
+      `requested gas limit ${requested.toString(10)} exceeds the block gas limit ${ceiling.toString(10)}`,
     );
   }
-  const floor = estimated > blockGasLimit ? blockGasLimit : estimated;
+  const floor = estimated > ceiling ? ceiling : estimated;
   return { gas: requested > floor ? requested : floor, estimated };
 }
 
@@ -272,17 +334,17 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
   // HexSchema admits bare hex; JSON-RPC wants the 0x-prefixed form, so
   // canonicalize once and use it for both the estimate and the built tx.
   const data = req.data ? (req.data.startsWith('0x') ? req.data : `0x${req.data}`) : undefined;
-  // Estimate every recipient, including value transfers with empty calldata.
-  const [nonce, base, chainId] = await Promise.all([
+  // One latest-block read serves both the fee quote (base fee) and the
+  // dApp gas ceiling (gas limit).
+  const latestBlock = getLatestBlock();
+  const [nonce, fees, chainId] = await Promise.all([
     getTransactionCount(req.from),
-    getGasPrice(),
+    quoteFees(req.feeLevel, latestBlock),
     getChainId(),
   ]);
-  const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, req.feeLevel);
-  const { gas, estimated } = await resolveGasLimit(req, data ?? '0x', {
-    maxFeePerGas,
-    maxPriorityFeePerGas,
-  });
+  const { maxFeePerGas, maxPriorityFeePerGas } = fees;
+  // Estimate every recipient, including value transfers with empty calldata.
+  const { gas, estimated } = await resolveGasLimit(req, data ?? '0x', fees, latestBlock);
   const tx: UnsignedTransaction = {
     from: req.from,
     to: req.to,

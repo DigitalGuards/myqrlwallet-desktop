@@ -156,6 +156,26 @@ settlement that runs out of gas defers the payout into a credit).
   for a limit inside the warning allowance, so the user remains the decision
   point.
 
+**Node-supplied fees.** Main prices every transaction from two node reads:
+the suggested tip (`qrl_maxPriorityFeePerGas`, scaled 1.0x / 1.5x / 2.0x by
+fee level) and the latest block's `baseFeePerGas`, with
+`maxFeePerGas = 2 x baseFee + tip` (`quoteFees` / `marketFees`,
+`src/main/rpc.ts`). When either read fails or is not an RPC quantity, it falls
+back to the `qrl_gasPrice` tiers, and to 1 gwei when that read fails too; each
+fallback logs a warning.
+
+- Control: both values must be `0x` quantities; the IPC schema caps every
+  decimal amount at 80 digits; the trusted confirm window prices the worst
+  case as gas limit x maxFeePerGas, shows the priority fee next to it, and
+  repeats the max cost in its message line.
+- Buys: the 2x base-fee headroom keeps a transaction includable through
+  several full blocks of base-fee rises; unused headroom is refunded.
+- Limit: the RPC endpoint is trusted for fee levels, as it was for
+  `qrl_gasPrice` before. A hostile or broken endpoint can inflate the tip,
+  which is paid in full, and the base fee, which inflates the cap. There is no
+  fee ceiling or fee warning line; the priced max cost in the confirm window is
+  the control, so the user remains the decision point.
+
 **`window.qrlWallet.features` is a compatibility hint.** It tells a renderer
 which optional request fields this shell's schemas understand, so a newer
 renderer can omit a field an older shell would reject. The control stays where
