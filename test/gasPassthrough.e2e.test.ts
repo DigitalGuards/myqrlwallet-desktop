@@ -30,6 +30,9 @@ const realFetch = globalThis.fetch;
 /** 100,000 estimate -> 120,000 buffered, under a 30,000,000 block ceiling. */
 const ESTIMATE_HEX = '0x186a0';
 const BLOCK_GAS_LIMIT_HEX = '0x1c9c380';
+/** The live devnet fee market: 7 wei base fee, 2.5 gwei suggested tip. */
+const BASE_FEE_HEX = '0x7';
+const SUGGESTED_TIP_HEX = '0x9502f900';
 
 beforeEach(() => {
   clearBuildRecords();
@@ -43,11 +46,11 @@ beforeEach(() => {
         case 'qrl_getBlockByNumber':
           return params[0] === '0x0'
             ? { hash: EXPECTED_GENESIS_HASH }
-            : { gasLimit: BLOCK_GAS_LIMIT_HEX };
+            : { gasLimit: BLOCK_GAS_LIMIT_HEX, baseFeePerGas: BASE_FEE_HEX };
         case 'qrl_getTransactionCount':
           return '0x7';
-        case 'qrl_gasPrice':
-          return '0x3b9aca00'; // 1 gwei
+        case 'qrl_maxPriorityFeePerGas':
+          return SUGGESTED_TIP_HEX;
         case 'qrl_chainId':
           return `0x${EXPECTED_CHAIN_ID.toString(16)}`;
         case 'qrl_estimateGas':
@@ -174,9 +177,12 @@ test('a dApp gas limit survives build, display and signing byte for byte', async
   assert.equal(detailRow(detail, 'Gas limit:'), '350000 (set by the dApp; wallet estimate 120000)');
   const maxFee = BigInt(tx.gas) * BigInt(tx.maxFeePerGas);
   const displayedMaxFee = detailRow(detail, 'Max fee:').split(' (')[0];
-  assert.equal(displayedMaxFee, '0.00042 Quanta');
-  assert.equal(maxFee, 420_000_000_000_000n, 'displayed fee equals gas limit x fee cap');
-  assert.equal(message, 'Send 0 Quanta? Max cost 0.00042 Quanta.');
+  // Fee cap 2 * 7 wei + 3.75 gwei (2.5 gwei suggested tip at medium).
+  assert.equal(tx.maxFeePerGas, '3750000014');
+  assert.equal(tx.maxPriorityFeePerGas, '3750000000');
+  assert.equal(displayedMaxFee, '0.0013125000049 Quanta');
+  assert.equal(maxFee, 1_312_500_004_900_000n, 'displayed fee equals gas limit x fee cap');
+  assert.equal(message, 'Send 0 Quanta? Max cost 0.0013125000049 Quanta.');
 
   // 3. The raw transaction the signer produced carries exactly those numbers.
   const signed = await signTransaction(hexSeed, tx, EXPECTED_CHAIN_ID);
@@ -187,6 +193,11 @@ test('a dApp gas limit survives build, display and signing byte for byte', async
     decoded.maxFeePerGas,
     BigInt(tx.maxFeePerGas),
     'signed fee cap equals the cap in the displayed Max fee',
+  );
+  assert.equal(
+    decoded.maxPriorityFeePerGas,
+    BigInt(tx.maxPriorityFeePerGas),
+    'signed tip equals the displayed priority fee',
   );
   assert.equal(
     decoded.gasLimit * decoded.maxFeePerGas,
