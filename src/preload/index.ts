@@ -17,6 +17,13 @@ import type { QrlWalletApi } from '../shared/bridge';
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
+  // A COMPATIBILITY HINT. It tells a renderer which optional request fields
+  // this shell's schemas understand, so a newer renderer can omit a field an
+  // older shell would reject. The security control stays the schema: every
+  // value this hint describes is validated at the IPC boundary, so a renderer
+  // that ignores or forges the hint gains nothing. Frozen because the value is
+  // a constant; contextBridge clones it into the renderer anyway.
+  features: Object.freeze({ dappGasLimit: true as const }),
   getBalance: (req) => ipcRenderer.invoke(IPC.GET_BALANCE, req),
   buildTransaction: (req) => ipcRenderer.invoke(IPC.BUILD_TRANSACTION, req),
   requestSignature: (req) => ipcRenderer.invoke(IPC.REQUEST_SIGNATURE, req),

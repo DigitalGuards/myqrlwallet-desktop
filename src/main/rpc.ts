@@ -11,6 +11,7 @@
  */
 import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH, RPC_URL, RPC_URL_SECONDARY } from './config';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
+import { rememberBuild } from './buildRecords';
 
 interface JsonRpcResponse<T> {
   jsonrpc: '2.0';
@@ -192,6 +193,80 @@ async function estimateGas(
   return (estimated * GAS_ESTIMATE_BUFFER_PCT) / 100n;
 }
 
+/**
+ * The latest block's gas limit: the ceiling a single transaction's gas limit
+ * can usefully claim, since a block can never include more.
+ *
+ * Read on the dApp-gas build path to bound a requested limit, and again in
+ * `REQUEST_SIGNATURE` to bound whatever gas limit actually reaches the signer.
+ * The build-time check alone would only cover transactions main assembled; the
+ * renderer supplies the transaction it asks to have signed, so the
+ * signing-time check is the one that holds for every signature. The ordinary
+ * send keeps its existing build-path round trips, because the build-time read
+ * happens only when a dApp gas limit is present.
+ */
+export async function getBlockGasLimit(): Promise<bigint> {
+  const block = await rpcRead<{ gasLimit?: unknown } | null>('qrl_getBlockByNumber', [
+    'latest',
+    false,
+  ]);
+  const raw = block?.gasLimit;
+  if (typeof raw !== 'string' || !/^0x[0-9a-fA-F]+$/.test(raw)) {
+    throw new Error('rpc qrl_getBlockByNumber: latest block reported no usable gas limit');
+  }
+  const limit = hexToBigInt(raw);
+  if (limit <= 0n) {
+    throw new Error('rpc qrl_getBlockByNumber: latest block reported a zero gas limit');
+  }
+  return limit;
+}
+
+/**
+ * Resolve the gas limit for a build, and report the estimate it was compared
+ * against so main can remember it for the trusted confirm window.
+ *
+ * With no dApp-requested limit this is exactly the historical behaviour: the
+ * node's estimate with a 1.2x buffer, uncapped. With one, the result is the
+ * LARGER of the request and the estimate, with both bounded by the latest
+ * block's gas limit:
+ *
+ *  - a request BELOW the estimate cannot strand the user with an out-of-gas
+ *    transaction, because the estimate still floors the limit;
+ *  - a request ABOVE the estimate is honoured exactly as given, which is what
+ *    contract flows with estimate-invisible headroom (QuantaSwap HTLCv3
+ *    settlement) need;
+ *  - a request above the block gas limit is rejected with a clear error;
+ *  - a 1.2x BUFFERED ESTIMATE above the block gas limit is clamped to that
+ *    ceiling, so the buffer cannot push a near-block-sized call past a limit
+ *    the requested value was already checked against.
+ *
+ * The limit returned here is the limit written into the unsigned transaction,
+ * so it is also the gas limit and max cost the trusted confirm window shows.
+ */
+async function resolveGasLimit(
+  req: BuildTransactionRequest,
+  data: string,
+  fees: ReturnType<typeof applyFeeLevel>,
+): Promise<{ gas: bigint; estimated: bigint }> {
+  if (req.gas === undefined) {
+    const estimated = await estimateGas(req, data, fees);
+    return { gas: estimated, estimated };
+  }
+  const requested = BigInt(req.gas);
+  // Independent reads, so issue them together and pay for one round trip.
+  const [estimated, blockGasLimit] = await Promise.all([
+    estimateGas(req, data, fees),
+    getBlockGasLimit(),
+  ]);
+  if (requested > blockGasLimit) {
+    throw new Error(
+      `requested gas limit ${requested.toString(10)} exceeds the block gas limit ${blockGasLimit.toString(10)}`,
+    );
+  }
+  const floor = estimated > blockGasLimit ? blockGasLimit : estimated;
+  return { gas: requested > floor ? requested : floor, estimated };
+}
+
 /** Assemble a complete unsigned type-2 transaction ready for the signer. */
 export async function buildTransaction(req: BuildTransactionRequest): Promise<UnsignedTransaction> {
   // HexSchema admits bare hex; JSON-RPC wants the 0x-prefixed form, so
@@ -204,8 +279,11 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
     getChainId(),
   ]);
   const { maxFeePerGas, maxPriorityFeePerGas } = applyFeeLevel(base, req.feeLevel);
-  const gas = await estimateGas(req, data ?? '0x', { maxFeePerGas, maxPriorityFeePerGas });
-  return {
+  const { gas, estimated } = await resolveGasLimit(req, data ?? '0x', {
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+  });
+  const tx: UnsignedTransaction = {
     from: req.from,
     to: req.to,
     value: req.value,
@@ -217,6 +295,13 @@ export async function buildTransaction(req: BuildTransactionRequest): Promise<Un
     type: '0x2',
     ...(data ? { data } : {}),
   };
+  // Keep main's own estimate for this exact transaction so the trusted confirm
+  // window can name where the gas limit came from.
+  rememberBuild(tx, {
+    estimatedGas: estimated.toString(10),
+    ...(req.gas === undefined ? {} : { requestedGas: req.gas }),
+  });
+  return tx;
 }
 
 /**
