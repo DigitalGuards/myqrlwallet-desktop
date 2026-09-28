@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.3.0 - 2026-09-28
 
 ### Added
 
@@ -29,6 +29,11 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - The gas limit on a transaction handed to the signer must now be a canonical
   positive decimal, so a single number has exactly one spelling everywhere it is
   displayed and signed.
+- The signer and the wallet use the hardened 2026-09 releases of the QRL crypto
+  libraries (ML-DSA-87 2.2.0, wallet.js 6.3.0).
+- Renderer refresh from the web wallet: the hardened crypto libraries, explorer
+  links and transaction history on zondscan.com only, layout fixes for narrow
+  windows, and the dApp gas limit forwarded to the desktop signer.
 
 ## 1.2.1 - 2026-09-25
 
