@@ -2,6 +2,22 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.3.1 - 2026-09-28
+
+### Changed
+
+- Transaction fees follow the node's fee market, the same policy as the web
+  wallet's send screen. The priority tip is the node's suggestion
+  (`qrl_maxPriorityFeePerGas`) scaled by fee level (1x low, 1.5x medium, 2x
+  high), and the fee cap is twice the latest base fee plus that tip, so a
+  transaction stays includable while the base fee rises. Previously the tip was
+  about 1 gwei against the node's 2.5 gwei suggestion. Only the base fee plus
+  the tip is charged; the rest of the cap is refunded. The old `qrl_gasPrice`
+  tiers remain as the fallback for a node without the method, and a fallback is
+  now logged.
+- Renderer refresh from the web wallet: dApp approvals on the web and mobile
+  paths use the same fee-market pricing.
+
 ## 1.3.0 - 2026-09-28
 
 ### Added
