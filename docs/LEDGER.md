@@ -8,9 +8,10 @@ It is a library today: nothing in the app imports it yet. The device process
 ## What the module does
 
 - `QrlLedger`: a client over any `LedgerTransport` (one raw APDU in, one raw
-  response out). It identifies the open app with the BOLOS command `B0 01`
-  and requires `QRL v2.0` before sending app commands, because other Ledger
-  apps share CLA `E0`. Each request runs as one job, so a derivation and the
+  response out). Every app command starts with the BOLOS command `B0 01` and
+  goes no further unless the open app is `QRL v2.0`, because other Ledger apps
+  share CLA `E0`. Each request runs as one job, and jobs on one transport run
+  one at a time across every client that shares it, so a derivation and the
   public key chunk reads that follow it never interleave with another request.
 - `getAccount(path)`: derives the account (`E0 05`, P2=0), reads the 2,592-byte
   ML-DSA-87 public key in 11 chunks (P2=1..11, 10 x 258 + 12 bytes) and checks
@@ -50,6 +51,12 @@ Both report the name `QRL v2.0` and version 2.2.2, so the host cannot tell them
 apart. The client therefore defaults to the 510-byte bound and marks a refused
 blind sign with `needsBlindSigning`, so the UI can name the setting next to the
 plain meaning of the status.
+
+The review screens differ too, and the fixtures keep them as `deviceScreens`.
+The theQRL build shows Chain ID, Gas limit, Priority fee per gas and "Max fees"
+as `maxFeePerGas x gas`. The cyyber builds omit the first three rows and show
+`maxFeePerGas` itself under "Max fees", a per-gas value. Those strings come
+from the device; the client computes none of them.
 
 ## Fixtures
 

@@ -39,6 +39,21 @@ export function fixturePath(fixture: LedgerFixture): string {
   return fixture.path as string;
 }
 
+/**
+ * The recorded BOLOS B0 01 exchange with QRL v2.0 open. Its reply is byte-identical
+ * across both builds and both models recorded, so it stands in front of every
+ * replayed app command (the client checks the open app before each one).
+ */
+export function appCheckExchange(): RecordedExchange {
+  const first = loadFixture('theqrl-nanosp-identity.json').exchanges[0];
+  assert.ok(first && first.apdu === 'b001000000', 'identity fixture starts with B0 01');
+  return first;
+}
+
+export function withAppCheck(exchanges: readonly RecordedExchange[]): RecordedExchange[] {
+  return [appCheckExchange(), ...exchanges];
+}
+
 /** The preimage the transcript streamed: the data of every SIGN_TX P1=1/P1=2 data APDU. */
 export function streamedPreimage(fixture: LedgerFixture): Uint8Array {
   const parts = fixture.exchanges

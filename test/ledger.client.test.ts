@@ -10,10 +10,12 @@ import { statusError } from '../src/ledger/errors';
 import type { LedgerTransport } from '../src/ledger/transport';
 import {
   ReplayTransport,
+  appCheckExchange,
   expectedString,
   fixturePath,
   loadFixture,
   streamedPreimage,
+  withAppCheck,
 } from './ledgerFixtures';
 
 // "ZOND" || signing-context version 01 || ML-DSA-87 descriptor 01 00 00
@@ -30,10 +32,14 @@ async function rejects(promise: Promise<unknown>, check: Partial<LedgerError>): 
   });
 }
 
-function scripted(responses: string[]): LedgerTransport {
+/** Answers in order without checking the APDUs; records how many were sent. */
+function scripted(responses: string[]): LedgerTransport & { sent: string[] } {
   let i = 0;
+  const sent: string[] = [];
   return {
-    async exchange(): Promise<Uint8Array> {
+    sent,
+    async exchange(apdu: Uint8Array): Promise<Uint8Array> {
+      sent.push(toHex(apdu));
       const next = responses[i++];
       assert.ok(next !== undefined, 'scripted transport ran out of responses');
       return fromHex(next);
@@ -41,10 +47,18 @@ function scripted(responses: string[]): LedgerTransport {
   };
 }
 
+function appInfoReply(name: string, version: string): string {
+  const enc = (s: string): string => toHex(new TextEncoder().encode(s));
+  const len = (s: string): string => s.length.toString(16).padStart(2, '0');
+  return `01${len(name)}${enc(name)}${len(version)}${enc(version)}01009000`;
+}
+
 for (const build of ['theqrl', 'pr7']) {
   test(`${build}: identifies the app, then derives the account and reads its public key`, async () => {
     const fixture = loadFixture(`${build}-nanosp-identity.json`);
-    const transport = new ReplayTransport(fixture.exchanges);
+    const [app, version, name, ...derive] = fixture.exchanges;
+    assert.ok(app && version && name);
+    const transport = new ReplayTransport([app, app, version, app, name, app, ...derive]);
     const ledger = new QrlLedger(transport);
 
     assert.deepEqual(await ledger.requireQrlApp(), { name: 'QRL v2.0', version: '2.2.2' });
@@ -76,7 +90,7 @@ for (const name of [
     const fixture = loadFixture(name);
     const preimage = fromHex(expectedString(fixture, 'preimage'));
     const publicKey = fromHex(expectedString(fixture, 'publicKey'));
-    const transport = new ReplayTransport(fixture.exchanges);
+    const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
 
     const signature = await new QrlLedger(transport).signTransactionPreimage(
       fixturePath(fixture),
@@ -99,7 +113,7 @@ test('the live fixtures sign from the address their public key hashes to', () =>
     const from = fixture.from;
     assert.equal(typeof from, 'string');
     const derived = qrlAddressFromPublicKey(fromHex(expectedString(fixture, 'publicKey')));
-    assert.equal(derived, (from as string).toLowerCase().replace(/^q/, 'Q'));
+    assert.equal(derived, `Q${(from as string).slice(1).toLowerCase()}`);
   }
 });
 
@@ -107,7 +121,7 @@ for (const build of ['theqrl', 'pr7']) {
   test(`${build}: on-device address verification resolves with the address`, async () => {
     const identity = loadFixture(`${build}-nanosp-identity.json`);
     const transport = new ReplayTransport(
-      loadFixture(`${build}-nanosp-verify-address-approve.json`).exchanges,
+      withAppCheck(loadFixture(`${build}-nanosp-verify-address-approve.json`).exchanges),
     );
     const address = await new QrlLedger(transport).verifyAddress(PATH);
     assert.equal(address, `Q${expectedString(identity, 'address')}`);
@@ -116,7 +130,7 @@ for (const build of ['theqrl', 'pr7']) {
 
   test(`${build}: cancelling the address on the device rejects`, async () => {
     const transport = new ReplayTransport(
-      loadFixture(`${build}-nanosp-verify-address-reject.json`).exchanges,
+      withAppCheck(loadFixture(`${build}-nanosp-verify-address-reject.json`).exchanges),
     );
     await rejects(new QrlLedger(transport).verifyAddress(PATH), {
       code: 'rejected',
@@ -128,14 +142,10 @@ for (const build of ['theqrl', 'pr7']) {
 
   test(`${build}: rejecting a transaction on the device rejects`, async () => {
     const fixture = loadFixture(`${build}-nanosp-sign-reject.json`);
-    const transport = new ReplayTransport(fixture.exchanges);
+    const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
     await rejects(
       new QrlLedger(transport).signTransactionPreimage(PATH, streamedPreimage(fixture)),
-      {
-        code: 'rejected',
-        sw: 0x6985,
-        needsBlindSigning: false,
-      },
+      { code: 'rejected', sw: 0x6985, needsBlindSigning: false },
     );
     transport.assertDone();
   });
@@ -143,7 +153,7 @@ for (const build of ['theqrl', 'pr7']) {
 
 test('blind signing off: the theQRL build answers 6985 at once, flagged as a blind sign', async () => {
   const fixture = loadFixture('theqrl-nanosp-blind-signing-disabled.json');
-  const transport = new ReplayTransport(fixture.exchanges);
+  const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
   await rejects(new QrlLedger(transport).signTransactionPreimage(PATH, streamedPreimage(fixture)), {
     code: 'rejected',
     sw: 0x6985,
@@ -153,8 +163,11 @@ test('blind signing off: the theQRL build answers 6985 at once, flagged as a bli
 });
 
 test('blind signing off: the cyyber PR #7 build answers B008, flagged as a blind sign', async () => {
+  // B008 is how the cyyber builds refuse a blind sign while the setting is off.
+  // On the theQRL build B008 only means signing failed after approval, so the
+  // mapping stays `signature-failed` and the flag carries the blind-sign hint.
   const fixture = loadFixture('pr7-nanosp-blind-signing-disabled.json');
-  const transport = new ReplayTransport(fixture.exchanges);
+  const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
   await rejects(new QrlLedger(transport).signTransactionPreimage(PATH, streamedPreimage(fixture)), {
     code: 'signature-failed',
     sw: 0xb008,
@@ -175,7 +188,7 @@ test('oversized preimage: refused before any APDU with the default 510-byte boun
 
 test('oversized preimage: the theQRL build answers B004 once 510 bytes are buffered', async () => {
   const fixture = loadFixture('theqrl-nanosp-oversized.json');
-  const transport = new ReplayTransport(fixture.exchanges);
+  const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
   const ledger = new QrlLedger(transport, { maxPreimageBytes: 2048 });
   await rejects(ledger.signTransactionPreimage(PATH, streamedPreimage(fixture)), {
     code: 'tx-too-large',
@@ -186,7 +199,7 @@ test('oversized preimage: the theQRL build answers B004 once 510 bytes are buffe
 
 test('oversized preimage: the cyyber PR #7 build buffers it and refuses the blind sign', async () => {
   const fixture = loadFixture('pr7-nanosp-oversized.json');
-  const transport = new ReplayTransport(fixture.exchanges);
+  const transport = new ReplayTransport(withAppCheck(fixture.exchanges));
   const ledger = new QrlLedger(transport, { maxPreimageBytes: 2048 });
   await rejects(ledger.signTransactionPreimage(PATH, streamedPreimage(fixture)), {
     code: 'signature-failed',
@@ -206,15 +219,26 @@ test('recorded wrong-CLA and unknown-INS answers map to wrong-app and unsupporte
 });
 
 test('requireQrlApp refuses the dashboard and the QRL 1.0 app', async () => {
-  const appInfo = (name: string, version: string): string => {
-    const enc = (s: string): string => toHex(new TextEncoder().encode(s));
-    const len = (s: string): string => s.length.toString(16).padStart(2, '0');
-    return `01${len(name)}${enc(name)}${len(version)}${enc(version)}01009000`;
-  };
   for (const name of ['BOLOS', 'QRL']) {
-    await rejects(new QrlLedger(scripted([appInfo(name, '1.0.0')])).requireQrlApp(), {
+    await rejects(new QrlLedger(scripted([appInfoReply(name, '1.0.0')])).requireQrlApp(), {
       code: 'wrong-app',
     });
+  }
+});
+
+test('with another app open, account and signing requests send nothing after B0 01', async () => {
+  const live = loadFixture('theqrl-nanosp-sign-live.json');
+  const preimage = fromHex(expectedString(live, 'preimage'));
+  const requests: Array<(ledger: QrlLedger) => Promise<unknown>> = [
+    (ledger) => ledger.getAccount(PATH),
+    (ledger) => ledger.verifyAddress(PATH),
+    (ledger) => ledger.signTransactionPreimage(PATH, preimage),
+    (ledger) => ledger.getVersion(),
+  ];
+  for (const request of requests) {
+    const transport = scripted([appInfoReply('Ethereum', '1.13.0')]);
+    await rejects(request(new QrlLedger(transport)), { code: 'wrong-app' });
+    assert.deepEqual(transport.sent, ['b001000000']);
   }
 });
 
@@ -224,35 +248,35 @@ test('a locked device maps to locked', async () => {
 
 test('malformed device answers are refused', async () => {
   const identity = loadFixture('theqrl-nanosp-identity.json');
-  const derive = identity.exchanges.slice(3);
-  const responses = derive.map((e) => e.response);
+  const app = appCheckExchange().response;
+  const responses = identity.exchanges.slice(3).map((e) => e.response);
 
   // Address without the Q prefix.
-  const noPrefix = [`52${responses[0]?.slice(2)}`, ...responses.slice(1)];
+  const noPrefix = [app, `52${responses[0]?.slice(2)}`, ...responses.slice(1)];
   await rejects(new QrlLedger(scripted(noPrefix)).getAccount(PATH), {
     code: 'malformed-response',
   });
 
   // A public key chunk one byte short.
-  const shortChunk = [...responses];
-  shortChunk[1] = `${responses[1]?.slice(0, -6)}9000`;
+  const shortChunk = [app, ...responses];
+  shortChunk[2] = `${responses[1]?.slice(0, -6)}9000`;
   await rejects(new QrlLedger(scripted(shortChunk)).getAccount(PATH), {
     code: 'malformed-response',
   });
 
   // A public key that does not hash to the address.
-  const tampered = [...responses];
+  const tampered = [app, ...responses];
   const chunk = responses[5] ?? '';
-  tampered[5] = `${chunk.slice(0, 10)}${chunk[10] === '0' ? '1' : '0'}${chunk.slice(11)}`;
+  tampered[6] = `${chunk.slice(0, 10)}${chunk[10] === '0' ? '1' : '0'}${chunk.slice(11)}`;
   await rejects(new QrlLedger(scripted(tampered)).getAccount(PATH), { code: 'key-mismatch' });
 
   // A response shorter than a status word.
-  await rejects(new QrlLedger(scripted(['90'])).getVersion(), { code: 'malformed-response' });
+  await rejects(new QrlLedger(scripted(['90'])).getAppInfo(), { code: 'malformed-response' });
 });
 
 test('a short signature chunk is refused', async () => {
   const fixture = loadFixture('theqrl-nanosp-sign-live.json');
-  const responses = fixture.exchanges.map((e) => e.response);
+  const responses = [appCheckExchange().response, ...fixture.exchanges.map((e) => e.response)];
   const last = responses.length - 1;
   responses[last] = `${responses[last]?.slice(0, -6)}9000`;
   await rejects(
@@ -277,6 +301,7 @@ test('input checks reject before any APDU', async () => {
   const transport = new ReplayTransport([]);
   const ledger = new QrlLedger(transport);
   await rejects(ledger.getAccount("m/44'/60'/0'/0/0"), { code: 'invalid-path' });
+  await rejects(ledger.verifyAddress("m/44'/238'/0/0/0"), { code: 'invalid-path' });
   await rejects(ledger.signTransactionPreimage("m/44'/238'/0'/0'/0", Uint8Array.from([2])), {
     code: 'invalid-path',
   });
@@ -286,18 +311,23 @@ test('input checks reject before any APDU', async () => {
   transport.assertDone();
 });
 
-test('concurrent requests run one at a time', async () => {
+test('clients that share a transport run their jobs one at a time', async () => {
   const identity = loadFixture('theqrl-nanosp-identity.json');
-  const derive = identity.exchanges.slice(3);
-  const replay = new ReplayTransport([...derive, ...derive]);
+  const job = withAppCheck(identity.exchanges.slice(3));
+  const replay = new ReplayTransport([...job, ...job, ...job]);
   const slow: LedgerTransport = {
     async exchange(apdu: Uint8Array): Promise<Uint8Array> {
       await new Promise((resolve) => setTimeout(resolve, 1));
       return replay.exchange(apdu);
     },
   };
-  const ledger = new QrlLedger(slow);
-  const [a, b] = await Promise.all([ledger.getAccount(PATH), ledger.getAccount(PATH)]);
-  assert.equal(a.address, b.address);
+  const first = new QrlLedger(slow);
+  const second = new QrlLedger(slow);
+  const results = await Promise.all([
+    first.getAccount(PATH),
+    second.getAccount(PATH),
+    first.getAccount(PATH),
+  ]);
+  assert.ok(results.every((r) => r.address === results[0]?.address));
   replay.assertDone();
 });

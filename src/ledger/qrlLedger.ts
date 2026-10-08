@@ -3,8 +3,8 @@
  * of the transport.
  *
  * Protocol, as exercised against the app on Speculos:
- * - B0 01: BOLOS get app and version; must name `QRL v2.0` before any E0 command,
- *   because other apps share CLA E0.
+ * - B0 01: BOLOS get app and version. Every app command first checks that it
+ *   names `QRL v2.0`, because other apps share CLA E0.
  * - E0 05, P2=0: derive the account at a path and return `Q` plus its 64-byte
  *   address (P1=1 shows it on the device first). P2=1..11 then return the
  *   2,592-byte ML-DSA-87 public key in chunks (10 x 258 + 12). The chunks are
@@ -13,6 +13,9 @@
  * - E0 06: P1=0 sends the path, P1=1 streams preimage chunks, P1=2 sends the
  *   last chunk and blocks until the user decides; it answers with signature
  *   chunk 0, and P1=2 with P2=1..17 returns the rest (17 x 258 + 241 = 4,627).
+ *
+ * Jobs on one transport run one at a time, across every client that shares
+ * the transport, so a multi-APDU sequence never interleaves with another.
  *
  * The device hashes the preimage with Keccak-256 and signs with the fixed
  * context "ZOND" || 01 || 01 00 00. Verifying a returned signature belongs to
@@ -53,6 +56,9 @@ const SIG_CHUNK_BYTES = 258;
 const SIG_LAST_CHUNK_BYTES = MLDSA87.SIGNATURE_BYTES - (SIG_CHUNKS - 1) * SIG_CHUNK_BYTES;
 const PK_LAST_CHUNK_BYTES = MLDSA87.PUBLIC_KEY_BYTES - (PK_CHUNKS - 1) * PK_CHUNK_BYTES;
 
+/** One job queue per transport, shared by every client on that transport. */
+const queues = new WeakMap<LedgerTransport, Promise<unknown>>();
+
 export interface LedgerAppInfo {
   name: string;
   version: string;
@@ -91,17 +97,20 @@ function malformed(what: string): LedgerError {
 export class QrlLedger {
   private readonly transport: LedgerTransport;
   private readonly maxPreimageBytes: number;
-  private tail: Promise<unknown> = Promise.resolve();
 
   constructor(transport: LedgerTransport, options: QrlLedgerOptions = {}) {
     this.transport = transport;
     this.maxPreimageBytes = options.maxPreimageBytes ?? DEFAULT_MAX_PREIMAGE_BYTES;
   }
 
-  /** Run jobs one at a time so multi-APDU sequences never interleave. */
+  /** Run jobs on this transport one at a time so multi-APDU sequences never interleave. */
   private serial<T>(job: () => Promise<T>): Promise<T> {
-    const run = this.tail.then(job, job);
-    this.tail = run.catch(() => undefined);
+    const tail = queues.get(this.transport) ?? Promise.resolve();
+    const run = tail.then(job, job);
+    queues.set(
+      this.transport,
+      run.catch(() => undefined),
+    );
     return run;
   }
 
@@ -123,30 +132,27 @@ export class QrlLedger {
     return data;
   }
 
-  /** Name and version of the open app (or the dashboard), via BOLOS B0 01. */
-  getAppInfo(): Promise<LedgerAppInfo> {
-    return this.serial(async () => {
-      const data = await this.command(encodeApdu(CLA_BOLOS, INS_BOLOS_APP_AND_VERSION, 0, 0));
-      if (data[0] !== 0x01) throw malformed('app info format');
-      let offset = 1;
-      const readString = (): string => {
-        const length = data[offset];
-        if (length === undefined || offset + 1 + length > data.length) {
-          throw malformed('app info length');
-        }
-        const value = new TextDecoder().decode(data.subarray(offset + 1, offset + 1 + length));
-        offset += 1 + length;
-        return value;
-      };
-      const name = readString();
-      const version = readString();
-      return { name, version };
-    });
+  private async readAppInfo(): Promise<LedgerAppInfo> {
+    const data = await this.command(encodeApdu(CLA_BOLOS, INS_BOLOS_APP_AND_VERSION, 0, 0));
+    if (data[0] !== 0x01) throw malformed('app info format');
+    let offset = 1;
+    const readString = (): string => {
+      const length = data[offset];
+      if (length === undefined || offset + 1 + length > data.length) {
+        throw malformed('app info length');
+      }
+      const value = new TextDecoder().decode(data.subarray(offset + 1, offset + 1 + length));
+      offset += 1 + length;
+      return value;
+    };
+    const name = readString();
+    const version = readString();
+    return { name, version };
   }
 
-  /** Throws `wrong-app` unless the QRL v2.0 app is the one open. */
-  async requireQrlApp(): Promise<LedgerAppInfo> {
-    const info = await this.getAppInfo();
+  /** Runs inside a job, before any E0 command. */
+  private async assertQrlApp(): Promise<LedgerAppInfo> {
+    const info = await this.readAppInfo();
     if (info.name !== QRL_LEDGER_APP_NAME) {
       throw new LedgerError(
         'wrong-app',
@@ -156,8 +162,19 @@ export class QrlLedger {
     return info;
   }
 
+  /** Name and version of the open app (or the dashboard), via BOLOS B0 01. */
+  getAppInfo(): Promise<LedgerAppInfo> {
+    return this.serial(() => this.readAppInfo());
+  }
+
+  /** Throws `wrong-app` unless the QRL v2.0 app is the one open. */
+  requireQrlApp(): Promise<LedgerAppInfo> {
+    return this.serial(() => this.assertQrlApp());
+  }
+
   getVersion(): Promise<LedgerAppVersion> {
     return this.serial(async () => {
+      await this.assertQrlApp();
       const data = await this.command(encodeApdu(CLA_QRL, INS.GET_VERSION, 0, 0));
       if (data.length !== 3) throw malformed('version length');
       return { major: data[0] ?? 0, minor: data[1] ?? 0, patch: data[2] ?? 0 };
@@ -166,14 +183,15 @@ export class QrlLedger {
 
   getAppName(): Promise<string> {
     return this.serial(async () => {
+      await this.assertQrlApp();
       const data = await this.command(encodeApdu(CLA_QRL, INS.GET_APP_NAME, 0, 0));
       return new TextDecoder().decode(data);
     });
   }
 
-  private async deriveAddress(path: string, display: boolean): Promise<string> {
+  private async deriveAddress(pathBytes: Uint8Array, display: boolean): Promise<string> {
     const data = await this.command(
-      encodeApdu(CLA_QRL, INS.GET_PUBLIC_KEY, display ? 1 : 0, 0, encodeQrlPath(path)),
+      encodeApdu(CLA_QRL, INS.GET_PUBLIC_KEY, display ? 1 : 0, 0, pathBytes),
     );
     if (data.length !== 1 + ADDRESS_BYTES || data[0] !== ADDRESS_PREFIX) {
       throw malformed('address response');
@@ -182,9 +200,11 @@ export class QrlLedger {
   }
 
   /** Derive the account at `path` without a device prompt and read its public key. */
-  getAccount(path: string): Promise<LedgerAccount> {
+  async getAccount(path: string): Promise<LedgerAccount> {
+    const pathBytes = encodeQrlPath(path);
     return this.serial(async () => {
-      const address = await this.deriveAddress(path, false);
+      await this.assertQrlApp();
+      const address = await this.deriveAddress(pathBytes, false);
       const chunks: Uint8Array[] = [];
       for (let index = 0; index < PK_CHUNKS; index++) {
         const chunk = await this.command(encodeApdu(CLA_QRL, INS.GET_PUBLIC_KEY, 0, index + 1));
@@ -204,8 +224,12 @@ export class QrlLedger {
   }
 
   /** Show the address of `path` on the device; resolves once the user confirms it. */
-  verifyAddress(path: string): Promise<string> {
-    return this.serial(() => this.deriveAddress(path, true));
+  async verifyAddress(path: string): Promise<string> {
+    const pathBytes = encodeQrlPath(path);
+    return this.serial(async () => {
+      await this.assertQrlApp();
+      return this.deriveAddress(pathBytes, true);
+    });
   }
 
   /**
@@ -224,6 +248,7 @@ export class QrlLedger {
     }
     const blind = info.needsBlindSigning;
     return this.serial(async () => {
+      await this.assertQrlApp();
       await this.command(encodeApdu(CLA_QRL, INS.SIGN_TX, 0, 0, pathBytes));
       const chunks: Uint8Array[] = [];
       for (let o = 0; o < preimage.length; o += MAX_APDU_DATA_BYTES) {
