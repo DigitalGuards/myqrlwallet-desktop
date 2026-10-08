@@ -1,0 +1,50 @@
+{
+  "description": "Edge case: sign-reject.",
+  "flow": "sign-reject",
+  "build": {
+    "repo": "cyyber/ledger-app-zond",
+    "ref": "refs/pull/7/merge",
+    "pullRequest": 7,
+    "head": "597bc6b5f768a8a2d98f5a94e7de29874da04e7f",
+    "base": "539e695f6b7d52a04ea58f9ed9486c9b583adb2a",
+    "ciRun": 37717670601,
+    "elfSha256": {
+      "nanosp": "14f85360ee7658237e05a46aa2e795e497140bbea833fb2cd8990ffd9100b46f",
+      "stax": "749b417bda55f86867fabca3b491ea775a6a0284380d9bc769ea51580f2c649a"
+    }
+  },
+  "emulator": {
+    "speculos": "0.27.1",
+    "qemuUser": "8.2.2",
+    "seed": "Speculos default test mnemonic"
+  },
+  "model": "nanosp",
+  "path": "m/44'/238'/0'/0/0",
+  "sw": "6985",
+  "preimage": "02f85d8330182580843b9aca00843b9aca0e83015f90b840b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b48080c08301000080",
+  "deviceScreens": [
+    "Review transaction",
+    "From (1/3) | QB56D155e3707CBBb | 86ff7f9Cf232dBBB33 | Bc54C4e743E5D50DC",
+    "From (2/3) | 2747B30811D9Cf690B | A386fb5dAee9A6A011 | 44fc0045D3869daA9",
+    "From (3/3) | 4cFc7577F846AB4F1 | Aa519f3",
+    "Amount | 0 QRL",
+    "To (1/3) | QB4B4b4B4b4B4b4 | b4b4B4b4B4B4b4B | 4B4b4b4B4b4B4b4",
+    "To (2/3) | B4B4B4B4B4B4b4B | 4b4B4B4b4B4B4B4 | B4b4b4b4b4B4B4b",
+    "To (3/3) | 4B4B4B4b4b4B4B4 | b4b4B4b4b4b4b4B | 4B4b4B4B4",
+    "Max fees | 0.00000000100000001 | 4 QRL",
+    "Sign transaction",
+    "Reject transaction"
+  ],
+  "exchanges": [
+    {
+      "label": "sign: path",
+      "apdu": "e006000015058000002c800000ee800000000000000000000000",
+      "response": "9000"
+    },
+    {
+      "label": "sign: last chunk (user review)",
+      "apdu": "e00602006002f85d8330182580843b9aca00843b9aca0e83015f90b840b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b48080c08301000080",
+      "response": "6985"
+    }
+  ]
+}

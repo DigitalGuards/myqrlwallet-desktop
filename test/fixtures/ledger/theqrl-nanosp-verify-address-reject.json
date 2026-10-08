@@ -1,0 +1,37 @@
+{
+  "description": "Edge case: verify-address-reject.",
+  "flow": "verify-address-reject",
+  "build": {
+    "repo": "theQRL/ledger-app-qrl-v2",
+    "ref": "main",
+    "commit": "b697908c92f9e88c4b0f017a70239dadf0474fe3",
+    "ciRun": 34480814201,
+    "elfSha256": {
+      "nanosp": "f104499fe49c7e47e832e220a2952f2fa7759ea252f9737f512fe098201b8346",
+      "stax": "93d624f3f93f0644a23c00db274e8f51e8635795d6cbbedf244edee0ede7964a"
+    }
+  },
+  "emulator": {
+    "speculos": "0.27.1",
+    "qemuUser": "8.2.2",
+    "seed": "Speculos default test mnemonic"
+  },
+  "model": "nanosp",
+  "path": "m/44'/238'/0'/0/0",
+  "sw": "6985",
+  "deviceScreens": [
+    "Getting address | Verify QRL v2.0  | address",
+    "Address (1/3) | QB56D155e3707CBBb | 86ff7f9Cf232dBBB33 | Bc54C4e743E5D50DC",
+    "Address (2/3) | 2747B30811D9Cf690B | A386fb5dAee9A6A011 | 44fc0045D3869daA9",
+    "Address (3/3) | 4cFc7577F846AB4F1 | Aa519f3",
+    "Confirm",
+    "Cancel"
+  ],
+  "exchanges": [
+    {
+      "label": "get address (display)",
+      "apdu": "e005010015058000002c800000ee800000000000000000000000",
+      "response": "6985"
+    }
+  ]
+}
