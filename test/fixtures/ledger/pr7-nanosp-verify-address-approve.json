@@ -1,0 +1,38 @@
+{
+  "description": "Edge case: verify-address-approve.",
+  "flow": "verify-address-approve",
+  "build": {
+    "repo": "cyyber/ledger-app-zond",
+    "ref": "refs/pull/7/merge",
+    "pullRequest": 7,
+    "head": "597bc6b5f768a8a2d98f5a94e7de29874da04e7f",
+    "base": "539e695f6b7d52a04ea58f9ed9486c9b583adb2a",
+    "ciRun": 37717670601,
+    "elfSha256": {
+      "nanosp": "14f85360ee7658237e05a46aa2e795e497140bbea833fb2cd8990ffd9100b46f",
+      "stax": "749b417bda55f86867fabca3b491ea775a6a0284380d9bc769ea51580f2c649a"
+    }
+  },
+  "emulator": {
+    "speculos": "0.27.1",
+    "qemuUser": "8.2.2",
+    "seed": "Speculos default test mnemonic"
+  },
+  "model": "nanosp",
+  "path": "m/44'/238'/0'/0/0",
+  "sw": "9000",
+  "deviceScreens": [
+    "Verify QRL v2.0  | address",
+    "Address (1/3) | QB56D155e3707CBBb | 86ff7f9Cf232dBBB33 | Bc54C4e743E5D50DC",
+    "Address (2/3) | 2747B30811D9Cf690B | A386fb5dAee9A6A011 | 44fc0045D3869daA9",
+    "Address (3/3) | 4cFc7577F846AB4F1 | Aa519f3",
+    "Confirm"
+  ],
+  "exchanges": [
+    {
+      "label": "get address (display)",
+      "apdu": "e005010015058000002c800000ee800000000000000000000000",
+      "response": "51b56d155e3707cbbb86ff7f9cf232dbbb33bc54c4e743e5d50dc2747b30811d9cf690ba386fb5daee9a6a01144fc0045d3869daa94cfc7577f846ab4f1aa519f39000"
+    }
+  ]
+}
