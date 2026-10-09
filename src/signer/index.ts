@@ -31,6 +31,7 @@ import {
 import { wipe } from './zeroize';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../shared/constants';
 import type { EncryptedSeed, SignerOutbound, SignerRequest } from '../shared/protocol';
+import { isRecord } from '../shared/guards';
 import { parseSignerRequest } from '../shared/protocolGuards';
 
 // process.parentPort exists only inside a utilityProcess.fork child.
@@ -244,7 +245,16 @@ async function handle(req: SignerRequest): Promise<void> {
 parentPort.on('message', (e) => {
   // Wire input: anything that does not parse as a request is dropped.
   const req = parseSignerRequest(e.data);
-  if (req) void handle(req);
+  if (req) {
+    void handle(req);
+    return;
+  }
+  // A malformed payload that still carries a usable id gets an immediate error
+  // so main does not wait out its request timeout; without an id it is dropped.
+  const id = isRecord(e.data) ? e.data['id'] : undefined;
+  if (typeof id === 'number' && Number.isSafeInteger(id)) {
+    send({ id, ok: false, error: 'malformed request' });
+  }
 });
 
 // Wipe on unexpected termination paths too.
