@@ -78,9 +78,9 @@ export interface ConfirmSummary {
 /** What main knows beyond the request itself when it draws the confirmation. */
 export interface ConfirmContext {
   /** Main's record of building this exact transaction, when it still holds one. */
-  build?: GasBuildRecord;
+  build?: GasBuildRecord | undefined;
   /** The latest block's gas limit, already read on the transaction path. */
-  blockGasLimit?: bigint;
+  blockGasLimit?: bigint | undefined;
 }
 
 /**

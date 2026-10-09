@@ -18,7 +18,7 @@ export function wipe(buf: Uint8Array | Buffer | null | undefined): void {
 }
 
 /** Wipe several buffers. */
-export function wipeAll(...bufs: Array<Uint8Array | Buffer | null | undefined>): void {
+export function wipeAll(...bufs: (Uint8Array | Buffer | null | undefined)[]): void {
   for (const b of bufs) wipe(b);
 }
 

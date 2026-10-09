@@ -21,7 +21,7 @@ process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/te
 const rpc = await import('../src/main/rpc');
 const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
 
-type FetchArgs = { url: string; body: unknown };
+interface FetchArgs { url: string; body: unknown }
 let calls: FetchArgs[] = [];
 let responder: (url: string) => Response | Error;
 let identityOverride: ((url: string, method: string) => Response | undefined) | undefined;
@@ -56,7 +56,7 @@ beforeEach(() => {
     const out = responder(url);
     if (out instanceof Error) return Promise.reject(out);
     return Promise.resolve(out);
-  }) as typeof fetch;
+  });
 });
 
 afterEach(() => {
@@ -180,7 +180,7 @@ test('a dual transport failure chains the primary error as cause', async () => {
     assert.ok(err instanceof rpc.RpcTransportError);
     assert.match(err.message, /secondary\.example/);
     assert.ok(err.cause instanceof Error, 'primary error must be chained as cause');
-    assert.match((err.cause as Error).message, /primary\.example/);
+    assert.match((err.cause).message, /primary\.example/);
     return true;
   });
 });

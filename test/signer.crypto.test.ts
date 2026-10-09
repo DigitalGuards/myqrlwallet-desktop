@@ -42,7 +42,7 @@ const FAST_KDF: KdfParams = {
   ...KDF_DEFAULTS,
   memoryCost: 8192,
   timeCost: 1,
-} as unknown as KdfParams;
+};
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 

@@ -50,7 +50,14 @@ export default [
   eslintJs.configs.recommended,
   // The plugin's flat/recommended array registers the @typescript-eslint plugin
   // and its TypeScript parser/languageOptions for us.
-  ...tsPlugin.configs['flat/recommended'],
+  ...tsPlugin.configs['flat/strict-type-checked'],
+  ...tsPlugin.configs['flat/stylistic-type-checked'],
+
+  // Plain JS / CJS files sit outside the TypeScript project: no type-aware rules.
+  {
+    files: ['**/*.{js,cjs,mjs}'],
+    ...tsPlugin.configs['flat/disable-type-checked'],
+  },
 
   // Default rules + Node globals for the TypeScript sources (main, preload,
   // signer, shared). Browser globals are layered on per folder below.
@@ -59,11 +66,34 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
       globals: {
         ...globals.node,
       },
     },
     rules: {
+      // No type laundering (owner mandate). The compiler's view of a value is
+      // never widened or rewritten by hand: wire input is `unknown` and gets
+      // runtime guards. `as const` stays legal under assertionStyle 'never'.
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
+      '@typescript-eslint/ban-ts-comment': [
+        'error',
+        {
+          'ts-ignore': true,
+          'ts-nocheck': true,
+          'ts-expect-error': 'allow-with-description',
+          minimumDescriptionLength: 10,
+        },
+      ],
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      // Narrowed wire records are read with bracket access (isRecord guards).
+      '@typescript-eslint/dot-notation': ['error', { allowIndexSignaturePropertyAccess: true }],
+      '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
       // The crypto fence. The signer + test overrides below switch it off.
       'no-restricted-imports': ['error', cryptoImportGuard],
       // The renderer must reach the wallet only via window.qrlWallet. Direct
@@ -135,6 +165,23 @@ export default [
     },
     rules: {
       'no-restricted-imports': 'off',
+      // Tests exercise malformed input and mock internals, so assertions and
+      // loose typing are legitimate there. The production rules above stay at
+      // error for every file outside test/.
+      '@typescript-eslint/consistent-type-assertions': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-base-to-string': 'off',
     },
   },
 ];

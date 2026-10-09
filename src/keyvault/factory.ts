@@ -21,6 +21,11 @@ export interface KeyVaultOptions {
   allowSafeStorageFallback?: boolean;
 }
 
+/** `process.resourcesPath` is undefined outside a packaged Electron runtime. */
+function resourcesPath(): string | undefined {
+  return process.resourcesPath;
+}
+
 /**
  * Build the candidate vaults. `createKeyVault` returns a small resolver so the
  * async availability checks run at most once.
@@ -28,7 +33,7 @@ export interface KeyVaultOptions {
 export function createKeyVault(opts: KeyVaultOptions = {}): { resolve(): Promise<KeyVault> } {
   let cached: Promise<KeyVault> | null = null;
 
-  const helperPath = path.join(process.resourcesPath ?? app.getAppPath(), 'qrl-keychain-helper');
+  const helperPath = path.join(resourcesPath() ?? app.getAppPath(), 'qrl-keychain-helper');
   // `signed: app.isPackaged` is a COARSE proxy: it distinguishes a packaged app
   // from a `electron .` dev run, but does not itself prove a non-ad-hoc
   // Developer ID signature. The real protection does not depend on this flag:
@@ -49,7 +54,7 @@ export function createKeyVault(opts: KeyVaultOptions = {}): { resolve(): Promise
 
   return {
     resolve(): Promise<KeyVault> {
-      if (!cached) cached = pick();
+      cached ??= pick();
       return cached;
     },
   };

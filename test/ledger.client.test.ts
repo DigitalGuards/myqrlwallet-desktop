@@ -229,7 +229,7 @@ test('requireQrlApp refuses the dashboard and the QRL 1.0 app', async () => {
 test('with another app open, account and signing requests send nothing after B0 01', async () => {
   const live = loadFixture('theqrl-nanosp-sign-live.json');
   const preimage = fromHex(expectedString(live, 'preimage'));
-  const requests: Array<(ledger: QrlLedger) => Promise<unknown>> = [
+  const requests: ((ledger: QrlLedger) => Promise<unknown>)[] = [
     (ledger) => ledger.getAccount(PATH),
     (ledger) => ledger.verifyAddress(PATH),
     (ledger) => ledger.signTransactionPreimage(PATH, preimage),

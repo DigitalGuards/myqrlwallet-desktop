@@ -49,10 +49,10 @@ test('signTransaction signs a type-2 tx fully offline (no provider, no net_versi
   assert.equal(result.kind, 'transaction');
   assert.equal(result.signer, address, 'signer must be the unlocked account');
   assert.ok(result.rawTransaction, 'must return a raw signed transaction');
-  assert.match(result.rawTransaction!, /^0x[0-9a-fA-F]+$/, 'raw tx must be 0x hex');
+  assert.match(result.rawTransaction, /^0x[0-9a-fA-F]+$/, 'raw tx must be 0x hex');
   // A type-2 ML-DSA-87 signed tx is far larger than any legacy tx; a few KB of
   // signature alone. Guard against an empty/truncated envelope.
-  assert.ok(result.rawTransaction!.length > 200, 'raw tx must carry the signature');
+  assert.ok(result.rawTransaction.length > 200, 'raw tx must carry the signature');
   assert.equal(result.signature, result.rawTransaction, 'signature mirrors rawTransaction');
 });
 
@@ -94,11 +94,11 @@ test('signTransaction carries calldata into the signed envelope', async () => {
     { ...unsignedTx(address, address), gas, data: '0xabcd1234' },
     CHAIN_ID,
   );
-  assert.match(withData.rawTransaction!, /^0x[0-9a-fA-F]+$/);
+  assert.match(withData.rawTransaction, /^0x[0-9a-fA-F]+$/);
   // The calldata must be encoded into the signed tx, so it is strictly longer
   // than the same transfer with no data.
   assert.ok(
-    withData.rawTransaction!.length > bare.rawTransaction!.length,
+    withData.rawTransaction.length > bare.rawTransaction.length,
     'calldata must grow the raw tx',
   );
 });
@@ -111,5 +111,5 @@ test('signTransaction signs a zero-value transfer', async () => {
     CHAIN_ID,
   );
   assert.equal(result.kind, 'transaction');
-  assert.match(result.rawTransaction!, /^0x[0-9a-fA-F]+$/);
+  assert.match(result.rawTransaction, /^0x[0-9a-fA-F]+$/);
 });

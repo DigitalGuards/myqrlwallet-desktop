@@ -36,7 +36,7 @@ export function expectedString(fixture: LedgerFixture, key: string): string {
 
 export function fixturePath(fixture: LedgerFixture): string {
   assert.equal(typeof fixture.path, 'string', 'fixture path');
-  return fixture.path as string;
+  return fixture.path!;
 }
 
 /**
@@ -46,7 +46,7 @@ export function fixturePath(fixture: LedgerFixture): string {
  */
 export function appCheckExchange(): RecordedExchange {
   const first = loadFixture('theqrl-nanosp-identity.json').exchanges[0];
-  assert.ok(first && first.apdu === 'b001000000', 'identity fixture starts with B0 01');
+  assert.ok(first?.apdu === 'b001000000', 'identity fixture starts with B0 01');
   return first;
 }
 

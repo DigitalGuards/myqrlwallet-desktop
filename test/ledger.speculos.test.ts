@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import { LedgerError, createSpeculosTransport } from '../src/ledger';
 import { toHex } from '../src/ledger/bytes';
 
-type FetchCall = { url: string; init: RequestInit | undefined };
+interface FetchCall { url: string; init: RequestInit | undefined }
 
 function fakeFetch(reply: () => Response, calls: FetchCall[] = []): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(input), init });
     return reply();
-  }) as typeof fetch;
+  });
 }
 
 const isTransportError = (error: unknown): boolean =>
@@ -59,7 +59,7 @@ test('posts the APDU as hex to /apdu and returns the response bytes', async () =
 });
 
 test('HTTP errors, bad replies, and network failures are transport errors', async () => {
-  const replies: Array<() => Response> = [
+  const replies: (() => Response)[] = [
     () => new Response('nope', { status: 500 }),
     () => Response.json({ data: 'zz' }),
     () => Response.json({ data: '90' }),
@@ -82,7 +82,7 @@ test('HTTP errors, bad replies, and network failures are transport errors', asyn
     isPackaged: false,
     fetch: (async () => {
       throw new TypeError('fetch failed');
-    }) as typeof fetch,
+    }),
   });
   await assert.rejects(down.exchange(Uint8Array.from([0xe0, 0x03, 0, 0, 0])), isTransportError);
 });
