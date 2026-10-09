@@ -151,7 +151,20 @@ export const KDF_DEFAULTS = {
   saltBytes: 16,
 } as const;
 
-export type KdfParams = typeof KDF_DEFAULTS;
+/**
+ * Argon2id parameters as persisted in an envelope. Plain numbers: a stored
+ * envelope is read back from disk, so the type cannot pin today's defaults.
+ * `isKdfParams` (seedFile) validates every field before one is trusted.
+ */
+export interface KdfParams {
+  algorithm: number;
+  version: number;
+  memoryCost: number;
+  timeCost: number;
+  parallelism: number;
+  outputLen: number;
+  saltBytes: number;
+}
 
 /** AES-256-GCM envelope constants. */
 export const AEAD = {

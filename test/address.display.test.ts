@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { formatQrlAddressFingerprint, groupQrlAddress } from '../src/shared/address';
 
-const Q128 = `Q${'11111111'}${'2'.repeat(52)}${'33333333'}${'4'.repeat(52)}${'55555555'}`;
-const Q40 = `Q${'11111111'}${'2'.repeat(8)}${'33333333'}${'4'.repeat(8)}${'55555555'}`;
+const Q128 = `Q11111111${'2'.repeat(52)}33333333${'4'.repeat(52)}55555555`;
+const Q40 = `Q11111111${'2'.repeat(8)}33333333${'4'.repeat(8)}55555555`;
 
 test('address fingerprint shows the first, middle, and final 8 hex characters', () => {
   assert.equal(formatQrlAddressFingerprint(Q128), 'Q11111111...33333333...55555555');

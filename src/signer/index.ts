@@ -31,20 +31,28 @@ import {
 import { wipe } from './zeroize';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../shared/constants';
 import type { EncryptedSeed, SignerOutbound, SignerRequest } from '../shared/protocol';
+import { isRecord } from '../shared/guards';
+import { parseSignerRequest } from '../shared/protocolGuards';
 
 // process.parentPort exists only inside a utilityProcess.fork child.
-const parentPort: Electron.ParentPort | undefined = process.parentPort;
-if (!parentPort) {
+function parentPortOrUndefined(): Electron.ParentPort | undefined {
+  return process.parentPort;
+}
+const maybeParentPort = parentPortOrUndefined();
+if (!maybeParentPort) {
   // Not launched by Electron utilityProcess; refuse to run (defense against
   // being executed as a plain node script that could be coaxed into signing).
   throw new Error('signer must be launched via utilityProcess.fork');
 }
+const parentPort: Electron.ParentPort = maybeParentPort;
 
 function send(msg: SignerOutbound): void {
-  parentPort!.postMessage(msg);
+  parentPort.postMessage(msg);
 }
 
-const session = new SignerSession(() => send({ type: 'signer:autolock' }));
+const session = new SignerSession(() => {
+  send({ type: 'signer:autolock' });
+});
 
 /**
  * Provision a fresh encrypted-seed envelope from EITHER a mnemonic or a raw
@@ -55,7 +63,7 @@ async function handleImport(
   source: { mnemonic?: string; hexSeed?: string },
   password: string,
 ): Promise<{ address: string; encrypted: EncryptedSeed }> {
-  let derived;
+  let derived: ReturnType<typeof deriveSeedFromMnemonic>;
   if (typeof source.mnemonic === 'string') {
     derived = deriveSeedFromMnemonic(source.mnemonic);
   } else if (typeof source.hexSeed === 'string') {
@@ -117,22 +125,31 @@ async function handle(req: SignerRequest): Promise<void> {
       }
       case 'signer:import': {
         const result = await handleImport(
-          { mnemonic: req.mnemonic, hexSeed: req.hexSeed },
+          {
+            ...(req.mnemonic === undefined ? {} : { mnemonic: req.mnemonic }),
+            ...(req.hexSeed === undefined ? {} : { hexSeed: req.hexSeed }),
+          },
           req.password,
         );
         send({ id: req.id, ok: true, type: 'signer:import', result });
         return;
       }
       case 'signer:unlock': {
+        let opened: { address: string; expiresAt: number };
         if (req.kekHex) {
           const kek = Buffer.from(req.kekHex, 'hex');
           try {
-            await session.unlock(req.encrypted, req.autolockMs, { kek }, now);
+            opened = await session.unlock(req.encrypted, req.autolockMs, { kek }, now);
           } finally {
             wipe(kek);
           }
         } else if (typeof req.password === 'string') {
-          await session.unlock(req.encrypted, req.autolockMs, { password: req.password }, now);
+          opened = await session.unlock(
+            req.encrypted,
+            req.autolockMs,
+            { password: req.password },
+            now,
+          );
         } else {
           throw new Error('unlock requires a password or a keychain KEK');
         }
@@ -141,7 +158,11 @@ async function handle(req: SignerRequest): Promise<void> {
           id: req.id,
           ok: true,
           type: 'signer:unlock',
-          result: { address: session.address!, unlockExpiresAt: session.expiresAt!, kekHex },
+          result: {
+            address: opened.address,
+            unlockExpiresAt: opened.expiresAt,
+            ...(kekHex === undefined ? {} : { kekHex }),
+          },
         });
         return;
       }
@@ -208,27 +229,38 @@ async function handle(req: SignerRequest): Promise<void> {
         session.lock();
         send({ id: req.id, ok: true, type: 'signer:shutdown', result: null });
         // Give the message a tick to flush, then exit.
-        setTimeout(() => process.exit(0), 50);
+        setTimeout(() => {
+          process.exit(0);
+        }, 50);
         return;
-      }
-      default: {
-        const _exhaustive: never = req;
-        throw new Error(`unknown signer request ${(_exhaustive as { type?: string }).type}`);
       }
     }
   } catch (err) {
     // Never echo the password or any secret; only a short message.
     const error = err instanceof Error ? err.message : 'signer error';
-    send({ id: (req as { id?: number }).id ?? -1, ok: false, error });
+    send({ id: req.id, ok: false, error });
   }
 }
 
-parentPort.on('message', (e: { data: SignerRequest }) => {
-  void handle(e.data);
+parentPort.on('message', (e) => {
+  // Wire input: anything that does not parse as a request is dropped.
+  const req = parseSignerRequest(e.data);
+  if (req) {
+    void handle(req);
+    return;
+  }
+  // A malformed payload that still carries a usable id gets an immediate error
+  // so main does not wait out its request timeout; without an id it is dropped.
+  const id = isRecord(e.data) ? e.data['id'] : undefined;
+  if (typeof id === 'number' && Number.isSafeInteger(id)) {
+    send({ id, ok: false, error: 'malformed request' });
+  }
 });
 
 // Wipe on unexpected termination paths too.
-process.on('exit', () => session.lock());
+process.on('exit', () => {
+  session.lock();
+});
 
 // Announce readiness so main can resolve its fork promise.
 send({ type: 'signer:ready' });

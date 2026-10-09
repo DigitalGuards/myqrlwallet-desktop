@@ -60,7 +60,7 @@ beforeEach(() => {
       }
     })();
     return Promise.resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result })));
-  }) as typeof fetch;
+  });
 });
 
 afterEach(() => {
@@ -227,5 +227,5 @@ test('without a dApp limit the same chain holds on the wallet estimate', async (
   assert.equal(detailRow(detail, 'Gas limit:'), "120000 (this wallet's estimate)");
 
   const signed = await signTransaction(hexSeed, tx, EXPECTED_CHAIN_ID);
-  assert.equal(decodeType2Head(signed.rawTransaction!).gasLimit, 120_000n);
+  assert.equal(decodeType2Head(signed.rawTransaction).gasLimit, 120_000n);
 });

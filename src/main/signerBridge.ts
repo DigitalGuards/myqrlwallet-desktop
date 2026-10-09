@@ -8,31 +8,35 @@
  */
 import path from 'node:path';
 import { utilityProcess, type UtilityProcess } from 'electron';
+import { toError } from '../shared/guards';
 import type {
   CreateResult,
   EncryptedSeed,
   ImportResult,
-  SignerOutbound,
   SignerRequest,
   SignerStatus,
   UnlockResult,
 } from '../shared/protocol';
+import {
+  parseCreateResult,
+  parseImportResult,
+  parseNullResult,
+  parseSignerMessage,
+  parseSignerStatus,
+  parseUnlockResult,
+  type ResultParser,
+  type SignerMessage,
+} from '../shared/protocolGuards';
 import { parseSignatureResultForRequest } from '../shared/schemas';
 import type { SignatureRequest, SignatureResult } from '../shared/schemas';
 
+/** One in-flight request. `settle` runs the per-request result parser, so a
+ * malformed signer result rejects and never reaches a caller. */
 interface Pending {
-  resolve: (value: unknown) => void;
+  settle: (result: unknown) => void;
   reject: (err: Error) => void;
   timer: NodeJS.Timeout;
 }
-
-/**
- * Distributive Omit so each member of the SignerRequest union keeps its own
- * fields when `id` is stripped. A plain `Omit<SignerRequest, 'id'>` collapses
- * the union to its common keys (just `type`) and rejects member-specific props.
- */
-type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
-type SignerRequestPayload = WithoutId<SignerRequest>;
 
 const REQUEST_TIMEOUT_MS = 120_000; // generous: Argon2id can take ~0.5-1.5s
 const READY_TIMEOUT_MS = 15_000;
@@ -108,33 +112,36 @@ export class SignerBridge {
     });
     this.child = child;
 
-    child.on('message', (msg: SignerOutbound) => {
-      if ('type' in msg && msg.type === 'signer:ready') clearTimeout(startupTimer);
+    child.on('message', (data: unknown) => {
+      // Wire input from the signer process: a malformed message is dropped.
+      const msg = parseSignerMessage(data);
+      if (!msg) return;
+      if (msg.kind === 'ready') clearTimeout(startupTimer);
       this.onMessage(msg);
     });
-    child.on('exit', (code) => this.onExit(code));
+    child.on('exit', (code) => {
+      this.onExit(code);
+    });
     return ready;
   }
 
-  private onMessage(msg: SignerOutbound): void {
-    if ('type' in msg && msg.type === 'signer:ready') {
+  private onMessage(msg: SignerMessage): void {
+    if (msg.kind === 'ready') {
       this.readyResolve?.();
       this.readyResolve = null;
       this.readyReject = null;
       return;
     }
-    if ('type' in msg && msg.type === 'signer:autolock') {
+    if (msg.kind === 'autolock') {
       this.onSessionDropped();
       return;
     }
-    if ('id' in msg) {
-      const p = this.pending.get(msg.id);
-      if (!p) return;
-      this.pending.delete(msg.id);
-      clearTimeout(p.timer);
-      if (msg.ok) p.resolve((msg as { result: unknown }).result);
-      else p.reject(new Error(msg.error));
-    }
+    const p = this.pending.get(msg.id);
+    if (!p) return;
+    this.pending.delete(msg.id);
+    clearTimeout(p.timer);
+    if (msg.kind === 'ok') p.settle(msg.result);
+    else p.reject(new Error(msg.error));
   }
 
   private onExit(code: number): void {
@@ -161,23 +168,33 @@ export class SignerBridge {
     }
   }
 
-  private send<T>(req: SignerRequestPayload): Promise<T> {
+  private send<T>(build: (id: number) => SignerRequest, parse: ResultParser<T>): Promise<T> {
     const child = this.child;
     if (!child) return Promise.reject(new Error('signer not running'));
     const id = this.nextId++;
-    const full = { ...req, id } as SignerRequest;
+    const full = build(id);
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('signer request timed out'));
       }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
+      this.pending.set(id, {
+        settle: (result) => {
+          try {
+            resolve(parse(result));
+          } catch (err) {
+            reject(toError(err));
+          }
+        },
+        reject,
+        timer,
+      });
       child.postMessage(full);
     });
   }
 
   create(password: string): Promise<CreateResult> {
-    return this.send<CreateResult>({ type: 'signer:create', password });
+    return this.send((id) => ({ type: 'signer:create', id, password }), parseCreateResult);
   }
 
   /** Import from a mnemonic OR a hex extended seed (exactly one). */
@@ -185,7 +202,10 @@ export class SignerBridge {
     source: { mnemonic?: string; hexSeed?: string },
     password: string,
   ): Promise<ImportResult> {
-    return this.send<ImportResult>({ type: 'signer:import', ...source, password });
+    return this.send(
+      (id) => ({ type: 'signer:import', id, ...source, password }),
+      parseImportResult,
+    );
   }
 
   unlock(args: {
@@ -195,33 +215,36 @@ export class SignerBridge {
     kekHex?: string;
     wantKek?: boolean;
   }): Promise<UnlockResult> {
-    return this.send<UnlockResult>({ type: 'signer:unlock', ...args });
+    return this.send((id) => ({ type: 'signer:unlock', id, ...args }), parseUnlockResult);
   }
 
   async sign(request: SignatureRequest, chainId: number): Promise<SignatureResult> {
-    const result = await this.send<unknown>({ type: 'signer:sign', request, chainId });
+    const result = await this.send<unknown>(
+      (id) => ({ type: 'signer:sign', id, request, chainId }),
+      (value) => value,
+    );
     return parseSignatureResultForRequest(result, request);
   }
 
   lock(): Promise<null> {
-    return this.send<null>({ type: 'signer:lock' });
+    return this.send((id) => ({ type: 'signer:lock', id }), parseNullResult);
   }
 
   /** Re-arm the open session's autolock timer with a new bound (no-op success
    * while locked). Main <-> signer private; never reachable from the renderer. */
   setAutolock(autolockMs: number): Promise<null> {
-    return this.send<null>({ type: 'signer:setAutolock', autolockMs });
+    return this.send((id) => ({ type: 'signer:setAutolock', id, autolockMs }), parseNullResult);
   }
 
   status(): Promise<SignerStatus> {
-    return this.send<SignerStatus>({ type: 'signer:status' });
+    return this.send((id) => ({ type: 'signer:status', id }), parseSignerStatus);
   }
 
   async shutdown(): Promise<void> {
     // Mark shutting-down so onExit does not auto-restart the signer.
     this.shuttingDown = true;
     try {
-      await this.send<null>({ type: 'signer:shutdown' });
+      await this.send((id) => ({ type: 'signer:shutdown', id }), parseNullResult);
     } catch {
       /* may already be gone */
     }

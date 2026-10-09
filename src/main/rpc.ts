@@ -12,13 +12,7 @@
 import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH, RPC_URL, RPC_URL_SECONDARY } from './config';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
 import { rememberBuild } from './buildRecords';
-
-interface JsonRpcResponse<T> {
-  jsonrpc: '2.0';
-  id: number;
-  result?: T;
-  error?: { code: number; message: string };
-}
+import { isRecord } from '../shared/guards';
 
 /**
  * A TRANSPORT failure (endpoint unreachable, reset, timeout, gateway error):
@@ -36,8 +30,8 @@ function transportDetail(err: unknown): string {
   if (!(err instanceof Error)) return 'network error';
   if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'timeout';
   const cause = err.cause;
-  if (cause && typeof cause === 'object' && 'code' in cause) {
-    const code = (cause as { code?: unknown }).code;
+  if (isRecord(cause)) {
+    const code = cause['code'];
     if (typeof code === 'string' && code.length > 0) return code;
   }
   return err.message || 'network error';
@@ -45,7 +39,8 @@ function transportDetail(err: unknown): string {
 
 let rpcId = 0;
 
-async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Promise<T> {
+/** One JSON-RPC call; the result is node output and stays `unknown` until a caller validates it. */
+async function rpcCallOn(url: string, method: string, params: unknown[]): Promise<unknown> {
   const host = new URL(url).host;
   let res: Response;
   try {
@@ -64,9 +59,9 @@ async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Pro
   // A non-2xx here is a gateway/proxy-level failure (JSON-RPC rejections come
   // back as 200 + error body), so it counts as transport too.
   if (!res.ok) throw new RpcTransportError(`rpc ${method}: ${host} http ${res.status}`);
-  let body: JsonRpcResponse<T>;
+  let body: unknown;
   try {
-    body = (await res.json()) as JsonRpcResponse<T>;
+    body = await res.json();
   } catch {
     // A 200 whose body is not JSON is a gateway/interstitial (a Cloudflare
     // challenge or error page on the CF-fronted proxy), NOT a node answer:
@@ -76,42 +71,51 @@ async function rpcCallOn<T>(url: string, method: string, params: unknown[]): Pro
   }
   // A genuine JSON-RPC error means a node ANSWERED and refused: surface it (a
   // broadcast must NOT fail over on it).
-  if (body.error) throw new Error(`rpc ${method}: ${body.error.message}`);
+  if (!isRecord(body)) {
+    throw new RpcTransportError(`rpc ${method}: ${host} returned a non-object body`);
+  }
+  const rpcError = body['error'];
+  if (rpcError) {
+    const message = isRecord(rpcError) ? rpcError['message'] : undefined;
+    throw new Error(`rpc ${method}: ${typeof message === 'string' ? message : 'unknown error'}`);
+  }
   // 200 with neither result nor error is a malformed envelope (proxy noise),
   // not a node answer: treat as transport so it fails over like a non-JSON body.
-  if (body.result === undefined) {
+  const result = body['result'];
+  if (result === undefined) {
     throw new RpcTransportError(`rpc ${method}: ${host} returned no result`);
   }
-  return body.result;
+  return result;
 }
 
 /** Verify each endpoint before using its account data or sending a signed transaction. */
 async function assertEndpointIdentity(url: string): Promise<void> {
   const [chainId, genesis] = await Promise.all([
-    rpcCallOn<unknown>(url, 'qrl_chainId', []),
-    rpcCallOn<{ hash?: unknown } | null>(url, 'qrl_getBlockByNumber', ['0x0', false]),
+    rpcCallOn(url, 'qrl_chainId', []),
+    rpcCallOn(url, 'qrl_getBlockByNumber', ['0x0', false]),
   ]);
   if (
     typeof chainId !== 'string' ||
     !/^0x[0-9a-f]+$/i.test(chainId) ||
     BigInt(chainId) !== BigInt(EXPECTED_CHAIN_ID) ||
-    typeof genesis?.hash !== 'string' ||
-    genesis.hash.toLowerCase() !== EXPECTED_GENESIS_HASH
+    !isRecord(genesis) ||
+    typeof genesis['hash'] !== 'string' ||
+    genesis['hash'].toLowerCase() !== EXPECTED_GENESIS_HASH
   ) {
     throw new RpcIdentityError(`rpc endpoint ${new URL(url).host} does not match this v3 network`);
   }
 }
 
 /** Read-only call with independently qualified primary and secondary endpoints. */
-async function rpcRead<T>(method: string, params: unknown[]): Promise<T> {
+async function rpcRead(method: string, params: unknown[]): Promise<unknown> {
   try {
     await assertEndpointIdentity(RPC_URL);
-    return await rpcCallOn<T>(RPC_URL, method, params);
+    return await rpcCallOn(RPC_URL, method, params);
   } catch (primaryErr) {
     if (RPC_URL_SECONDARY && RPC_URL_SECONDARY !== RPC_URL) {
       try {
         await assertEndpointIdentity(RPC_URL_SECONDARY);
-        return await rpcCallOn<T>(RPC_URL_SECONDARY, method, params);
+        return await rpcCallOn(RPC_URL_SECONDARY, method, params);
       } catch {
         /* fall through to throw the primary error */
       }
@@ -122,30 +126,41 @@ async function rpcRead<T>(method: string, params: unknown[]): Promise<T> {
 
 const hexToBigInt = (h: string): bigint => BigInt(h);
 
+const QUANTITY_RE = /^0x[0-9a-fA-F]+$/;
+
+/** A read whose result must be a hex QUANTITY string; anything else is rejected. */
+async function rpcReadQuantity(method: string, params: unknown[]): Promise<string> {
+  const value = await rpcRead(method, params);
+  if (typeof value !== 'string' || !QUANTITY_RE.test(value)) {
+    throw new Error(`rpc ${method}: result is not a hex quantity`);
+  }
+  return value;
+}
+
 /**
  * Read the chain id from the node. Deliberately NO silent fallback: the chain
  * id is a signature-binding, replay-safety value, so an unreachable node must
  * fail the build/sign loudly rather than bind transactions to a guessed chain.
  */
 export async function getChainId(): Promise<number> {
-  const chainId = Number(hexToBigInt(await rpcRead<string>('qrl_chainId', [])));
+  const chainId = Number(hexToBigInt(await rpcReadQuantity('qrl_chainId', [])));
   if (chainId !== EXPECTED_CHAIN_ID) throw new RpcIdentityError('rpc chain identity changed');
   return chainId;
 }
 
 export async function getBalance(address: string): Promise<string> {
-  const hex = await rpcRead<string>('qrl_getBalance', [address, 'latest']);
+  const hex = await rpcReadQuantity('qrl_getBalance', [address, 'latest']);
   return hexToBigInt(hex).toString(10);
 }
 
 async function getTransactionCount(address: string): Promise<number> {
-  const hex = await rpcRead<string>('qrl_getTransactionCount', [address, 'pending']);
+  const hex = await rpcReadQuantity('qrl_getTransactionCount', [address, 'pending']);
   return Number(hexToBigInt(hex));
 }
 
 async function getGasPrice(): Promise<bigint> {
   try {
-    return hexToBigInt(await rpcRead<string>('qrl_gasPrice', []));
+    return hexToBigInt(await rpcReadQuantity('qrl_gasPrice', []));
   } catch {
     console.warn('fees: qrl_gasPrice unavailable, using the 1 gwei default');
     return 1_000_000_000n; // 1 gwei fallback, matches the web wallet default
@@ -196,11 +211,11 @@ interface LatestBlock {
   baseFeePerGas?: unknown;
 }
 
-const QUANTITY_RE = /^0x[0-9a-fA-F]+$/;
-
 async function getLatestBlock(): Promise<LatestBlock> {
-  const block = await rpcRead<LatestBlock | null>('qrl_getBlockByNumber', ['latest', false]);
-  return block ?? {};
+  const block = await rpcRead('qrl_getBlockByNumber', ['latest', false]);
+  if (block === null) return {};
+  if (!isRecord(block)) throw new Error('rpc qrl_getBlockByNumber: latest block is malformed');
+  return block;
 }
 
 /**
@@ -210,10 +225,7 @@ async function getLatestBlock(): Promise<LatestBlock> {
  */
 async function quoteFees(level: FeeLevel, latestBlock: Promise<LatestBlock>): Promise<FeeQuote> {
   try {
-    const [tip, block] = await Promise.all([
-      rpcRead<unknown>('qrl_maxPriorityFeePerGas', []),
-      latestBlock,
-    ]);
+    const [tip, block] = await Promise.all([rpcRead('qrl_maxPriorityFeePerGas', []), latestBlock]);
     const baseFee = block.baseFeePerGas;
     if (typeof tip !== 'string' || !QUANTITY_RE.test(tip)) {
       throw new Error('rpc qrl_maxPriorityFeePerGas: no usable tip');
@@ -244,7 +256,7 @@ async function estimateGas(
   fees: FeeQuote,
 ): Promise<bigint> {
   const estimated = hexToBigInt(
-    await rpcRead<string>('qrl_estimateGas', [
+    await rpcReadQuantity('qrl_estimateGas', [
       {
         from: req.from,
         to: req.to,
@@ -396,7 +408,10 @@ export async function sendRawTransaction(
   const broadcastOn = async (url: string): Promise<{ transactionHash: string }> => {
     await assertEndpointIdentity(url);
     try {
-      const hash = await rpcCallOn<string>(url, 'qrl_sendRawTransaction', [rawTx]);
+      const hash = await rpcCallOn(url, 'qrl_sendRawTransaction', [rawTx]);
+      if (typeof hash !== 'string') {
+        throw new Error(`rpc qrl_sendRawTransaction: ${new URL(url).host} returned no hash`);
+      }
       return { transactionHash: hash };
     } catch (err) {
       if (

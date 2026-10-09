@@ -61,7 +61,7 @@ export class SignerSession {
     autolockMs: number,
     secret: { password: string } | { kek: Buffer },
     now: number,
-  ): Promise<void> {
+  ): Promise<{ address: string; expiresAt: number }> {
     this.lock(); // tear down any prior session first
     if (!isQrlAddress(encrypted.address)) {
       throw new Error('invalid wallet address metadata');
@@ -88,7 +88,9 @@ export class SignerSession {
         wipe(seed);
       }
 
-      const autolockTimer = setTimeout(() => this.handleAutoLock(), autolockMs);
+      const autolockTimer = setTimeout(() => {
+        this.handleAutoLock();
+      }, autolockMs);
       // Do not keep the Node event loop alive solely for the autolock timer.
       if (typeof autolockTimer.unref === 'function') autolockTimer.unref();
       this.state = {
@@ -100,6 +102,7 @@ export class SignerSession {
         autolockTimer,
       };
       retainedKek = true;
+      return { address: encrypted.address, expiresAt: now + autolockMs };
     } finally {
       // A wrong password, corrupt ciphertext, or identity mismatch must not
       // leave an unowned derived KEK resident in the signer process.
@@ -167,7 +170,9 @@ export class SignerSession {
     if (!this.state) return;
     clearTimeout(this.state.autolockTimer);
     this.state.expiresAt = now + this.state.autolockMs;
-    const t = setTimeout(() => this.handleAutoLock(), this.state.autolockMs);
+    const t = setTimeout(() => {
+      this.handleAutoLock();
+    }, this.state.autolockMs);
     if (typeof t.unref === 'function') t.unref();
     this.state.autolockTimer = t;
   }

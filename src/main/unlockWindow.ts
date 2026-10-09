@@ -27,6 +27,7 @@ import {
 import { windowIcon } from './appIcon';
 import { hardenedWebPreferences } from './security';
 import { EVENTS } from '../shared/constants';
+import { isRecord } from '../shared/guards';
 import type { EncryptedSeed } from '../shared/protocol';
 import type { SignerBridge } from './signerBridge';
 import type { KeyVault } from '../keyvault';
@@ -155,7 +156,8 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:submit', async (event, arg: unknown) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const { password, address } = (arg ?? {}) as { password?: unknown; address?: unknown };
+    const body: Record<string, unknown> = isRecord(arg) ? arg : {};
+    const { password, address } = body;
     if (typeof password !== 'string' || password.length === 0 || password.length > 1024) {
       return { ok: false, error: 'Enter your password.' };
     }
@@ -184,7 +186,7 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
         } catch {
           /* logged nowhere sensitive; never block the unlock */
         }
-        result.kekHex = undefined;
+        delete result.kekHex;
       }
       // Unlocking an account selects it (the picker may have chosen a
       // different wallet than the previously active one).
@@ -199,7 +201,8 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:biometric', async (event, arg: unknown) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const { address } = (arg ?? {}) as { address?: unknown };
+    const body: Record<string, unknown> = isRecord(arg) ? arg : {};
+    const { address } = body;
     const encrypted = await resolveTarget(address);
     if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
     // The settings preference is authoritative even if the toggle-off sweep

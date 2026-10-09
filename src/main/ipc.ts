@@ -98,28 +98,35 @@ function recallSignedTxHash(rawTx: string): string | undefined {
 export function registerIpcHandlers(deps: Deps): void {
   const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
-  /** Wrap a handler with sender validation + (optional) schema parse. */
-  function handle<S extends z.ZodTypeAny, R>(
+  /** Wrap a handler with sender validation + schema parse. */
+  function handle<S extends z.ZodType, R>(
     channel: string,
-    schema: S | null,
-    fn: (
-      arg: S extends z.ZodTypeAny ? z.infer<S> : undefined,
-      event: IpcMainInvokeEvent,
-    ) => Promise<R>,
+    schema: S,
+    fn: (arg: z.infer<S>, event: IpcMainInvokeEvent) => Promise<R>,
   ): void {
-    ipcMain.handle(channel, async (event, raw) => {
+    ipcMain.handle(channel, async (event, raw: unknown) => {
       if (!isTrustedSender(event, getWindow())) {
         throw new Error('unauthorized sender');
       }
-      let arg: unknown;
-      if (schema) {
-        const parsed = schema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? 'schema'}`);
-        }
-        arg = parsed.data;
+      const parsed = schema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? 'schema'}`);
       }
-      return fn(arg as never, event);
+      return fn(parsed.data, event);
+    });
+  }
+
+  /** Wrap a handler for a channel that takes no argument: sender validation
+   * only, and whatever the renderer sent is ignored. */
+  function handleNoArg<R>(
+    channel: string,
+    fn: (event: IpcMainInvokeEvent) => R | Promise<R>,
+  ): void {
+    ipcMain.handle(channel, async (event) => {
+      if (!isTrustedSender(event, getWindow())) {
+        throw new Error('unauthorized sender');
+      }
+      return fn(event);
     });
   }
 
@@ -273,7 +280,7 @@ export function registerIpcHandlers(deps: Deps): void {
         await keyVault
           .store(encrypted.address, result.kekHex)
           .catch((err: unknown) => console.error('unlock: keychain provisioning failed', err));
-        result.kekHex = undefined;
+        delete result.kekHex;
       }
     } else {
       // No password: unlock via a KEK retrieved from the OS keychain. The
@@ -294,7 +301,7 @@ export function registerIpcHandlers(deps: Deps): void {
     return buildStatus();
   });
 
-  handle(IPC.LOCK, null, async () => {
+  handleNoArg(IPC.LOCK, async () => {
     await signer.lock();
     emitLockState(true);
     // Renderer-initiated lock (auto-lock timer / logout): surface the native
@@ -333,12 +340,12 @@ export function registerIpcHandlers(deps: Deps): void {
     return buildStatus();
   });
 
-  handle(IPC.GET_STATUS, null, () => buildStatus());
+  handleNoArg(IPC.GET_STATUS, () => buildStatus());
 
-  handle(IPC.HAS_WALLET, null, () => hasAnySeed());
+  handleNoArg(IPC.HAS_WALLET, () => hasAnySeed());
 
   // ---- multi-wallet -------------------------------------------------------
-  handle(IPC.LIST_WALLETS, null, () => walletList());
+  handleNoArg(IPC.LIST_WALLETS, () => walletList());
 
   handle(IPC.SET_ACTIVE_WALLET, SetActiveWalletRequestSchema, async (req) => {
     const seed = await readSeedByAddress(req.address);
@@ -394,7 +401,11 @@ export function registerIpcHandlers(deps: Deps): void {
 
   handle(IPC.IMPORT_WALLET, ImportWalletRequestSchema, async (req) => {
     const source =
-      req.mnemonic !== undefined ? { mnemonic: req.mnemonic } : { hexSeed: req.hexSeed };
+      req.mnemonic !== undefined
+        ? { mnemonic: req.mnemonic }
+        : req.hexSeed !== undefined
+          ? { hexSeed: req.hexSeed }
+          : {};
     const { encrypted } = await signer.importWallet(source, req.password);
     if (await readSeedByAddress(encrypted.address)) {
       throw new Error('this account is already on this device');
@@ -412,7 +423,7 @@ export function registerIpcHandlers(deps: Deps): void {
   // no data crosses in either direction and no main-owned setting is readable
   // or writable over the renderer bridge. Rejected while locked: the unlock
   // window must stay the only surface on screen.
-  handle(IPC.OPEN_DESKTOP_SETTINGS, null, async () => {
+  handleNoArg(IPC.OPEN_DESKTOP_SETTINGS, () => {
     if (isUnlockWindowShown()) throw new Error('wallet is locked');
     showSettings();
   });
@@ -424,7 +435,7 @@ export function registerIpcHandlers(deps: Deps): void {
   // annoy, not strobe; it grants nothing else. Takes no argument.
   let lastAttentionAt = Number.NEGATIVE_INFINITY;
   const ATTENTION_RATE_LIMIT_MS = 5000;
-  handle(IPC.DAPP_REQUEST_ATTENTION, null, async () => {
+  handleNoArg(IPC.DAPP_REQUEST_ATTENTION, () => {
     const now = Date.now();
     if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
     lastAttentionAt = now;

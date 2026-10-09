@@ -265,18 +265,11 @@ export async function signTransaction(
     ...(tx.data ? { data: tx.data.startsWith('0x') ? tx.data : `0x${tx.data}` } : {}),
   };
   // web3.qrl.accounts.signTransaction treats the extended hex seed as the key.
-  type SignedTransaction = { rawTransaction?: string; transactionHash?: string };
-  const accounts = web3.qrl.accounts as unknown as {
-    signTransaction(
-      transaction: typeof transactionObject,
-      extendedSeed: string,
-    ): Promise<SignedTransaction>;
-  };
   // The pinned @theqrl/web3 1.0.3 is already the 64-byte-address build, so
   // a conversion error here indicates malformed input, not a wrong web3
   // build; surface the original error rather than rewrapping it.
-  const signed: SignedTransaction = await accounts.signTransaction(transactionObject, hexSeed);
-  if (!signed || !signed.rawTransaction) {
+  const signed = await web3.qrl.accounts.signTransaction(transactionObject, hexSeed);
+  if (!signed.rawTransaction) {
     throw new Error('transaction could not be signed');
   }
   // web3 computes the tx hash of the signed envelope; surface it so main can
