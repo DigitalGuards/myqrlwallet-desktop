@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.4.0 - 2026-10-12
 
 ### Added
 
@@ -26,10 +26,28 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - Lock, autolock, a signer exit, and a wallet window reload or crash close an
   open confirmation and reject it.
 
+### Changed
+
+- Renderer refresh from the current web wallet: the send screen shows each step
+  (waiting for approval, signed and sent, confirmed, failed or rejected), new
+  transactions appear in History as pending straight away, every page shares
+  one layout, dApp approval dialogs fit the window with their buttons always
+  visible, and typed-data reviews warn when the request names another chain.
+- A dApp request with a crafted typed-data type can no longer freeze the wallet
+  window while it is validated.
+
 ### Fixed
 
 - Offline dApp message signing passes the configured network ID through the
   private signer protocol, satisfying its positive-chain-ID guard.
+
+### Internal
+
+- Hardened TypeScript is enforced in CI, with runtime checks on every message
+  between the main process and the signer.
+- Groundwork for Ledger hardware wallets: an APDU client for the QRL Ledger
+  app, not yet enabled in the app.
+- Published releases are announced on Discord.
 
 ## 1.3.1 - 2026-09-28
 
