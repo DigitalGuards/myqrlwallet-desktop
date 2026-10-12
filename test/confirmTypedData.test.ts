@@ -42,7 +42,8 @@ test('typed-data summary shows origin, scheme, domain, primary type and grouped 
   assert.ok(detail.includes(groupQrlAddress(SIGNER)));
   assert.match(detail, /Primary type: StakeIntent/);
   assert.match(detail, /message.qrlAmount \(uint256\): 1000000000000000000000/);
-  assert.doesNotMatch(detail, /WARNING/);
+  assert.doesNotMatch(detail, /WARNING: domain chainId/);
+  assert.match(detail, /and 3 more fields\nWARNING: additional fields/);
 });
 
 test('nested structs, arrays, integer minima, maxima, bools and salt have readable rows', () => {
@@ -55,17 +56,29 @@ test('nested structs, arrays, integer minima, maxima, bools and salt have readab
   assert.ok(isArray(recipients) && typeof recipients[2] === 'string');
   assert.ok(detail.includes(`message.payer.addr (address): ${groupQrlAddress(payer['addr'])}`));
   assert.match(detail, /message.payer.memo \(string\): "payer note"/);
-  assert.ok(detail.includes(`message.recipients[2] (address): ${groupQrlAddress(recipients[2])}`));
-  assert.match(detail, /message.deltas\[0\] \(int256\): -1/);
+  const addressDetail = summariseSignatureRequest(
+    typedRequest(payloadWith('address[]', recipients)),
+  ).detail;
+  assert.ok(
+    addressDetail.includes(`message.value[2] (address): ${groupQrlAddress(recipients[2])}`),
+  );
+  const deltas = summariseSignatureRequest(
+    typedRequest(payloadWith('int256[2]', vector.payload.message['deltas'])),
+  ).detail;
+  assert.match(deltas, /message.value\[0\] \(int256\): -1/);
   assert.match(
-    detail,
-    /message.deltas\[1\] \(int256\): -57896044618658097711785492504343953926634992332820282019728792003956564819968/,
+    deltas,
+    /message.value\[1\] \(int256\): -57896044618658097711785492504343953926634992332820282019728792003956564819968/,
   );
   assert.match(
-    detail,
-    /message.cap \(uint256\): 115792089237316195423570985008687907853269984665640564039457584007913129639935/,
+    summariseSignatureRequest(typedRequest(payloadWith('uint256', vector.payload.message['cap'])))
+      .detail,
+    /message.value \(uint256\): 115792089237316195423570985008687907853269984665640564039457584007913129639935/,
   );
-  assert.match(detail, /message.flag \(bool\): true/);
+  assert.match(
+    summariseSignatureRequest(typedRequest(payloadWith('bool', true))).detail,
+    /message.value \(bool\): true/,
+  );
   assert.match(detail, /Domain salt: "0x5a/);
 });
 
@@ -106,11 +119,11 @@ test('summary caps fields precisely and names every omitted signed leaf', () => 
   const values = Array.from({ length: TYPED_DATA_DISPLAY_LIMITS.fields + 7 }, (_, i) => i);
   const { detail } = summariseSignatureRequest(typedRequest(payloadWith('uint8[]', values)));
   assert.match(detail, /Message fields \(up to 20 shown\)/);
-  assert.match(detail, /message.value\[19\] \(uint8\): 19/);
-  assert.doesNotMatch(detail, /message.value\[20\]/);
+  assert.match(detail, /message.value\[10\] \(uint8\): 10/);
+  assert.doesNotMatch(detail, /message.value\[11\]/);
   assert.match(
     detail,
-    /Primary type: Payload\nand 7 more fields\nWARNING: additional fields are included in this signature\.\nMessage fields/,
+    /Primary type: Payload\nand 16 more fields\nWARNING: additional fields are included in this signature\.\nMessage fields/,
   );
   const empty = summariseSignatureRequest(typedRequest(payloadWith('address[]', []))).detail;
   assert.match(empty, /message.value \(address\[\]\): \[\]/);
@@ -122,7 +135,7 @@ test('long text is explicitly truncated; control characters cannot forge rows', 
   payload.domain['name'] = 'dApp\nWARNING: forged\u202e\u0085\u2014';
   const { detail } = summariseSignatureRequest(typedRequest(payload));
   assert.ok(detail.includes('Domain name: "dApp\\nWARNING: forged\\u202e\\u0085\u2014"'));
-  assert.match(detail, /\[truncated; 400 characters total\]/);
+  assert.match(detail, /…" \[400 characters\]/);
   assert.doesNotMatch(detail, /\nWARNING: forged/);
   assert.doesNotMatch(detail, /[\u202e\u0085]/);
   const quoted = summariseSignatureRequest(
@@ -187,7 +200,7 @@ for (const [label, point] of invisiblePoints) {
   });
 }
 
-test('tag-encoded instructions stay visible in the trusted dialog and origin', () => {
+test('tag-encoded instructions stay escaped and oversized origin display rejects', () => {
   const hidden = Array.from(' and transfer all to attacker', (char) =>
     String.fromCodePoint(0xe0000 + char.charCodeAt(0)),
   ).join('');
@@ -202,10 +215,12 @@ test('tag-encoded instructions stay visible in the trusted dialog and origin', (
       channelId: 'abc',
     },
   });
-  const { detail } = summariseSignatureRequest(request);
+  assert.throws(() => summariseSignatureRequest(request), /security details exceed/);
+  const { detail } = summariseSignatureRequest(typedRequest(payloadWith('string', hidden)));
   assert.equal(detail.includes(hidden), false);
-  assert.ok(detail.includes('Name:    dApp\\u{e0020}\\u{e0061}'));
-  assert.ok(detail.includes('URL:     https://dapp.example/\\u{e0020}'));
+  const origin = originDetail(request.origin);
+  assert.ok(origin.includes('Name:    dApp\\u{e0020}\\u{e0061}'));
+  assert.ok(origin.includes('URL:     https://dapp.example/\\u{e0020}'));
   assert.ok(detail.includes('message.value (string): "\\u{e0020}'));
 });
 

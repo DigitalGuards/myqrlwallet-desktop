@@ -93,7 +93,50 @@ export interface ConfirmContext {
   connectedChainId?: number | undefined;
 }
 
-export const TYPED_DATA_DISPLAY_LIMITS = { fields: 20, valueChars: 240, labelChars: 240 } as const;
+/**
+ * Thirty wrapped lines leave room for the native title, message and buttons
+ * within roughly 700 logical pixels at common desktop font sizes. The budget
+ * includes the approval note appended by confirm.ts. Native font metrics vary.
+ */
+export const TYPED_DATA_DISPLAY_LIMITS = {
+  lines: 30,
+  lineChars: 64,
+  fields: 20,
+  valueChars: 64,
+  labelChars: 80,
+} as const;
+
+export const SIGNATURE_APPROVAL_NOTE =
+  'Approve only if you initiated this and the details are correct.';
+
+/**
+ * Conservative native word-wrap accounting, including long unbroken tokens.
+ * Wide ASCII glyphs and non-ASCII code points consume two display columns.
+ * Measuring leaves the text of small requests and full grouped addresses intact.
+ */
+export function typedDataDisplayLines(detail: string): number {
+  let lines = 0;
+  for (const line of detail.split('\n')) {
+    lines += 1;
+    let used = 0;
+    for (const token of line.match(/ +|[^ ]+/gu) ?? []) {
+      let width = 0;
+      for (const char of token) {
+        width += char.charCodeAt(0) > 0x7f || 'MW@%'.includes(char) ? 2 : 1;
+      }
+      if (used > 0 && used + width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
+        lines += 1;
+        used = 0;
+      }
+      while (width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
+        lines += 1;
+        width -= TYPED_DATA_DISPLAY_LIMITS.lineChars;
+      }
+      used += width;
+    }
+  }
+  return lines;
+}
 
 /** Keep untrusted text on one row and make invisible direction/control marks visible. */
 function singleLineText(value: string): string {
@@ -111,10 +154,14 @@ function singleLineText(value: string): string {
     );
 }
 
-function displayTypedText(value: string): string {
+function displayTypedText(value: string, length: string): string {
   const escaped = `"${singleLineText(value)}"`;
   if (escaped.length <= TYPED_DATA_DISPLAY_LIMITS.valueChars) return escaped;
-  return `${escaped.slice(0, TYPED_DATA_DISPLAY_LIMITS.valueChars)} [truncated; ${value.length} characters total]`;
+  const suffix = `…" [${length}]`;
+  const prefix = Array.from(escaped)
+    .slice(0, TYPED_DATA_DISPLAY_LIMITS.valueChars - suffix.length)
+    .join('');
+  return prefix + suffix;
 }
 
 interface TypedRow {
@@ -156,13 +203,19 @@ function typedMessageRows(payload: TypedDataPayload): { rows: TypedRow[]; omitte
   return { rows, omitted: count - rows.length };
 }
 
-function typedScalar(type: string, value: unknown, types: TypeMap): string {
+function typedScalar(type: string, value: unknown, types: TypeMap, shorten = true): string {
   const parsed = parseFieldType(type, types);
   if (parsed.kind === 'uintN' || parsed.kind === 'intN')
     return parseIntValue(value, type).toString();
   if (parsed.kind === 'bool' && typeof value === 'boolean') return String(value);
   if (typeof value !== 'string') throw new Error('invalid typed-data summary value');
-  return parsed.kind === 'address' ? groupQrlAddress(value) : displayTypedText(value);
+  if (parsed.kind === 'address') return groupQrlAddress(value);
+  if (!shorten) return `"${singleLineText(value)}"`;
+  const length =
+    parsed.kind === 'bytes' || parsed.kind === 'bytesN'
+      ? `${(value.length - 2) / 2} bytes`
+      : `${value.length} characters`;
+  return displayTypedText(value, length);
 }
 
 function typedDataDetail(
@@ -186,7 +239,7 @@ function typedDataDetail(
   ] as const) {
     const value = payload.domain[name];
     lines.push(
-      `Domain ${name}: ${value === undefined ? '(not provided)' : typedScalar(type, value, payload.types)}`,
+      `Domain ${name}: ${value === undefined ? '(not provided)' : typedScalar(type, value, payload.types, false)}`,
     );
   }
   if (connectedChainId !== undefined) {
@@ -206,15 +259,33 @@ function typedDataDetail(
   }
   lines.push(`Primary type: ${payload.primaryType}`);
   const { rows, omitted } = typedMessageRows(payload);
-  if (omitted > 0) {
-    lines.push(
-      `and ${omitted} more fields`,
-      'WARNING: additional fields are included in this signature.',
-    );
+  // Keep a complete prefix of message rows. Recompute the omission notice as
+  // rows are removed so its own wrapped width is always reserved above them.
+  for (let shown = rows.length; shown >= 0; shown -= 1) {
+    const hidden = omitted + rows.length - shown;
+    const detail = [
+      ...lines,
+      ...(hidden > 0
+        ? [
+            `and ${hidden} more fields`,
+            'WARNING: additional fields are included in this signature.',
+          ]
+        : []),
+      `Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`,
+      ...rows.slice(0, shown).map((field) => `${field.label}: ${field.value}`),
+    ].join('\n');
+    if (
+      typedDataDisplayLines(`${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`) <=
+      TYPED_DATA_DISPLAY_LIMITS.lines
+    ) {
+      return detail;
+    }
   }
-  lines.push(`Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`);
-  for (const field of rows) lines.push(`${field.label}: ${field.value}`);
-  return lines.join('\n');
+  // Required provenance and domain metadata can themselves be schema-valid
+  // bulk text. Fail before approval when their full display cannot fit.
+  throw new Error(
+    'Typed-data security details exceed the confirmation display limit. Shorten the dApp origin or domain metadata.',
+  );
 }
 
 /**

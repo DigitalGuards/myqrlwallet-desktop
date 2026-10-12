@@ -141,15 +141,27 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   code points (including tags, variation selectors and Hangul fillers), and
   braille blank are escaped in domain/message text and dApp names/URLs.
   Supplementary code points use visible `\u{...}` escapes. Other punctuation
-  supplied by a dApp is preserved. The display caps message leaves at 20,
-  labels at 240 characters and escaped string/byte text at 240 characters.
-  Truncated text is marked and omitted leaves are counted with an
+  supplied by a dApp is preserved. The whole typed-data detail, including the
+  final approval note, has a budget of 30 wrapped lines at 64 display columns.
+  Word boundaries, unbroken tokens and blank lines consume that budget; wide
+  ASCII glyphs and non-ASCII code points count as two columns. This leaves
+  room for native dialog controls within roughly 700 logical pixels at common
+  desktop font sizes. Exact height depends on OS font metrics and scaling.
+  Small requests keep their existing text. Full provenance, account, scheme,
+  domain metadata, primary type and chain warnings appear first. If these
+  required details cannot fit in full with the omission warning, confirmation
+  rejects before showing an approval dialog.
+  Message rows share the remaining space, with at most 20 leaves and an
+  80-character path prefix. Long string/byte previews use a 64-character budget
+  including an ellipsis and the original character/byte length. Addresses are
+  displayed in full or omitted as whole fields. Omitted leaves are counted with an
   `and N more fields` warning, followed by
   `WARNING: additional fields are included in this signature.` Both lines
   appear immediately after the primary type, above all message rows in the
   native dialog, which does not scroll. Every value in the validated payload
-  participates in the signature, including hidden
-  tails. Users must assess that omission before approving.
+  participates in the signature, including hidden tails. Users must assess
+  that omission before approving. The native dialog defaults to Cancel;
+  Escape also cancels.
 - **What main trusts:** the IPC sender check, strict request schema, and its
   own pinned network identity. The domain chain ID is compared numerically
   with the `Wallet network chainId` and a mismatch raises a warning. A domain

@@ -8,7 +8,11 @@
 import { type BrowserWindow, dialog } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
-import { type ConfirmContext, summariseSignatureRequest } from './confirmSummary';
+import {
+  type ConfirmContext,
+  SIGNATURE_APPROVAL_NOTE,
+  summariseSignatureRequest,
+} from './confirmSummary';
 
 /**
  * Show the modal confirmation and return whether the user approved. The dialog
@@ -33,7 +37,7 @@ export async function confirmSignature(
     cancelId: 1,
     title,
     message,
-    detail: `${detail}\n\nApprove only if you initiated this and the details are correct.`,
+    detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
     noLink: true,
   });
   return response === 0;
