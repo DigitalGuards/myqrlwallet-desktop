@@ -10,8 +10,14 @@ import {
 } from '../src/main/confirmSummary';
 import { signWithConfirmation } from '../src/main/signatureRequest';
 import { payloadWith, SIGNER, typedRequest } from './typedDataFixtures';
-import { RECIPIENTS, reviewRequest, withReviewDomain } from './typedDataReviewFixtures';
+import {
+  RECIPIENTS,
+  REVIEW_ORIGIN,
+  reviewRequest,
+  withReviewDomain,
+} from './typedDataReviewFixtures';
 import { finishConfirmation, mockConfirmationClock } from './confirmationClock';
+import { messageRequest, QUANTASWAP_MESSAGE } from './messageReviewFixtures';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -20,6 +26,8 @@ const parent = new BrowserWindow();
 const request = reviewRequest(withReviewDomain(payloadWith('address[]', RECIPIENTS)));
 const context = { connectedChainId: 3151909 };
 const expectedPages = summariseSignatureRequest(request, context).pages;
+const message = messageRequest(QUANTASWAP_MESSAGE, REVIEW_ORIGIN);
+const expectedMessagePages = summariseSignatureRequest(message).pages;
 beforeEach(mockConfirmationClock);
 
 function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
@@ -38,7 +46,10 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
       const cancelId = options.buttons?.indexOf('Cancel');
       assert.equal(options.defaultId, cancelId);
       assert.equal(options.cancelId, cancelId, 'Escape maps to Cancel');
-      if (options.title === 'Confirm typed-data signature')
+      if (
+        options.title === 'Confirm typed-data signature' ||
+        options.title === 'Confirm message signature'
+      )
         assert.ok(typedDataDisplayLines(options.detail ?? '') <= 30);
       await Promise.resolve();
       active = false;
@@ -87,6 +98,131 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
     );
     assert.equal(options.detail, `${expectedPages[i]}\n\n${SIGNATURE_APPROVAL_NOTE}`);
   }
+});
+
+test('message signing requires every page and offers Approve only on the last page', async (t) => {
+  assert.ok(expectedMessagePages.length > 1);
+  const { shown } = mockDialogs(t);
+  let signatures = 0;
+  await finishConfirmation(
+    t,
+    signWithConfirmation(message, {
+      signer: {
+        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: async (req) => {
+          assert.deepEqual(req, message);
+          assert.equal(shown.length, expectedMessagePages.length);
+          signatures++;
+          return {
+            kind: 'message',
+            signer: SIGNER,
+            signature: '0x02',
+            publicKey: '0x00',
+            descriptor: '0x010000',
+            digest: '0x00',
+            schemeVersion: 'QRL-SIGN-MSG-v1',
+          };
+        },
+      },
+      confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+    }),
+  );
+  assert.equal(signatures, 1);
+  for (const [index, options] of shown.entries()) {
+    assert.deepEqual(
+      options.buttons,
+      index === shown.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+    );
+    assert.equal(options.detail, `${expectedMessagePages[index]}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  }
+});
+
+for (let cancelAt = 0; cancelAt < expectedMessagePages.length; cancelAt++) {
+  test(`cancelling message page ${cancelAt + 1} prevents signing`, async (t) => {
+    const { shown } = mockDialogs(t, cancelAt);
+    let signatures = 0;
+    await finishConfirmation(
+      t,
+      assert.rejects(
+        signWithConfirmation(message, {
+          signer: {
+            status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+            sign: async () => {
+              signatures++;
+              throw new Error('unexpected signing');
+            },
+          },
+          confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+        }),
+        /user rejected signature/,
+      ),
+    );
+    assert.equal(shown.length, cancelAt + 1);
+    assert.equal(signatures, 0);
+  });
+}
+
+test('a short message offers approval on its only page', async (t) => {
+  const { shown } = mockDialogs(t);
+  assert.equal(
+    await finishConfirmation(t, confirmSignature(parent, messageRequest('hello'))),
+    true,
+  );
+  assert.equal(shown.length, 1);
+  assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
+  assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
+});
+
+for (const [label, value] of [
+  ['ASCII', 'a'.repeat(64 * 1024 - 1)],
+  ['escaped controls', '\0'.repeat(4096)],
+  ['binary', new Uint8Array(16 * 1024).fill(0xff)],
+] as const) {
+  test(`oversized message review (${label}) refuses before opening a dialog or signing`, async (t) => {
+    const { shown } = mockDialogs(t);
+    let signatures = 0;
+    await assert.rejects(
+      signWithConfirmation(messageRequest(value), {
+        signer: {
+          status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+          sign: async () => {
+            signatures++;
+            throw new Error('unexpected signing');
+          },
+        },
+        confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+      }),
+      /message too long to review in the trusted dialog/,
+    );
+    assert.equal(shown.length, 0);
+    assert.equal(signatures, 0);
+  });
+}
+
+test('exactly ten message pages can be approved and one more byte refuses before a dialog', async (t) => {
+  let accepted = 0;
+  let rejected = 64 * 1024 - 1;
+  while (rejected - accepted > 1) {
+    const bytes = Math.floor((accepted + rejected) / 2);
+    try {
+      summariseSignatureRequest(messageRequest('a'.repeat(bytes)));
+      accepted = bytes;
+    } catch (error) {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /message too long to review in the trusted dialog/);
+      rejected = bytes;
+    }
+  }
+  const largest = messageRequest('a'.repeat(accepted));
+  assert.equal(summariseSignatureRequest(largest).pages.length, 10);
+  const { shown } = mockDialogs(t);
+  assert.equal(await finishConfirmation(t, confirmSignature(parent, largest)), true);
+  assert.equal(shown.length, 10);
+  await assert.rejects(
+    confirmSignature(parent, messageRequest('a'.repeat(accepted + 1))),
+    /message too long to review in the trusted dialog/,
+  );
+  assert.equal(shown.length, 10);
 });
 
 for (let cancelAt = 0; cancelAt < expectedPages.length; cancelAt++) {

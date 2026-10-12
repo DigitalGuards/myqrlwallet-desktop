@@ -122,6 +122,27 @@ something the user did not intend.
 - Buys: malformed/oversized inputs are rejected at the boundary; the user sees
   what is being signed in a context the dApp cannot draw over.
 
+#### Message signatures
+
+Main presents the complete message from the validated request in sequential
+trusted native dialogs (`src/main/confirmSummary.ts`, `src/main/confirm.ts`).
+Every byte appears exactly once across the message bodies, in order. Valid
+UTF-8 uses `Message (text, N bytes):` and the typed-data escaping rules below
+for controls, invisible characters and bidirectional marks. A leading UTF-8
+BOM is retained and escaped. Text wraps at 64 display columns with complete
+escape sequences and Unicode code points. Invalid UTF-8 uses
+`Message (hex, N bytes):` and complete hexadecimal rows of 32 bytes.
+
+Every page repeats the full grouped account, unverified dApp origin block
+(or wallet-renderer provenance), byte count and `Page k of n`. The existing
+30-line budget includes this metadata and the approval note. Preparation
+stops at the 10-page cap; an oversized review fails with
+`message too long to review in the trusted dialog` before a dialog opens or
+the signer is called. Pages before the last offer `Next` and `Cancel`.
+Only the final page offers `Approve & sign`, with Cancel as the default.
+Cancelling a page rejects the entire request. The shared confirmation gate
+also applies its request numbering, arming delay and lifecycle aborts.
+
 #### Typed-data signatures
 
 `qrl_signTypedData` uses the web wallet and Connect SDK's QRL-SIGN-TYPED v1/v2

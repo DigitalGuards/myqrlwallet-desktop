@@ -121,6 +121,14 @@ function fullTypedText(value: string): string {
   return escaped;
 }
 
+function displayWidth(value: string): number {
+  let width = 0;
+  for (const char of value) {
+    width += char.charCodeAt(0) > 0x7f || 'MW@%'.includes(char) ? 2 : 1;
+  }
+  return width;
+}
+
 /**
  * Conservative native word-wrap accounting, including long unbroken tokens.
  * Wide ASCII glyphs and non-ASCII code points consume two display columns.
@@ -132,10 +140,7 @@ export function typedDataDisplayLines(detail: string): number {
     lines += 1;
     let used = 0;
     for (const token of line.match(/ +|[^ ]+/gu) ?? []) {
-      let width = 0;
-      for (const char of token) {
-        width += char.charCodeAt(0) > 0x7f || 'MW@%'.includes(char) ? 2 : 1;
-      }
+      let width = displayWidth(token);
       if (used > 0 && used + width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
         lines += 1;
         used = 0;
@@ -164,6 +169,77 @@ function singleLineText(value: string): string {
           : `\\u${point.toString(16).padStart(4, '0')}`;
       },
     );
+}
+
+/** Wrap complete escaped code points within the native display-column budget. */
+function* messageTextRows(value: string): Generator<string> {
+  let line = '';
+  let used = 0;
+  for (const char of value) {
+    const escaped = singleLineText(char);
+    const width = displayWidth(escaped);
+    if (used + width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
+      yield line;
+      line = '';
+      used = 0;
+    }
+    line += escaped;
+    used += width;
+  }
+  if (line.length > 0) yield line;
+}
+
+function* messageHexRows(hex: string): Generator<string> {
+  const lineChars = TYPED_DATA_DISPLAY_LIMITS.lineChars;
+  for (let offset = 0; offset < hex.length; offset += lineChars) {
+    yield hex.slice(offset, offset + lineChars);
+  }
+}
+
+function messagePages(req: Extract<SignatureRequest, { kind: 'message' }>): string[] {
+  const hex = req.messageHex.startsWith('0x') ? req.messageHex.slice(2) : req.messageHex;
+  let text: string | undefined;
+  try {
+    // Preserve a leading BOM as a code point so its bytes receive a visible escape.
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+      Buffer.from(hex, 'hex'),
+    );
+  } catch {
+    // Invalid UTF-8 receives complete hexadecimal review.
+  }
+  const heading = `Message (${text === undefined ? 'hex' : 'text'}, ${hex.length / 2} bytes):`;
+  const header = [
+    row('Account:', groupQrlAddress(req.signer)),
+    req.origin
+      ? originDetail(req.origin)
+      : 'Requested by: wallet renderer (dApp origin not provided)',
+  ];
+  const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
+  const tooLong = `message too long to review in the trusted dialog (maximum ${maxPages} pages).`;
+  const base = [...header, `Page ${maxPages} of ${maxPages}`, heading].join('\n');
+  const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(tooLong);
+  let body: string[] = [];
+  const bodies = [body];
+  let used = baseLines;
+  const rows = text === undefined ? messageHexRows(hex) : messageTextRows(text);
+  // Stop at the page cap while preparing the full review, before opening a dialog.
+  for (const line of rows) {
+    const cost = typedDataDisplayLines(line);
+    if (used + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
+      if (bodies.length >= maxPages || baseLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
+        throw new Error(tooLong);
+      }
+      body = [];
+      bodies.push(body);
+      used = baseLines;
+    }
+    body.push(line);
+    used += cost;
+  }
+  return bodies.map((bodyLines, index) =>
+    [...header, `Page ${index + 1} of ${bodies.length}`, heading, ...bodyLines].join('\n'),
+  );
 }
 
 function displayTypedText(value: string, length: string): string {
@@ -444,11 +520,7 @@ export function summariseSignatureRequest(
         message: 'Sign this message with your wallet key?',
         // req.signer is trustworthy to display: main verified it against the
         // unlocked session before this modal, and the signer re-enforces it.
-        pages: [
-          `${row('Account:', groupQrlAddress(req.signer))}\n` +
-            `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
-            originDetail(req.origin),
-        ],
+        pages: messagePages(req),
       };
     case 'typedData':
       return {
