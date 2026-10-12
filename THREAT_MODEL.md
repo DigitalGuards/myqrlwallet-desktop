@@ -149,7 +149,7 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   main-process lifetime. dApps cannot choose this number. The detail starts with
   the unverified dApp
   name/URL (or wallet-renderer provenance), full grouped account, scheme,
-  a `Typed data:` row with the primary type and a bounded domain-name preview,
+  a `Signing:` row with the primary type and a bounded domain-name preview,
   and `Page k of n`.
   Page one also shows the full domain block, primary type, wallet chain ID
   and all chain warnings. Oversized mandatory metadata rejects
