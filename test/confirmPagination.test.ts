@@ -17,7 +17,7 @@ import {
   withReviewDomain,
 } from './typedDataReviewFixtures';
 import { finishConfirmation, mockConfirmationClock } from './confirmationClock';
-import { messageRequest, QUANTASWAP_MESSAGE } from './messageReviewFixtures';
+import { DIALOG_CHROME_MESSAGE, messageRequest, QUANTASWAP_MESSAGE } from './messageReviewFixtures';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -51,6 +51,17 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
         options.title === 'Confirm message signature'
       )
         assert.ok(typedDataDisplayLines(options.detail ?? '') <= 30);
+      if (options.title === 'Confirm message signature') {
+        const lines = (options.detail ?? '').split('\n');
+        const heading = lines.findIndex((line) =>
+          /^Message \((?:text|hex), \d+ bytes\):$/.test(line),
+        );
+        assert.ok(heading >= 0);
+        assert.deepEqual(lines.slice(-2), ['', SIGNATURE_APPROVAL_NOTE]);
+        const body = lines.slice(heading + 1, -2);
+        assert.ok(body.length > 0);
+        assert.ok(body.every((line) => line.startsWith('| ')));
+      }
       await Promise.resolve();
       active = false;
       return {
@@ -162,16 +173,22 @@ for (let cancelAt = 0; cancelAt < expectedMessagePages.length; cancelAt++) {
   });
 }
 
-test('a short message offers approval on its only page', async (t) => {
-  const { shown } = mockDialogs(t);
-  assert.equal(
-    await finishConfirmation(t, confirmSignature(parent, messageRequest('hello'))),
-    true,
-  );
-  assert.equal(shown.length, 1);
-  assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
-  assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
-});
+for (const [label, value] of [
+  ['short', 'hello'],
+  ['empty', ''],
+  ['forged dialog chrome', DIALOG_CHROME_MESSAGE],
+] as const) {
+  test(`${label} message offers approval on its only page`, async (t) => {
+    const { shown } = mockDialogs(t);
+    assert.equal(
+      await finishConfirmation(t, confirmSignature(parent, messageRequest(value))),
+      true,
+    );
+    assert.equal(shown.length, 1);
+    assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
+    assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
+  });
+}
 
 for (const [label, value] of [
   ['ASCII', 'a'.repeat(64 * 1024 - 1)],
@@ -213,6 +230,7 @@ test('exactly ten message pages can be approved and one more byte refuses before
       rejected = bytes;
     }
   }
+  assert.equal(accepted % 62, 0, 'the page cap ends on a complete content row');
   const largest = messageRequest('a'.repeat(accepted));
   assert.equal(summariseSignatureRequest(largest).pages.length, 10);
   const { shown } = mockDialogs(t);

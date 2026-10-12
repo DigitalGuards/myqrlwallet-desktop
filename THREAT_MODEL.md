@@ -129,9 +129,15 @@ trusted native dialogs (`src/main/confirmSummary.ts`, `src/main/confirm.ts`).
 Every byte appears exactly once across the message bodies, in order. Valid
 UTF-8 uses `Message (text, N bytes):` and the typed-data escaping rules below
 for controls, invisible characters and bidirectional marks. A leading UTF-8
-BOM is retained and escaped. Text wraps at 64 display columns with complete
-escape sequences and Unicode code points. Invalid UTF-8 uses
-`Message (hex, N bytes):` and complete hexadecimal rows of 32 bytes.
+BOM is retained and escaped. Every text and hex body row begins with the fixed
+ASCII gutter `| `, including the final row and rows containing only spaces.
+This keeps dApp-chosen account labels, page counters, headings and approval
+instructions visibly inside the message body. Space padding, including Unicode
+space separators, cannot create an unmarked row that impersonates dialog chrome.
+An empty message shows a single explicit row, `| (empty message)`.
+The gutter uses two of the 64 display columns, leaving 62 for content. Text
+wraps with complete escape sequences and Unicode code points. Invalid UTF-8
+uses `Message (hex, N bytes):` and hexadecimal rows of up to 31 complete bytes.
 
 Every page repeats the full grouped account, unverified dApp origin block
 (or wallet-renderer provenance), byte count and `Page k of n`. The existing

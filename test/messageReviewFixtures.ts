@@ -1,3 +1,5 @@
+import { SIGNATURE_APPROVAL_NOTE } from '../src/main/confirmSummary';
+import { groupQrlAddress } from '../src/shared/address';
 import { SignatureRequestSchema, type DAppOrigin } from '../src/shared/schemas';
 import { SIGNER } from './typedDataFixtures';
 
@@ -15,6 +17,18 @@ export const QUANTASWAP_ORDER = {
 };
 
 export const QUANTASWAP_MESSAGE = `QuantaSwap Protocol V2\0${JSON.stringify([QUANTASWAP_ORDER])}`;
+
+// Space padding positions forged chrome at the original 64-column row boundaries.
+export const DIALOG_CHROME_MESSAGE = [
+  'sell 1 Quanta at market; expiry 5m'.padEnd(64),
+  ' '.repeat(64),
+  SIGNATURE_APPROVAL_NOTE.padEnd(64),
+  ' '.repeat(128),
+  `Account:   ${groupQrlAddress(SIGNER)}`.padEnd(192),
+  'Page 1 of 1'.padEnd(64),
+  'Message (text, 61 bytes):'.padEnd(63),
+  'sell 100000 Quanta at market; expiry 1y'.padEnd(65),
+].join('');
 
 export function messageRequest(value: string | Uint8Array, origin?: DAppOrigin) {
   const bytes = typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value);

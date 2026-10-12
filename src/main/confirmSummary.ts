@@ -171,28 +171,31 @@ function singleLineText(value: string): string {
     );
 }
 
-/** Wrap complete escaped code points within the native display-column budget. */
+// The gutter separates every untrusted body row from account labels and approval notes.
+const MESSAGE_BODY_GUTTER = '| ';
+const MESSAGE_BODY_COLUMNS = TYPED_DATA_DISPLAY_LIMITS.lineChars - MESSAGE_BODY_GUTTER.length;
+
+/** Wrap complete escaped code points, reserving two display columns for the gutter. */
 function* messageTextRows(value: string): Generator<string> {
   let line = '';
   let used = 0;
   for (const char of value) {
     const escaped = singleLineText(char);
     const width = displayWidth(escaped);
-    if (used + width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
-      yield line;
+    if (used + width > MESSAGE_BODY_COLUMNS) {
+      yield MESSAGE_BODY_GUTTER + line;
       line = '';
       used = 0;
     }
     line += escaped;
     used += width;
   }
-  if (line.length > 0) yield line;
+  yield MESSAGE_BODY_GUTTER + (line.length > 0 ? line : '(empty message)');
 }
 
 function* messageHexRows(hex: string): Generator<string> {
-  const lineChars = TYPED_DATA_DISPLAY_LIMITS.lineChars;
-  for (let offset = 0; offset < hex.length; offset += lineChars) {
-    yield hex.slice(offset, offset + lineChars);
+  for (let offset = 0; offset < hex.length; offset += MESSAGE_BODY_COLUMNS) {
+    yield MESSAGE_BODY_GUTTER + hex.slice(offset, offset + MESSAGE_BODY_COLUMNS);
   }
 }
 
