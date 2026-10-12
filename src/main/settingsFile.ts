@@ -43,9 +43,9 @@ export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
 
 /** The renderer-of-the-settings-window facing patch shape (both optional). */
 export interface SettingsPatch {
-  autolockMs?: number;
-  biometricUnlock?: boolean;
-  legacyNoticeAckV1?: boolean;
+  autolockMs?: number | undefined;
+  biometricUnlock?: boolean | undefined;
+  legacyNoticeAckV1?: boolean | undefined;
 }
 
 export const SETTINGS_DEFAULTS: StoredSettings = { v: 1 };

@@ -8,19 +8,19 @@ import type { KeyVault } from './index';
 export class NullVault implements KeyVault {
   readonly label = 'none (password required every unlock)';
   readonly hardwareBacked = false;
-  async isAvailable(): Promise<boolean> {
-    return false;
+  isAvailable(): Promise<boolean> {
+    return Promise.resolve(false);
   }
-  async store(): Promise<void> {
-    /* intentionally nothing */
+  store(): Promise<void> {
+    return Promise.resolve(); // intentionally nothing
   }
-  async retrieve(): Promise<string | null> {
-    return null;
+  retrieve(): Promise<string | null> {
+    return Promise.resolve(null);
   }
-  async has(): Promise<boolean> {
-    return false;
+  has(): Promise<boolean> {
+    return Promise.resolve(false);
   }
-  async delete(): Promise<void> {
-    /* intentionally nothing */
+  delete(): Promise<void> {
+    return Promise.resolve(); // intentionally nothing
   }
 }

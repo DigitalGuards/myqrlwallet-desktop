@@ -2,6 +2,53 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.0 - 2026-10-12
+
+### Added
+
+- Desktop dApp typed-data signing using QRL-SIGN-TYPED v1/v2 in the isolated
+  signer, with canonical wallet/SDK digest and deterministic signature parity.
+- Trusted typed-data confirmation showing scheme, domain, nested message fields,
+  address groups, explicit display limits and domain-chain mismatch warnings.
+- Shared bounded validation at the main and signer boundaries, plus account and
+  scheme binding on signer responses.
+
+### Security
+
+- Trusted confirmations page through long requests: every field appears once,
+  Approve is offered only on the last page, and requests over 10 pages are
+  refused.
+- One confirmation at a time. A second request while one is open fails with
+  "another confirmation is already open", and no dialog page opens sooner than
+  1 second after the request arrived or the previous page closed, so a
+  double-click cannot approve a request the user has not seen.
+- Every confirmation page carries a request number assigned by the app.
+- Lock, autolock, a signer exit, and a wallet window reload or crash close an
+  open confirmation and reject it.
+
+### Changed
+
+- Renderer refresh from the current web wallet: the send screen shows each step
+  (waiting for approval, signed and sent, confirmed, failed or rejected), new
+  transactions appear in History as pending straight away, every page shares
+  one layout, dApp approval dialogs fit the window with their buttons always
+  visible, and typed-data reviews warn when the request names another chain.
+- A dApp request with a crafted typed-data type can no longer freeze the wallet
+  window while it is validated.
+
+### Fixed
+
+- Offline dApp message signing passes the configured network ID through the
+  private signer protocol, satisfying its positive-chain-ID guard.
+
+### Internal
+
+- Hardened TypeScript is enforced in CI, with runtime checks on every message
+  between the main process and the signer.
+- Groundwork for Ledger hardware wallets: an APDU client for the QRL Ledger
+  app, not yet enabled in the app.
+- Published releases are announced on Discord.
+
 ## 1.3.1 - 2026-09-28
 
 ### Changed

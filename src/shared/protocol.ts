@@ -44,7 +44,8 @@ export interface EncryptedSeed {
   seed: AeadFields;
   /** Encrypts the recovery mnemonic (export/backup path only, not signing). */
   mnemonic: AeadFields;
-  createdAt: number;
+  /** Absent on legacy envelopes; readers sort a missing value first. */
+  createdAt?: number;
 }
 
 // ---- Requests (main -> signer) --------------------------------------------

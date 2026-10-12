@@ -62,10 +62,10 @@ export class MacKeychainVault implements KeyVault {
         { timeout: 60_000, maxBuffer: 1024 * 64 },
         (err, stdout, stderr) => {
           if (err) {
-            reject(new Error(stderr?.toString().trim() || err.message));
+            reject(new Error(stderr.trim() || err.message));
             return;
           }
-          resolve(stdout.toString().trim());
+          resolve(stdout.trim());
         },
       );
       if (stdin !== undefined && child.stdin) {

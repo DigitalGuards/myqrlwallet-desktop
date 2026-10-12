@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -8,15 +8,15 @@ import react from '@vitejs/plugin-react';
  *   - preload -> out/preload/index.js  (CJS, sandbox-compatible)
  *   - renderer-> out/renderer/index.html + assets  (loaded via loadFile)
  *
- * `externalizeDepsPlugin` keeps node/native deps (argon2, @theqrl/*, zod) out
+ * `build.externalizeDeps` keeps node/native deps (argon2, @theqrl/*, zod) out
  * of the main/preload bundles so they load from node_modules at runtime
  * (and so the native .node files can be asarUnpacked by electron-builder).
  * The renderer is bundled normally (no Node access).
  */
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
+      externalizeDeps: true,
       outDir: 'out/main',
       rollupOptions: {
         // Two main-side entries: the broker and the isolated signer.
@@ -31,8 +31,8 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
+      externalizeDeps: true,
       outDir: 'out/preload',
       rollupOptions: {
         input: {

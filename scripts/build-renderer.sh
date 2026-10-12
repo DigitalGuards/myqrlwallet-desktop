@@ -33,7 +33,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-FRONTEND_DIR="$(cd "${DESKTOP_DIR}/.." && pwd)/myqrlwallet-frontend"
+FRONTEND_DIR="${QRL_FRONTEND_DIR:-$(cd "${DESKTOP_DIR}/.." && pwd)/myqrlwallet-frontend}"
 OUT_RENDERER="${DESKTOP_DIR}/out/renderer"
 
 echo "[build-renderer] frontend dir: ${FRONTEND_DIR}"

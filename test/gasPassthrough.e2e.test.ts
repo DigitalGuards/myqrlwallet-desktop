@@ -14,6 +14,7 @@
  */
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { isArray, isRecord } from '../src/shared/guards';
 
 process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
@@ -36,11 +37,12 @@ const SUGGESTED_TIP_HEX = '0x9502f900';
 
 beforeEach(() => {
   clearBuildRecords();
-  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
-    const { method, params } = JSON.parse(String(init?.body)) as {
-      method: string;
-      params: unknown[];
-    };
+  globalThis.fetch = (_input: string | URL | Request, init?: RequestInit) => {
+    const request: unknown = JSON.parse(String(init?.body));
+    assert.ok(isRecord(request));
+    const method = request['method'];
+    const params = request['params'];
+    assert.ok(typeof method === 'string' && isArray(params));
     const result = ((): unknown => {
       switch (method) {
         case 'qrl_getBlockByNumber':
@@ -60,7 +62,7 @@ beforeEach(() => {
       }
     })();
     return Promise.resolve(new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result })));
-  }) as typeof fetch;
+  };
 });
 
 afterEach(() => {
@@ -136,13 +138,14 @@ function decodeType2Head(rawTx: string): {
     values.push(bytesToBigInt(payload));
     at = next;
   }
-  const [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit] = values as [
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-  ];
+  const [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit] = values;
+  assert.ok(
+    chainId !== undefined &&
+      nonce !== undefined &&
+      maxPriorityFeePerGas !== undefined &&
+      maxFeePerGas !== undefined &&
+      gasLimit !== undefined,
+  );
   return { chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit };
 }
 
@@ -173,7 +176,8 @@ test('a dApp gas limit survives build, display and signing byte for byte', async
 
   // 2. The confirm window states that limit, attributes it, and prices it.
   const request = { kind: 'transaction', tx } as const;
-  const { message, detail } = summariseSignatureRequest(request, { build: recallBuild(tx) });
+  const { message, pages } = summariseSignatureRequest(request, { build: recallBuild(tx) });
+  const detail = pages.join('\n');
   assert.equal(detailRow(detail, 'Gas limit:'), '350000 (set by the dApp; wallet estimate 120000)');
   const maxFee = BigInt(tx.gas) * BigInt(tx.maxFeePerGas);
   const displayedMaxFee = detailRow(detail, 'Max fee:').split(' (')[0];
@@ -220,12 +224,13 @@ test('without a dApp limit the same chain holds on the wallet estimate', async (
   });
   assert.equal(tx.gas, '120000', 'the 1.2x buffered estimate');
 
-  const { detail } = summariseSignatureRequest(
+  const { pages } = summariseSignatureRequest(
     { kind: 'transaction', tx },
     { build: recallBuild(tx) },
   );
+  const detail = pages.join('\n');
   assert.equal(detailRow(detail, 'Gas limit:'), "120000 (this wallet's estimate)");
 
   const signed = await signTransaction(hexSeed, tx, EXPECTED_CHAIN_ID);
-  assert.equal(decodeType2Head(signed.rawTransaction!).gasLimit, 120_000n);
+  assert.equal(decodeType2Head(signed.rawTransaction).gasLimit, 120_000n);
 });

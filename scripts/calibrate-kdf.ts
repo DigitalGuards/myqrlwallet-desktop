@@ -14,10 +14,9 @@
  * on representative target hardware and do not drift.
  */
 
-// Import the enums as TYPES only (verbatimModuleSyntax forbids using ambient
-// const enums as values); the numeric values match KDF_DEFAULTS in constants.ts.
-import { hashRaw, type Algorithm, type Version } from '@node-rs/argon2';
+import { hashRaw } from '@node-rs/argon2';
 import { performance } from 'node:perf_hooks';
+import { KDF_DEFAULTS } from '../src/shared/constants';
 
 /** memoryCost candidates in KiB: 128 MiB, 256 MiB, 384 MiB. */
 const MEMORY_COSTS_KIB = [131072, 262144, 393216] as const;
@@ -56,8 +55,8 @@ function median(values: number[]): number {
 async function deriveOnce(memoryCost: number): Promise<number> {
   const start = performance.now();
   await hashRaw(PASSWORD, {
-    algorithm: 2 as Algorithm, // Argon2id
-    version: 1 as Version, // V0x13
+    algorithm: KDF_DEFAULTS.algorithm, // Argon2id
+    version: KDF_DEFAULTS.version, // V0x13
     memoryCost,
     timeCost: TIME_COST,
     parallelism: PARALLELISM,

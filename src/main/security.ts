@@ -115,7 +115,7 @@ export function isTrustedSender(
   if (url.protocol === 'file:') return true;
   // Development only: the Vite dev server renders over http, so accept its
   // EXACT origin. Production is strictly file:-only.
-  const devUrl = !app.isPackaged ? process.env['ELECTRON_RENDERER_URL'] : undefined;
+  const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
   if (devUrl) {
     try {
       return url.origin === new URL(devUrl).origin;

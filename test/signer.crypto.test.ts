@@ -15,6 +15,7 @@
  * is preferred.
  */
 import { test } from 'node:test';
+import { payloadWith } from './typedDataFixtures';
 import assert from 'node:assert/strict';
 
 import * as mldsa from '@theqrl/mldsa87';
@@ -42,7 +43,7 @@ const FAST_KDF: KdfParams = {
   ...KDF_DEFAULTS,
   memoryCost: 8192,
   timeCost: 1,
-} as unknown as KdfParams;
+};
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 
@@ -199,7 +200,7 @@ test('assertSessionSigner binds every request arm to the unlocked account', () =
     data: '0x',
   } as const;
   const msg = { kind: 'message', messageHex: '0xab', signer: A } as const;
-  const typed = { kind: 'typedData', payload: {}, signer: A } as const;
+  const typed = { kind: 'typedData', payload: payloadWith(), signer: A } as const;
   const txReq = { kind: 'transaction', tx } as const;
 
   assert.equal(expectedSignerOf(msg), A);

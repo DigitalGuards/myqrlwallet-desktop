@@ -88,7 +88,7 @@ spend/unlock path in the desktop build.
 | `src/components/Core/Body/DAppConnect/DAppApprovalModal.tsx` | `WalletEncryptionUtil.decryptSeedWithPin(...)` -> `hexSeed`, then `web3.accounts.signTransaction` / `signMessage` / `signTypedData` (lines ~100, ~239) | `window.qrlWallet.requestSignature({ kind: 'transaction' \| 'message' \| 'typedData', ... })` |
 | `src/utils/crypto/walletEncryption.ts` (`WalletEncryptionUtil`) | encrypt/decrypt seed under PIN in-page | not called on the desktop spend/unlock path; unlock becomes `window.qrlWallet.unlock(...)`, import becomes `window.qrlWallet.importWallet(...)` |
 | `src/utils/crypto/cryptoWorker.ts` / `cryptoWorkerClient.ts` (`deriveHexSeed` worker) | derives the hex seed from the mnemonic in a web worker | not called on the desktop path; derivation happens in the signer (`src/signer/signing.ts`) |
-| `src/utils/signing/*` (`sign.ts`, `messageDigest.ts`, `typedData.ts`, `ctx.ts`) | computes digests + ML-DSA-87 signatures in-page | the signer mirrors this byte-for-byte; the renderer should not import these on the desktop build. (Note: typed-data signing is not yet wired in the signer; see below.) |
+| `src/utils/signing/*` (`sign.ts`, `messageDigest.ts`, `typedData.ts`, `ctx.ts`) | computes digests + ML-DSA-87 signatures in-page | the isolated signer computes message and typed-data digests and signatures with canonical fixture parity. |
 
 The signer reproduces the audited path byte-for-byte: it shares the same
 `SCHEME` context tags and `MLDSA87` sizes (`src/shared/constants.ts`) and mirrors
@@ -128,14 +128,17 @@ import tabs, route `setActiveAccount` through `setActiveWallet`, drive the
 account list from `listWallets`, and pass the removed address to
 `removeWallet`.
 
-### Caveat: typed-data is not wired yet
+### Typed-data signing
 
-`window.qrlWallet.requestSignature({ kind: 'typedData', ... })` currently fails
-loudly in the signer (`src/signer/index.ts`) rather than emit a signature over a
-digest the dApp side could not reproduce. Before enabling the `qrl_signTypedData`
-path in `DAppApprovalModal.tsx`, port the byte-exact hasher from
-`src/utils/signing/typedData.ts` into the desktop signer. `qrl_signMessage` and
-`qrl_signTransaction` work today.
+`window.qrlWallet.requestSignature({ kind: 'typedData', payload, signer, origin })`
+uses the existing `DAppApprovalModal` adapter. Main validates the complete
+bounded payload and draws its own field summary before approval. The isolated
+signer selects QRL-SIGN-TYPED v2 when an address type is reachable and v1 for
+address-free data, then returns signature, public key, descriptor, account,
+digest and scheme version. The renderer's existing adapter adds `payload.domain`
+to the Connect response. Both boundaries enforce account binding. The shared
+renderer retains its older unsupported-method wording on the error path; valid
+requests use the success path without frontend changes.
 
 ## Adapter sketch: delegate the existing signing service
 

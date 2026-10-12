@@ -125,6 +125,7 @@ export const MLDSA87 = {
 export const SCHEME = {
   TAG_MSG: 'QRL-SIGN-MSG-v1',
   TAG_TYPED: 'QRL-SIGN-TYPED-v1',
+  TAG_TYPED_V2: 'QRL-SIGN-TYPED-v2',
   VERSION_MSG: 1,
   VERSION_TYPED: 1,
 } as const;
@@ -151,7 +152,20 @@ export const KDF_DEFAULTS = {
   saltBytes: 16,
 } as const;
 
-export type KdfParams = typeof KDF_DEFAULTS;
+/**
+ * Argon2id parameters as persisted in an envelope. Plain numbers: a stored
+ * envelope is read back from disk, so the type cannot pin today's defaults.
+ * `isKdfParams` (seedFile) validates every field before one is trusted.
+ */
+export interface KdfParams {
+  algorithm: number;
+  version: number;
+  memoryCost: number;
+  timeCost: number;
+  parallelism: number;
+  outputLen: number;
+  saltBytes: number;
+}
 
 /** AES-256-GCM envelope constants. */
 export const AEAD = {

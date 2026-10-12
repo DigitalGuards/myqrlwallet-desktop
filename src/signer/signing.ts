@@ -24,9 +24,12 @@ import type {
   MessageSignatureResult,
   SignatureRequest,
   TransactionSignatureResult,
+  TypedDataSignatureResult,
   UnsignedTransaction,
 } from '../shared/schemas';
 import { QRL_ADDRESS_PATTERN } from '../shared/address';
+import { typedDataSchemeVersion, type TypedDataSchemeVersion } from '../shared/typedData';
+import { computeTypedDataDigest, typedDataSchemeTag } from './typedData';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 
@@ -204,6 +207,53 @@ export function signMessage(hexSeed: string, messageHex: string): MessageSignatu
   }
 }
 
+/** The payload selects both the digest tag and ML-DSA-87 context. The optional
+ * deterministic mode is for canonical tests; IPC always uses hedged signing. */
+export function signTypedData(
+  hexSeed: string,
+  payload: unknown,
+  randomized = true,
+): TypedDataSignatureResult {
+  const digest = computeTypedDataDigest(payload);
+  const schemeVersion = typedDataSchemeVersion(payload);
+  return signTypedDataDigest(hexSeed, digest, schemeVersion, randomized);
+}
+
+/** Sign a digest prepared inside the signer before the session decrypts its seed. */
+export function signTypedDataDigest(
+  hexSeed: string,
+  digest: Uint8Array,
+  schemeVersion: TypedDataSchemeVersion,
+  randomized = true,
+): TypedDataSignatureResult {
+  const wallet = newWalletFromExtendedSeed(hexSeed);
+  try {
+    if (wallet.sk.length !== SIZES.SECRET_KEY_BYTES) {
+      throw new Error('unexpected secret-key length');
+    }
+    const signature = new Uint8Array(mldsa.CryptoBytes);
+    const rc = mldsa.cryptoSignSignature(
+      signature,
+      digest,
+      wallet.sk,
+      randomized,
+      typedDataSchemeTag(schemeVersion),
+    );
+    if (rc !== 0 || signature.length !== SIZES.SIGNATURE_BYTES) throw new Error('signing failed');
+    return {
+      kind: 'typedData',
+      signature: bytesToHex(signature),
+      publicKey: bytesToHex(wallet.pk),
+      descriptor: bytesToHex(wallet.getDescriptor().toBytes()),
+      signer: addressOf(wallet),
+      digest: bytesToHex(digest),
+      schemeVersion,
+    };
+  } finally {
+    wallet.zeroize();
+  }
+}
+
 /**
  * Sign a QRL v2 type-2 transaction. Mirrors qrlStore.sendTransaction: build the
  * web3 transaction object, then `web3.qrl.accounts.signTransaction(tx, hexSeed)`
@@ -265,18 +315,11 @@ export async function signTransaction(
     ...(tx.data ? { data: tx.data.startsWith('0x') ? tx.data : `0x${tx.data}` } : {}),
   };
   // web3.qrl.accounts.signTransaction treats the extended hex seed as the key.
-  type SignedTransaction = { rawTransaction?: string; transactionHash?: string };
-  const accounts = web3.qrl.accounts as unknown as {
-    signTransaction(
-      transaction: typeof transactionObject,
-      extendedSeed: string,
-    ): Promise<SignedTransaction>;
-  };
   // The pinned @theqrl/web3 1.0.3 is already the 64-byte-address build, so
   // a conversion error here indicates malformed input, not a wrong web3
   // build; surface the original error rather than rewrapping it.
-  const signed: SignedTransaction = await accounts.signTransaction(transactionObject, hexSeed);
-  if (!signed || !signed.rawTransaction) {
+  const signed = await web3.qrl.accounts.signTransaction(transactionObject, hexSeed);
+  if (!signed.rawTransaction) {
     throw new Error('transaction could not be signed');
   }
   // web3 computes the tx hash of the signed envelope; surface it so main can

@@ -17,9 +17,8 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
-import { recallBuild } from './buildRecords';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
-import type { ConfirmContext } from './confirmSummary';
+import { signWithConfirmation } from './signatureRequest';
 import * as rpc from './rpc';
 import {
   getBiometricUnlockEnabled,
@@ -98,28 +97,35 @@ function recallSignedTxHash(rawTx: string): string | undefined {
 export function registerIpcHandlers(deps: Deps): void {
   const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
-  /** Wrap a handler with sender validation + (optional) schema parse. */
-  function handle<S extends z.ZodTypeAny, R>(
+  /** Wrap a handler with sender validation + schema parse. */
+  function handle<S extends z.ZodType, R>(
     channel: string,
-    schema: S | null,
-    fn: (
-      arg: S extends z.ZodTypeAny ? z.infer<S> : undefined,
-      event: IpcMainInvokeEvent,
-    ) => Promise<R>,
+    schema: S,
+    fn: (arg: z.infer<S>, event: IpcMainInvokeEvent) => Promise<R>,
   ): void {
-    ipcMain.handle(channel, async (event, raw) => {
+    ipcMain.handle(channel, async (event, raw: unknown) => {
       if (!isTrustedSender(event, getWindow())) {
         throw new Error('unauthorized sender');
       }
-      let arg: unknown;
-      if (schema) {
-        const parsed = schema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? 'schema'}`);
-        }
-        arg = parsed.data;
+      const parsed = schema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(`invalid request: ${parsed.error.issues[0]?.message ?? 'schema'}`);
       }
-      return fn(arg as never, event);
+      return fn(parsed.data, event);
+    });
+  }
+
+  /** Wrap a handler for a channel that takes no argument: sender validation
+   * only, and whatever the renderer sent is ignored. */
+  function handleNoArg<R>(
+    channel: string,
+    fn: (event: IpcMainInvokeEvent) => R | Promise<R>,
+  ): void {
+    ipcMain.handle(channel, async (event) => {
+      if (!isTrustedSender(event, getWindow())) {
+        throw new Error('unauthorized sender');
+      }
+      return fn(event);
     });
   }
 
@@ -182,59 +188,10 @@ export function registerIpcHandlers(deps: Deps): void {
 
   // ---- spend path ---------------------------------------------------------
   handle(IPC.REQUEST_SIGNATURE, SignatureRequestSchema, async (req) => {
-    // Fast-fail typed-data BEFORE drawing the modal: the signer does not yet
-    // implement the byte-exact typed-data hasher, so do not waste a user
-    // approval on something that cannot be signed.
-    if (req.kind === 'typedData') {
-      throw new Error('typed-data signing is not yet supported in the desktop signer');
-    }
-    // Transactions bind to the chain id: resolve it BEFORE the modal (fail fast
-    // when the node is unreachable) and require it to match the tx the user is
-    // shown, so the value confirmed in the dialog is exactly the value signed.
-    // Message signing is fully offline and must not depend on RPC reachability;
-    // the signer ignores the chain id on that arm.
-    let signingChainId = 0;
-    let confirmContext: ConfirmContext = {};
-    if (req.kind === 'transaction') {
-      // The block gas limit is checked HERE, alongside the chain id, because
-      // the renderer supplies the transaction it asks to have signed. The
-      // build-path check bounds what main assembles; this one bounds every
-      // signature, including a transaction the renderer put together itself.
-      const [chainId, blockGasLimit] = await Promise.all([
-        rpc.getChainId(),
-        rpc.getBlockGasLimit(),
-      ]);
-      signingChainId = chainId;
-      if (req.tx.chainId !== signingChainId) {
-        throw new Error('transaction chain id does not match the node; rebuild the transaction');
-      }
-      if (BigInt(req.tx.gas) > blockGasLimit) {
-        throw new Error(
-          `transaction gas limit ${req.tx.gas} exceeds the block gas limit ${blockGasLimit.toString(10)}; rebuild the transaction`,
-        );
-      }
-      // What main remembers about building this exact transaction, so the
-      // trusted confirm can name the gas limit's source, plus the ceiling an
-      // unattributed limit is measured against. A miss is safe: the dialog
-      // then says the fee fields were not assembled by this wallet.
-      const build = recallBuild(req.tx);
-      confirmContext = { blockGasLimit, ...(build ? { build } : {}) };
-    }
-    // Fail fast when the request targets a different account than the
-    // unlocked session, BEFORE drawing the modal: the signer enforces the
-    // same binding authoritatively, but the user should not be asked to
-    // approve something that cannot be signed. Also guarantees the account
-    // shown in the trusted confirm is the account that will sign.
-    const requestedSigner = req.kind === 'transaction' ? req.tx.from : req.signer;
-    const st = await signer.status();
-    if (!st.address || !sameAccount(requestedSigner, st.address)) {
-      throw new Error(
-        'signing account mismatch: request targets a different account than the unlocked session',
-      );
-    }
-    const approved = await confirmSignature(requireWindow(), req, confirmContext);
-    if (!approved) throw new Error('user rejected signature');
-    const result = await signer.sign(req, signingChainId);
+    const result = await signWithConfirmation(req, {
+      signer,
+      confirm: (request, context) => confirmSignature(requireWindow(), request, context),
+    });
     // Remember the signer-computed hash for THIS raw tx so the subsequent
     // SEND_RAW_TRANSACTION can resolve an "already known" broadcast rejection
     // to a success. Kept in main from the signer's own output: the renderer
@@ -273,7 +230,7 @@ export function registerIpcHandlers(deps: Deps): void {
         await keyVault
           .store(encrypted.address, result.kekHex)
           .catch((err: unknown) => console.error('unlock: keychain provisioning failed', err));
-        result.kekHex = undefined;
+        delete result.kekHex;
       }
     } else {
       // No password: unlock via a KEK retrieved from the OS keychain. The
@@ -294,7 +251,7 @@ export function registerIpcHandlers(deps: Deps): void {
     return buildStatus();
   });
 
-  handle(IPC.LOCK, null, async () => {
+  handleNoArg(IPC.LOCK, async () => {
     await signer.lock();
     emitLockState(true);
     // Renderer-initiated lock (auto-lock timer / logout): surface the native
@@ -333,12 +290,12 @@ export function registerIpcHandlers(deps: Deps): void {
     return buildStatus();
   });
 
-  handle(IPC.GET_STATUS, null, () => buildStatus());
+  handleNoArg(IPC.GET_STATUS, () => buildStatus());
 
-  handle(IPC.HAS_WALLET, null, () => hasAnySeed());
+  handleNoArg(IPC.HAS_WALLET, () => hasAnySeed());
 
   // ---- multi-wallet -------------------------------------------------------
-  handle(IPC.LIST_WALLETS, null, () => walletList());
+  handleNoArg(IPC.LIST_WALLETS, () => walletList());
 
   handle(IPC.SET_ACTIVE_WALLET, SetActiveWalletRequestSchema, async (req) => {
     const seed = await readSeedByAddress(req.address);
@@ -394,7 +351,11 @@ export function registerIpcHandlers(deps: Deps): void {
 
   handle(IPC.IMPORT_WALLET, ImportWalletRequestSchema, async (req) => {
     const source =
-      req.mnemonic !== undefined ? { mnemonic: req.mnemonic } : { hexSeed: req.hexSeed };
+      req.mnemonic !== undefined
+        ? { mnemonic: req.mnemonic }
+        : req.hexSeed !== undefined
+          ? { hexSeed: req.hexSeed }
+          : {};
     const { encrypted } = await signer.importWallet(source, req.password);
     if (await readSeedByAddress(encrypted.address)) {
       throw new Error('this account is already on this device');
@@ -412,7 +373,7 @@ export function registerIpcHandlers(deps: Deps): void {
   // no data crosses in either direction and no main-owned setting is readable
   // or writable over the renderer bridge. Rejected while locked: the unlock
   // window must stay the only surface on screen.
-  handle(IPC.OPEN_DESKTOP_SETTINGS, null, async () => {
+  handleNoArg(IPC.OPEN_DESKTOP_SETTINGS, () => {
     if (isUnlockWindowShown()) throw new Error('wallet is locked');
     showSettings();
   });
@@ -424,7 +385,7 @@ export function registerIpcHandlers(deps: Deps): void {
   // annoy, not strobe; it grants nothing else. Takes no argument.
   let lastAttentionAt = Number.NEGATIVE_INFINITY;
   const ATTENTION_RATE_LIMIT_MS = 5000;
-  handle(IPC.DAPP_REQUEST_ATTENTION, null, async () => {
+  handleNoArg(IPC.DAPP_REQUEST_ATTENTION, () => {
     const now = Date.now();
     if (now - lastAttentionAt < ATTENTION_RATE_LIMIT_MS) return;
     lastAttentionAt = now;

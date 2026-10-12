@@ -108,7 +108,7 @@ beforeEach(() => {
             ? { jsonrpc: '2.0', id: 1, ...tipResponse }
             : { jsonrpc: '2.0', id: 1, result: READ_RESULTS[method] ?? '0x0' };
     return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }));
-  }) as typeof fetch;
+  });
 });
 
 afterEach(() => {

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState, type FormEvent } from 'react';
+import { StrictMode, useEffect, useState, type SyntheticEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 // Self-hosted variable fonts, the same faces the wallet renderer uses
 // (myqrlwallet-frontend): Sora = display, Instrument Sans = body, JetBrains
@@ -67,7 +67,7 @@ function UnlockApp() {
     };
   }, []);
 
-  async function submit(event?: FormEvent) {
+  async function submit(event?: SyntheticEvent) {
     event?.preventDefault();
     if (!password || busy) return;
     setBusy(true);

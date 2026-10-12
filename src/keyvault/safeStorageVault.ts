@@ -27,11 +27,11 @@ export class SafeStorageVault implements KeyVault {
     return path.join(this.dir, `kek-${account}.bin`);
   }
 
-  async isAvailable(): Promise<boolean> {
+  isAvailable(): Promise<boolean> {
     try {
-      return safeStorage.isEncryptionAvailable();
+      return Promise.resolve(safeStorage.isEncryptionAvailable());
     } catch {
-      return false;
+      return Promise.resolve(false);
     }
   }
 

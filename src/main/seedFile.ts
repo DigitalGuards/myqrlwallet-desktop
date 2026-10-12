@@ -21,7 +21,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import { errorCode, isRecord } from '../shared/guards';
 import type { EncryptedSeed } from '../shared/protocol';
+import { isEncryptedSeed } from '../shared/protocolGuards';
 import { isLegacyQrlAddress, isQrlAddress } from '../shared/address';
 
 function walletDir(): string {
@@ -57,36 +59,6 @@ function seedPathFor(address: string): string {
 let tmpSeq = 0;
 function nextTmpSeq(): number {
   return tmpSeq++;
-}
-
-function isAeadFields(v: unknown): boolean {
-  if (typeof v !== 'object' || v === null) return false;
-  const o = v as Record<string, unknown>;
-  return (
-    typeof o['iv'] === 'string' &&
-    typeof o['ciphertext'] === 'string' &&
-    typeof o['tag'] === 'string'
-  );
-}
-
-/** Structural check so a JSON-valid but wrong-shaped file counts as corrupt
- * here instead of surfacing as a confusing decrypt error in the signer.
- * Pre-QIP-55 Q+40 envelopes deliberately fail this current-chain check and
- * remain untouched on disk. Migrating one requires decrypting its seed and
- * deriving the complete Q+128 identity with explicit user authorization. */
-function isEncryptedSeed(v: unknown): v is EncryptedSeed {
-  if (typeof v !== 'object' || v === null) return false;
-  const o = v as Record<string, unknown>;
-  return (
-    typeof o['version'] === 'string' &&
-    typeof o['address'] === 'string' &&
-    isQrlAddress(o['address']) &&
-    typeof o['salt'] === 'string' &&
-    typeof o['kdf'] === 'object' &&
-    o['kdf'] !== null &&
-    isAeadFields(o['seed']) &&
-    isAeadFields(o['mnemonic'])
-  );
 }
 
 async function readEnvelopeFile(p: string): Promise<EncryptedSeed | null> {
@@ -135,7 +107,7 @@ export async function listSeeds(): Promise<EncryptedSeed[]> {
   try {
     names = await fs.readdir(seedsDir());
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if (errorCode(err) === 'ENOENT') return [];
     throw err;
   }
   // Read every envelope concurrently rather than serially.
@@ -152,7 +124,7 @@ export async function listSeeds(): Promise<EncryptedSeed[]> {
         }
       } catch (err) {
         // Deleted between readdir and read (a concurrent removal): fine.
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        if (errorCode(err) === 'ENOENT') return null;
         throw err; // real I/O failure: the listing must fail loudly
       }
     }),
@@ -185,7 +157,7 @@ export async function getActiveAddress(): Promise<string | null> {
   try {
     const raw = await fs.readFile(activePath(), 'utf8');
     const parsed: unknown = JSON.parse(raw);
-    const a = (parsed as { address?: unknown } | null)?.address;
+    const a = isRecord(parsed) ? parsed['address'] : undefined;
     if (isQrlAddress(a)) pointed = a;
     else if (isLegacyQrlAddress(a)) hasLegacyPointer = true;
   } catch {

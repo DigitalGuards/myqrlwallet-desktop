@@ -11,7 +11,7 @@
  * auto-generates a random salt when none is supplied, which would make the KEK
  * unreproducible and brick the wallet. We ALWAYS pass the caller's stored salt.
  */
-import { hashRaw, type Algorithm, type Options, type Version } from '@node-rs/argon2';
+import { hashRaw, type Options } from '@node-rs/argon2';
 import type { KdfParams } from '../shared/constants';
 import { AEAD } from '../shared/constants';
 
@@ -31,9 +31,9 @@ export async function deriveKek(
   }
   const options: Options = {
     // KdfParams stores the enum values as plain numbers so they serialize into
-    // the on-disk envelope; cast back to the binding's enum types.
-    algorithm: params.algorithm as Algorithm,
-    version: params.version as Version,
+    // the on-disk envelope; numeric enums accept them directly.
+    algorithm: params.algorithm,
+    version: params.version,
     salt,
     outputLen: params.outputLen,
     memoryCost: params.memoryCost,
