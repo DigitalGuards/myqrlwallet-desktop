@@ -199,7 +199,7 @@ test('a double-click on Next cannot skip a page or reach approval', async (t) =>
   assert.equal(shown.length, 1);
   await advanceConfirmations(t, 1);
   assert.equal(shown.length, 2);
-  assert.match(shown[1]?.options.detail ?? '', /Page 2 of /);
+  assert.match(shown[1]?.options.message ?? '', /^Request \d+, page 2 of /);
   click(1);
   await rejected;
   await advanceConfirmations(t, 2000);
@@ -242,7 +242,12 @@ test('every page has a main-assigned request number and consecutive pages are at
     assert.equal(await finishConfirmation(t, confirmSignature(parent, typed, context)), true);
     const pages = shown.slice((requestNumber - 1) * pageCount, requestNumber * pageCount);
     assert.equal(pages.length, pageCount);
-    for (const page of pages) assert.ok(page.message.startsWith(`Request ${requestNumber}\n`));
+    for (const [index, page] of pages.entries()) {
+      assert.ok(
+        page.message.startsWith(`Request ${requestNumber}, page ${index + 1} of ${pageCount}\n`),
+      );
+      assert.doesNotMatch(page.detail ?? '', /^Page \d+ of \d+$/m);
+    }
   }
   assert.deepEqual(
     shown.slice(0, pageCount).map((page) => page.detail),

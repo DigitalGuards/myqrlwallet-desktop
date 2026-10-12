@@ -26,6 +26,9 @@ import {
 
 const DECIMALS = 18n;
 
+/** Conservative width shared by every trusted confirmation detail line. */
+export const DETAIL_LINE_COLUMNS = 48;
+
 /** Format a smallest-unit integer string as Quanta (18 decimals), trimmed. */
 export function formatQuanta(smallestUnit: string | bigint): string {
   const v = typeof smallestUnit === 'bigint' ? smallestUnit : BigInt(smallestUnit);
@@ -61,20 +64,23 @@ export function gasWarningThreshold(estimated: bigint): bigint {
  * Render the dApp provenance block for a request that arrived over a
  * dApp-connect session. The values are renderer-supplied (ultimately from the
  * dApp's ORIGINATOR_INFO), so they are labelled unverified: they tell the
- * user WHO CLAIMS to be asking, while the amounts/addresses above remain
- * main-computed facts. Schema length caps bound the metadata; escaping keeps
- * URL whitespace and direction marks visible on a single row.
+ * user WHO CLAIMS to be asking. Schema length caps bound the metadata; escaping keeps
+ * URL whitespace and direction marks visible inside labelled, wrapped rows.
  */
 export function originDetail(origin: DAppOrigin | undefined): string {
   if (!origin) return '';
-  return [
-    '',
-    'Requested by dApp (unverified, dApp-supplied):',
-    `  Name:    ${singleLineText(origin.name)}`,
-    `  URL:     ${origin.url ? singleLineText(origin.url) : '(not provided)'}`,
-    `  Channel: ${origin.channelId}`,
-    'Only approve if you initiated this action in that dApp.',
-  ].join('\n');
+  return wrapDetailText(
+    [
+      '',
+      'Requested by dApp (unverified, dApp-supplied):',
+      wrapDetailText(`  Name:    ${singleLineText(origin.name)}`, 'dapp'),
+      origin.url
+        ? wrapDetailText(`  URL:     ${singleLineText(origin.url)}`, 'dapp')
+        : '  URL:     (not provided)',
+      wrapDetailText(`  Channel: ${origin.channelId}`, 'dapp'),
+      'Only approve if you initiated this action in that dApp.',
+    ].join('\n'),
+  );
 }
 
 export interface ConfirmSummary {
@@ -94,13 +100,13 @@ export interface ConfirmContext {
 }
 
 /**
- * Thirty wrapped lines leave room for the native title, message and buttons
+ * Thirty explicit lines leave room for the native title, message and buttons
  * within roughly 700 logical pixels at common desktop font sizes. The budget
  * includes the approval note appended by confirm.ts. Native font metrics vary.
  */
 export const TYPED_DATA_DISPLAY_LIMITS = {
   lines: 30,
-  lineChars: 64,
+  lineChars: DETAIL_LINE_COLUMNS,
   pages: 10,
   valueChars: 64,
   labelChars: 80,
@@ -114,14 +120,14 @@ const TYPED_METADATA_ERROR =
 
 /** Full metadata must fit on page one. Bound escaping before measuring it. */
 function fullTypedText(value: string): string {
-  const maxChars = TYPED_DATA_DISPLAY_LIMITS.lines * TYPED_DATA_DISPLAY_LIMITS.lineChars;
+  const maxChars = TYPED_DATA_DISPLAY_LIMITS.lines * DETAIL_LINE_COLUMNS;
   if (value.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
   const escaped = singleLineText(value.slice(0, maxChars));
   if (escaped.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
   return escaped;
 }
 
-function displayWidth(value: string): number {
+export function displayWidth(value: string): number {
   let width = 0;
   for (const char of value) {
     width += char.charCodeAt(0) > 0x7f || 'MW@%'.includes(char) ? 2 : 1;
@@ -130,29 +136,53 @@ function displayWidth(value: string): number {
 }
 
 /**
- * Conservative native word-wrap accounting, including long unbroken tokens.
- * Wide ASCII glyphs and non-ASCII code points consume two display columns.
- * Measuring leaves the text of small requests and full grouped addresses intact.
+ * Escapes and Unicode code points are indivisible during wrapping and preview
+ * truncation. Literal backslashes have already been escaped by the formatter.
  */
-export function typedDataDisplayLines(detail: string): number {
-  let lines = 0;
-  for (const line of detail.split('\n')) {
-    lines += 1;
+function* displayTokens(value: string): Generator<string> {
+  for (const match of value.matchAll(/\\(?:u\{[0-9a-f]+\}|u[0-9a-f]{4}|.)|./gu)) {
+    yield match[0];
+  }
+}
+
+/**
+ * Wrap trusted text with a plain indent. Callers must first wrap rows containing
+ * dApp text with source 'dapp', keeping their continuations behind a pipe.
+ * Prefer word boundaries and preserve every character, including boundary spaces.
+ * Already wrapped rows fit the width and pass through unchanged during assembly.
+ */
+export function wrapDetailText(detail: string, source: 'trusted' | 'dapp' = 'trusted'): string {
+  const continuation = source === 'dapp' ? '    | ' : '    ';
+  const lines: string[] = [];
+  for (const original of detail.split('\n')) {
+    let prefix = '';
+    let content = '';
     let used = 0;
-    for (const token of line.match(/ +|[^ ]+/gu) ?? []) {
-      let width = displayWidth(token);
-      if (used > 0 && used + width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
-        lines += 1;
-        used = 0;
+    for (const token of displayTokens(original)) {
+      const width = displayWidth(token);
+      if (used + width > DETAIL_LINE_COLUMNS) {
+        const boundary = content.lastIndexOf(' ') + 1;
+        const end =
+          boundary > 0 &&
+          displayWidth(continuation + content.slice(boundary) + token) <= DETAIL_LINE_COLUMNS
+            ? boundary
+            : content.length;
+        lines.push(prefix + content.slice(0, end));
+        content = content.slice(end);
+        prefix = continuation;
+        used = displayWidth(prefix + content);
       }
-      while (width > TYPED_DATA_DISPLAY_LIMITS.lineChars) {
-        lines += 1;
-        width -= TYPED_DATA_DISPLAY_LIMITS.lineChars;
-      }
+      content += token;
       used += width;
     }
+    lines.push(prefix + content);
   }
-  return lines;
+  return lines.join('\n');
+}
+
+/** Count the exact code-wrapped lines, including blank lines and markers. */
+export function typedDataDisplayLines(detail: string): number {
+  return wrapDetailText(detail).split('\n').length;
 }
 
 /** Keep untrusted text on one row and make invisible direction/control marks visible. */
@@ -171,16 +201,21 @@ function singleLineText(value: string): string {
     );
 }
 
+/** Message quotes stay literal; backslashes and invisible characters stay reversible. */
+function escapeMessageCharacter(char: string): string {
+  return char === '"' ? char : singleLineText(char);
+}
+
 // The gutter separates every untrusted body row from account labels and approval notes.
 const MESSAGE_BODY_GUTTER = '| ';
-const MESSAGE_BODY_COLUMNS = TYPED_DATA_DISPLAY_LIMITS.lineChars - MESSAGE_BODY_GUTTER.length;
+const MESSAGE_BODY_COLUMNS = DETAIL_LINE_COLUMNS - MESSAGE_BODY_GUTTER.length;
 
 /** Wrap complete escaped code points, reserving two display columns for the gutter. */
 function* messageTextRows(value: string): Generator<string> {
   let line = '';
   let used = 0;
   for (const char of value) {
-    const escaped = singleLineText(char);
+    const escaped = escapeMessageCharacter(char);
     const width = displayWidth(escaped);
     if (used + width > MESSAGE_BODY_COLUMNS) {
       yield MESSAGE_BODY_GUTTER + line;
@@ -219,7 +254,7 @@ function messagePages(req: Extract<SignatureRequest, { kind: 'message' }>): stri
   ];
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
   const tooLong = `message too long to review in the trusted dialog (maximum ${maxPages} pages).`;
-  const base = [...header, `Page ${maxPages} of ${maxPages}`, heading].join('\n');
+  const base = [...header, heading].join('\n');
   const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
   if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(tooLong);
   let body: string[] = [];
@@ -240,20 +275,25 @@ function messagePages(req: Extract<SignatureRequest, { kind: 'message' }>): stri
     body.push(line);
     used += cost;
   }
-  return bodies.map((bodyLines, index) =>
-    [...header, `Page ${index + 1} of ${bodies.length}`, heading, ...bodyLines].join('\n'),
-  );
+  return bodies.map((bodyLines) => wrapDetailText([...header, heading, ...bodyLines].join('\n')));
 }
 
 function displayTypedText(value: string, length: string): string {
   // Escape only a bounded input prefix, even for maximum-size control text.
   const limit = TYPED_DATA_DISPLAY_LIMITS.valueChars;
-  const escaped = `"${singleLineText(value.slice(0, limit))}"`;
+  let input = '';
+  for (const char of value) {
+    if (input.length + char.length > limit) break;
+    input += char;
+  }
+  const escaped = `"${singleLineText(input)}"`;
   if (value.length <= limit && escaped.length <= limit) return escaped;
   const suffix = `…" [${length}]`;
-  const prefix = Array.from(escaped)
-    .slice(0, limit - suffix.length)
-    .join('');
+  let prefix = '';
+  for (const token of displayTokens(escaped)) {
+    if (prefix.length + token.length + suffix.length > limit) break;
+    prefix += token;
+  }
   return prefix + suffix;
 }
 
@@ -270,7 +310,7 @@ function* typedMessageRows(payload: TypedDataPayload): Generator<string> {
       const prefixChars = Math.max(8, TYPED_DATA_DISPLAY_LIMITS.labelChars - suffix.length);
       label = path.slice(0, prefixChars) + suffix;
     }
-    return `${label} (${type}): ${value}`;
+    return wrapDetailText(`${label} (${type}): ${value}`, 'dapp');
   };
   function* walkStruct(type: string, data: unknown, path: string): Generator<string> {
     if (!isRecord(data)) throw new Error('invalid typed-data summary struct');
@@ -322,15 +362,20 @@ function typedDataPages(
     ...(req.origin
       ? [
           'Requested by dApp (unverified, dApp-supplied):',
-          `Name:    ${fullTypedText(req.origin.name)}`,
-          `URL:     ${req.origin.url ? fullTypedText(req.origin.url) : '(not provided)'}`,
+          wrapDetailText(`Name:    ${fullTypedText(req.origin.name)}`, 'dapp'),
+          req.origin.url
+            ? wrapDetailText(`URL:     ${fullTypedText(req.origin.url)}`, 'dapp')
+            : 'URL:     (not provided)',
         ]
       : ['Requested by: wallet renderer (dApp origin not provided)']),
     row('Account:', groupQrlAddress(req.signer)),
     row('Scheme:', scheme),
-    row(
-      'Signing:',
-      `${fullTypedText(payload.primaryType)} / ${typedScalar('string', payload.domain['name'], payload.types)}`,
+    wrapDetailText(
+      row(
+        'Signing:',
+        `${fullTypedText(payload.primaryType)} / ${typedScalar('string', payload.domain['name'], payload.types)}`,
+      ),
+      'dapp',
     ),
   ];
   const lines: string[] = [];
@@ -343,7 +388,12 @@ function typedDataPages(
   ] as const) {
     const value = payload.domain[name];
     lines.push(
-      `Domain ${name}: ${value === undefined ? '(not provided)' : typedScalar(type, value, payload.types, false)}`,
+      value === undefined
+        ? `Domain ${name}: (not provided)`
+        : wrapDetailText(
+            `Domain ${name}: ${typedScalar(type, value, payload.types, false)}`,
+            'dapp',
+          ),
     );
   }
   if (connectedChainId !== undefined) {
@@ -361,11 +411,10 @@ function typedDataPages(
       'WARNING: this signature is not bound to a chain and can be replayed on other chains.',
     );
   }
-  lines.push(`Primary type: ${payload.primaryType}`);
+  lines.push(wrapDetailText(`Primary type: ${payload.primaryType}`, 'dapp'));
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
-  // Reserve the widest page counter before the total is known. Metadata is
-  // mandatory on page one; every subsequent page repeats the compact header.
-  const base = [...header, `Page ${maxPages} of ${maxPages}`].join('\n');
+  // Metadata is mandatory on page one; later pages repeat the compact header.
+  const base = header.join('\n');
   const continuationLines = typedDataDisplayLines(
     `${base}\nMessage fields:\n\n${SIGNATURE_APPROVAL_NOTE}`,
   );
@@ -391,9 +440,7 @@ function typedDataPages(
     body.push(field);
     used += cost;
   }
-  return bodies.map((bodyLines, index) =>
-    [...header, `Page ${index + 1} of ${bodies.length}`, ...bodyLines].join('\n'),
-  );
+  return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));
 }
 
 /**
@@ -405,10 +452,8 @@ function typedDataPages(
 const UNATTRIBUTED_GAS_BLOCK_SHARE = 10n;
 
 /** The wording that explains what an over-large gas limit can actually cost. */
-const REFUND_NOTE = [
-  '         Unused gas is refunded, but a call that fails out of gas or burns',
-  '         gas can consume the whole limit, so the cost below is reachable.',
-];
+const REFUND_NOTE =
+  'Unused gas is refunded, but a call that fails out of gas or burns gas can consume the whole limit, so the cost below is reachable.';
 
 /** The gas-limit row plus any provenance or warning lines that belong with it. */
 function gasLines(
@@ -419,13 +464,11 @@ function gasLines(
   if (!build) {
     const lines = [
       row('Gas limit:', gas),
-      'NOTE: the fee fields were not assembled by this wallet, so it cannot say',
-      '      how this gas limit was chosen.',
+      'NOTE: the fee fields were not assembled by this wallet, so it cannot say how this gas limit was chosen.',
     ];
     if (blockGasLimit !== undefined && BigInt(gas) > blockGasLimit / UNATTRIBUTED_GAS_BLOCK_SHARE) {
       lines.push(
-        'WARNING: this gas limit claims more than a tenth of a whole block.',
-        ...REFUND_NOTE,
+        `WARNING: this gas limit claims more than a tenth of a whole block. ${REFUND_NOTE}`,
       );
     }
     return lines;
@@ -441,13 +484,11 @@ function gasLines(
   // would credit the dApp with a number it did not choose.
   if (built === requested) {
     const lines = [
-      row('Gas limit:', `${gas} (set by the dApp; wallet estimate ${build.estimatedGas})`),
+      row('Gas limit:', `${gas} (set by the dApp; wallet estimate ${estimated.toString()})`),
     ];
     if (requested > gasWarningThreshold(estimated)) {
       lines.push(
-        'WARNING: the dApp asked for far more gas than this wallet estimated.',
-        ...REFUND_NOTE,
-        '         Approve only if you know why this call needs that much.',
+        `WARNING: the dApp asked for far more gas than this wallet estimated. ${REFUND_NOTE} Approve only if you know why this call needs that much.`,
       );
     }
     return lines;
@@ -456,7 +497,7 @@ function gasLines(
     return [
       row(
         'Gas limit:',
-        `${gas} (this wallet's estimate; the dApp asked for ${build.requestedGas})`,
+        `${gas} (this wallet's estimate; the dApp asked for ${requested.toString()})`,
       ),
     ];
   }
@@ -464,7 +505,7 @@ function gasLines(
   return [
     row(
       'Gas limit:',
-      `${gas} (capped at the block gas limit; the dApp asked for ${build.requestedGas}, wallet estimate ${build.estimatedGas})`,
+      `${gas} (capped at the block gas limit; the dApp asked for ${requested.toString()}, wallet estimate ${estimated.toString()})`,
     ),
   ];
 }
@@ -493,28 +534,33 @@ export function summariseSignatureRequest(
   switch (req.kind) {
     case 'transaction': {
       const { tx } = req;
-      const maxFee = BigInt(tx.gas) * BigInt(tx.maxFeePerGas);
+      // Main formats numeric values into canonical decimal text for trusted rows.
+      const gas = BigInt(tx.gas);
+      const feePerGas = BigInt(tx.maxFeePerGas);
+      const priorityFeePerGas = BigInt(tx.maxPriorityFeePerGas);
+      const maxFee = gas * feePerGas;
       const maxCost = BigInt(tx.value) + maxFee;
       const detail = [
         row('Amount:', formatQuanta(tx.value)),
-        row('To:', groupQrlAddress(tx.to)),
+        wrapDetailText(row('To:', groupQrlAddress(tx.to)), 'dapp'),
+        // Main verifies tx.from against the unlocked signer before confirmation.
         row('From:', groupQrlAddress(tx.from)),
         row('Nonce:', String(tx.nonce)),
-        ...gasLines(tx.gas, build, blockGasLimit),
+        ...gasLines(gas.toString(), build, blockGasLimit),
         row(
           'Max fee:',
-          `${formatQuanta(maxFee)} (up to ${tx.maxFeePerGas} per gas, priority ${tx.maxPriorityFeePerGas})`,
+          `${formatQuanta(maxFee)} (up to ${feePerGas.toString()} per gas, priority ${priorityFeePerGas.toString()})`,
         ),
         row('Max cost:', formatQuanta(maxCost)),
         row('Chain id:', String(tx.chainId)),
         tx.data && tx.data !== '0x'
-          ? row('Data:', `${tx.data.slice(0, 66)}…`)
+          ? wrapDetailText(row('Data:', `${tx.data.slice(0, 66)}…`), 'dapp')
           : row('Data:', '(none)'),
       ].join('\n');
       return {
         title: 'Confirm transaction',
         message: `Send ${formatQuanta(tx.value)}? Max cost ${formatQuanta(maxCost)}.`,
-        pages: [detail + originDetail(req.origin)],
+        pages: [wrapDetailText(detail + originDetail(req.origin))],
       };
     }
     case 'message':

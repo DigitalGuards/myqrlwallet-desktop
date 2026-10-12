@@ -122,26 +122,68 @@ something the user did not intend.
 - Buys: malformed/oversized inputs are rejected at the boundary; the user sees
   what is being signed in a context the dApp cannot draw over.
 
+#### Trusted dialog layout
+
+All confirmation detail text, including transaction and wallet-removal reviews,
+is wrapped in code at `DETAIL_LINE_COLUMNS = 48` (`src/main/confirmSummary.ts`).
+The existing display-width accounting assigns two columns to non-ASCII code
+points and to `M`, `W`, `@` and `%`. This conservative width leaves margin below
+the native GTK wrap point observed with 64-column rows. Native font metrics and
+scaling still vary by platform.
+
+Trusted text continues with a plain four-space indent and breaks at word
+boundaries where possible. This includes static headings and notes, field
+labels, the main-verified signer account (`Account:` or transaction `From:`),
+the wallet-removal account, wallet-renderer provenance, and numbers formatted
+by main such as transaction amounts, fees, gas limits and chain IDs.
+
+Rows containing dApp or renderer text begin with a fixed app-owned label;
+typed-data fields begin with `message.` and their path/type prefix. Their
+continuations begin with `    | `. This includes origin name, URL and channel
+values, typed-data metadata, paths and values (including addresses and
+integers), and transaction recipient and data. Callers select the source when
+formatting each row, before page assembly and budget accounting. Plain
+continuations contain only trusted text. Message body rows use `| ` on every
+line. The pipe identifies dApp or renderer text throughout the review.
+
+The wrapper preserves complete escape sequences, code points and boundary
+spaces. Full addresses and long path/type prefixes retain their row's
+continuation style. Toolkit-created
+continuations of wider rows previously allowed dApp text to start bare lines
+that resembled account labels, approval notes or page counters. Code-side
+wrapping keeps every continuation visibly attached to its source row.
+
+The only page indicator is in the native bold `message` field:
+`Request N, page k of n` for multi-page reviews, or `Request N` for one page.
+The detail field has no app-generated page counter. A forged counter inside
+dApp text stays in the marked detail body and cannot reach the bold label.
+
 #### Message signatures
 
 Main presents the complete message from the validated request in sequential
 trusted native dialogs (`src/main/confirmSummary.ts`, `src/main/confirm.ts`).
 Every byte appears exactly once across the message bodies, in order. Valid
-UTF-8 uses `Message (text, N bytes):` and the typed-data escaping rules below
-for controls, invisible characters and bidirectional marks. A leading UTF-8
+UTF-8 uses `Message (text, N bytes):` and a dedicated message escaper. Double
+quotes stay literal so JSON is readable; backslashes become `\\`. Controls,
+invisible characters and bidirectional marks use the visible escapes described
+below. Removing body markers and decoding those escapes recovers the exact
+signed UTF-8 bytes. A leading UTF-8
 BOM is retained and escaped. Every text and hex body row begins with the fixed
 ASCII gutter `| `, including the final row and rows containing only spaces.
 This keeps dApp-chosen account labels, page counters, headings and approval
 instructions visibly inside the message body. Space padding, including Unicode
 space separators, cannot create an unmarked row that impersonates dialog chrome.
 An empty message shows a single explicit row, `| (empty message)`.
-The gutter uses two of the 64 display columns, leaving 62 for content. Text
+The gutter uses two of the 48 display columns, leaving 46 for content. Text
 wraps with complete escape sequences and Unicode code points. Invalid UTF-8
-uses `Message (hex, N bytes):` and hexadecimal rows of up to 31 complete bytes.
+uses `Message (hex, N bytes):` and hexadecimal rows of up to 46 hex characters
+(23 complete bytes).
 
 Every page repeats the full grouped account, unverified dApp origin block
-(or wallet-renderer provenance), byte count and `Page k of n`. The existing
-30-line budget includes this metadata and the approval note. Preparation
+(or wallet-renderer provenance) and byte count. The bold label carries the
+request number and page indicator. The existing 30-line budget counts explicit
+detail lines, including blank lines, metadata continuations and the wrapped
+approval note. Preparation
 stops at the 10-page cap; an oversized review fails with
 `message too long to review in the trusted dialog` before a dialog opens or
 the signer is called. Pages before the last offer `Next` and `Cancel`.
@@ -170,20 +212,21 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   Supplementary code points use visible `\u{...}` escapes. Other punctuation
   supplied by a dApp is preserved. Review uses sequential OS-native
   `dialog.showMessageBox` pages. Every page's native message header includes
-  `Request N`, assigned by a main-process counter shared by signing and wallet
-  removal. The number increases for each accepted confirmation request, remains
+  `Request N`, plus `page k of n` when there are multiple pages, in its bold
+  label. The request number comes from a main-process counter shared by signing
+  and wallet removal. It increases for each accepted confirmation request, remains
   the same across its pages, and survives locks and renderer reloads during the
   main-process lifetime. dApps cannot choose this number. The detail starts with
   the unverified dApp
   name/URL (or wallet-renderer provenance), full grouped account, scheme,
-  a `Signing:` row with the primary type and a bounded domain-name preview,
-  and `Page k of n`.
+  and a `Signing:` row with the primary type and a bounded domain-name preview.
   Page one also shows the full domain block, primary type, wallet chain ID
   and all chain warnings. Oversized mandatory metadata rejects
   before any dialog opens.
-  Each page, including the approval note, has a budget of 30 wrapped lines at
-  64 display columns. Word boundaries, unbroken tokens and blank lines consume
-  that budget; wide ASCII glyphs and non-ASCII code points count as two columns.
+  Each page, including the approval note, has a budget of 30 explicit lines at
+  `DETAIL_LINE_COLUMNS` (48 display columns). Both continuation styles, word
+  boundaries, unbroken tokens and blank lines consume that budget; wide ASCII
+  glyphs and non-ASCII code points count as two columns.
   This leaves room for native dialog controls within roughly 700 logical
   pixels at common desktop font sizes. Exact height depends on OS font metrics
   and scaling. Every message row appears once, in order, and stays on one page.
@@ -193,7 +236,8 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   A long leaf with many indices can exceed the label target and still counts
   toward the page budget.
   String/byte previews use a 64-character budget including an ellipsis and
-  the original character/byte length. Formatting escapes only bounded input
+  the original character/byte length. Preview truncation and wrapping preserve
+  complete escape sequences and code points. Formatting escapes only bounded input
   prefixes; full metadata is size-checked before escaping. Preview tails still
   participate in the signature. Rows are generated lazily and preparation
   stops when an eleventh page would be required. Such requests fail closed

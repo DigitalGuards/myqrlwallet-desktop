@@ -76,7 +76,10 @@ export class ConfirmationGate {
         try {
           ({ response } = await dialog.showMessageBox(parent, {
             ...options,
-            message: `Request ${requestNumber}\n${options.message}`,
+            message:
+              `Request ${requestNumber}` +
+              (pages.length > 1 ? `, page ${index + 1} of ${pages.length}` : '') +
+              `\n${options.message}`,
             signal,
           }));
         } finally {

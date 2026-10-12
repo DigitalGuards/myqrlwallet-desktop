@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { unfoldDetail } from './confirmLayout';
 import { test } from 'node:test';
 import { originDetail, summariseSignatureRequest } from '../src/main/confirmSummary';
 import { groupQrlAddress } from '../src/shared/address';
@@ -19,7 +20,7 @@ test('typed-data summary shows origin, scheme, domain, primary type and grouped 
     },
   };
   const { title, pages } = summariseSignatureRequest(req, { connectedChainId: 3151909 });
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   assert.equal(title, 'Confirm typed-data signature');
   assert.match(detail, /Requested by dApp \(unverified, dApp-supplied\):/);
   assert.match(detail, /https:\/\/dapp.example/);
@@ -48,7 +49,7 @@ test('nested structs, arrays, integer minima, maxima, bools and salt have readab
   const vector = canonical.schemeVectors[1];
   assert.ok(vector);
   const { pages } = summariseSignatureRequest(typedRequest(vector.payload));
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   const payer = vector.payload.message['payer'];
   const recipients = vector.payload.message['recipients'];
   assert.ok(isRecord(payer) && typeof payer['addr'] === 'string');
@@ -57,26 +58,32 @@ test('nested structs, arrays, integer minima, maxima, bools and salt have readab
   assert.match(detail, /message.payer.memo \(string\): "payer note"/);
   const addressDetail = summariseSignatureRequest(
     typedRequest(payloadWith('address[]', recipients)),
-  ).pages.join('\n');
+  )
+    .pages.map(unfoldDetail)
+    .join('\n');
   assert.ok(
     addressDetail.includes(`message.value[2] (address): ${groupQrlAddress(recipients[2])}`),
   );
   const deltas = summariseSignatureRequest(
     typedRequest(payloadWith('int256[2]', vector.payload.message['deltas'])),
-  ).pages.join('\n');
+  )
+    .pages.map(unfoldDetail)
+    .join('\n');
   assert.match(deltas, /message.value\[0\] \(int256\): -1/);
   assert.match(
     deltas,
     /message.value\[1\] \(int256\): -57896044618658097711785492504343953926634992332820282019728792003956564819968/,
   );
   assert.match(
-    summariseSignatureRequest(
-      typedRequest(payloadWith('uint256', vector.payload.message['cap'])),
-    ).pages.join('\n'),
+    summariseSignatureRequest(typedRequest(payloadWith('uint256', vector.payload.message['cap'])))
+      .pages.map(unfoldDetail)
+      .join('\n'),
     /message.value \(uint256\): 115792089237316195423570985008687907853269984665640564039457584007913129639935/,
   );
   assert.match(
-    summariseSignatureRequest(typedRequest(payloadWith('bool', true))).pages.join('\n'),
+    summariseSignatureRequest(typedRequest(payloadWith('bool', true)))
+      .pages.map(unfoldDetail)
+      .join('\n'),
     /message.value \(bool\): true/,
   );
   assert.match(detail, /Domain salt: "0x5a/);
@@ -92,30 +99,35 @@ test('domain chain comparison is numeric, preserves the request and shows mismat
   const request = typedRequest(payload);
   const before = structuredClone(request);
   assert.doesNotMatch(
-    summariseSignatureRequest(request, { connectedChainId: 3151909 }).pages.join('\n'),
+    summariseSignatureRequest(request, { connectedChainId: 3151909 })
+      .pages.map(unfoldDetail)
+      .join('\n'),
     /WARNING/,
   );
   const summary = summariseSignatureRequest(request, { connectedChainId: 1 });
-  assert.match(summary.pages.join('\n'), /Wallet network chainId: 1/);
-  assert.match(summary.pages.join('\n'), /WARNING: domain chainId differs from the wallet network/);
-  assert.match(summary.pages.join('\n'), /Domain chainId: 3151909/);
+  assert.match(summary.pages.map(unfoldDetail).join('\n'), /Wallet network chainId: 1/);
+  assert.match(
+    summary.pages.map(unfoldDetail).join('\n'),
+    /WARNING: domain chainId differs from the wallet network/,
+  );
+  assert.match(summary.pages.map(unfoldDetail).join('\n'), /Domain chainId: 3151909/);
   assert.deepEqual(request, before);
   const noChain = summariseSignatureRequest(typedRequest(payloadWith()));
-  assert.match(noChain.pages.join('\n'), /Domain chainId: \(not provided\)/);
-  assert.match(noChain.pages.join('\n'), /QRL-SIGN-TYPED-v1/);
+  assert.match(noChain.pages.map(unfoldDetail).join('\n'), /Domain chainId: \(not provided\)/);
+  assert.match(noChain.pages.map(unfoldDetail).join('\n'), /QRL-SIGN-TYPED-v1/);
   assert.match(
-    noChain.pages.join('\n'),
+    noChain.pages.map(unfoldDetail).join('\n'),
     /WARNING: this signature is not bound to a chain and can be replayed on other chains\./,
   );
   assert.ok(
-    noChain.pages.join('\n').indexOf('WARNING:') <
-      noChain.pages.join('\n').indexOf('Primary type:'),
+    noChain.pages.map(unfoldDetail).join('\n').indexOf('WARNING:') <
+      noChain.pages.map(unfoldDetail).join('\n').indexOf('Primary type:'),
   );
   const configured = summariseSignatureRequest(typedRequest(payloadWith()), {
     connectedChainId: 3151909,
   });
-  assert.match(configured.pages.join('\n'), /Wallet network chainId: 3151909/);
-  assert.match(configured.pages.join('\n'), /can be replayed on other chains/);
+  assert.match(configured.pages.map(unfoldDetail).join('\n'), /Wallet network chainId: 3151909/);
+  assert.match(configured.pages.map(unfoldDetail).join('\n'), /can be replayed on other chains/);
 });
 
 test('summary paginates all signed leaves and retains empty arrays', () => {
@@ -129,9 +141,9 @@ test('summary paginates all signed leaves and retains empty arrays', () => {
     rows,
     values.map((value, i) => `message.value[${i}] (uint8): ${value}`),
   );
-  const empty = summariseSignatureRequest(typedRequest(payloadWith('address[]', []))).pages.join(
-    '\n',
-  );
+  const empty = summariseSignatureRequest(typedRequest(payloadWith('address[]', [])))
+    .pages.map(unfoldDetail)
+    .join('\n');
   assert.match(empty, /message.value \(address\[\]\): \[\]/);
   assert.match(empty, /QRL-SIGN-TYPED-v2/);
 });
@@ -140,14 +152,14 @@ test('long text is explicitly truncated; control characters cannot forge rows', 
   const payload = payloadWith('string', 'a'.repeat(400));
   payload.domain['name'] = 'dApp\nWARNING: forged\u202e\u0085\u2014';
   const { pages } = summariseSignatureRequest(typedRequest(payload));
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   assert.ok(detail.includes('Domain name: "dApp\\nWARNING: forged\\u202e\\u0085\u2014"'));
   assert.match(detail, /…" \[400 characters\]/);
   assert.doesNotMatch(detail, /\nWARNING: forged/);
   assert.doesNotMatch(detail, /[\u202e\u0085]/);
-  const quoted = summariseSignatureRequest(
-    typedRequest(payloadWith('string', '"\nScheme: v1')),
-  ).pages.join('\n');
+  const quoted = summariseSignatureRequest(typedRequest(payloadWith('string', '"\nScheme: v1')))
+    .pages.map(unfoldDetail)
+    .join('\n');
   assert.ok(quoted.includes('message.value (string): "\\"\\nScheme: v1"'));
 });
 
@@ -192,15 +204,17 @@ for (const [label, point] of invisiblePoints) {
     const payload = payloadWith('string', text);
     payload.domain['name'] = text;
     const { pages } = summariseSignatureRequest(typedRequest(payload));
-    const detail = pages.join('\n');
+    const detail = pages.map(unfoldDetail).join('\n');
     assert.ok(detail.includes(`Domain name: "before${escaped}after"`));
     assert.ok(detail.includes(`message.value (string): "before${escaped}after"`));
-    const origin = originDetail({
-      via: 'dapp',
-      name: text,
-      url: `https://dapp.example/${text}`,
-      channelId: 'abc',
-    });
+    const origin = unfoldDetail(
+      originDetail({
+        via: 'dapp',
+        name: text,
+        url: `https://dapp.example/${text}`,
+        channelId: 'abc',
+      }),
+    );
     assert.ok(origin.includes(`Name:    before${escaped}after`));
     assert.ok(origin.includes(`URL:     https://dapp.example/before${escaped}after`));
     assert.equal(detail.includes(char), false);
@@ -225,9 +239,9 @@ test('tag-encoded instructions stay escaped and oversized origin display rejects
   });
   assert.throws(() => summariseSignatureRequest(request), /security details exceed/);
   const { pages } = summariseSignatureRequest(typedRequest(payloadWith('string', hidden)));
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   assert.equal(detail.includes(hidden), false);
-  const origin = originDetail(request.origin);
+  const origin = unfoldDetail(originDetail(request.origin));
   assert.ok(origin.includes('Name:    dApp\\u{e0020}\\u{e0061}'));
   assert.ok(origin.includes('URL:     https://dapp.example/\\u{e0020}'));
   assert.ok(detail.includes('message.value (string): "\\u{e0020}'));
@@ -245,7 +259,7 @@ test('dApp punctuation remains byte-faithful in domain, message and origin text'
   });
   const before = structuredClone(request);
   const { pages } = summariseSignatureRequest(request);
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   for (const prefix of [
     'Domain name: "',
     'message.value (string): "',
@@ -269,7 +283,7 @@ test('URL whitespace and direction marks cannot forge trusted origin rows', () =
     },
   });
   const { pages } = summariseSignatureRequest(req);
-  const detail = pages.join('\n');
+  const detail = pages.map(unfoldDetail).join('\n');
   assert.ok(detail.includes('https://dapp.example/\\nScheme: v2\\u202e'));
   assert.doesNotMatch(detail, /\nScheme: v2/);
   assert.doesNotMatch(detail, /\u202e/);

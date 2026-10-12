@@ -2,6 +2,27 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Trusted confirmation details wrap in code at 48 display columns. Message
+  bodies keep a `| ` gutter on every line. dApp and renderer text in metadata,
+  typed data, transaction recipients and transaction data continues with
+  `    | `. Trusted notes, labels, verified signer and wallet-removal accounts,
+  wallet-renderer provenance and main-formatted numeric values continue with
+  a plain four-space indent, breaking at word boundaries where possible.
+  The pipe identifies dApp-supplied text and keeps it attached to its source row.
+- Multi-page reviews show their page indicator beside the request number in
+  the native bold label. Message and typed-data reviews retain the 30-line and
+  10-page limits, counting every wrapped detail line before opening a dialog.
+
+### Fixed
+
+- Message reviews keep JSON quotes literal while escaping backslashes and
+  invisible characters, preserving the exact signed bytes. Typed-data previews
+  and continuations preserve complete escapes and Unicode code points.
+
 ## 1.4.0 - 2026-10-12
 
 ### Added

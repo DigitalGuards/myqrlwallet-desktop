@@ -1,21 +1,25 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  DETAIL_LINE_COLUMNS,
   SIGNATURE_APPROVAL_NOTE,
   TYPED_DATA_DISPLAY_LIMITS,
   summariseSignatureRequest,
   typedDataDisplayLines,
+  wrapDetailText,
 } from '../src/main/confirmSummary';
 import { groupQrlAddress } from '../src/shared/address';
 import { SignatureRequestSchema } from '../src/shared/schemas';
 import {
   DIALOG_CHROME_MESSAGE,
+  GTK_WRAP_MESSAGE,
   messageRequest,
   QUANTASWAP_MESSAGE,
   QUANTASWAP_ORDER,
 } from './messageReviewFixtures';
 import { SIGNER } from './typedDataFixtures';
 import { REVIEW_ORIGIN } from './typedDataReviewFixtures';
+import { assertDetailWidth, assertTrustedLineStarts, unfoldDetail } from './confirmLayout';
 
 function messageRows(pages: string[]): string[] {
   return pages.flatMap((page) => {
@@ -37,10 +41,12 @@ function messageContents(pages: string[]): string[] {
 function unescapeTextRow(row: string): string {
   // Convert supplementary escapes while preserving literal escaped backslashes.
   const json = row.replace(
-    /\\(?:u\{([0-9a-f]+)\}|.)/gu,
+    /\\(?:u\{([0-9a-f]+)\}|.)|"/gu,
     (escape: string, point: string | undefined) =>
       point === undefined
-        ? escape
+        ? escape === '"'
+          ? '\\"'
+          : escape
         : JSON.stringify(String.fromCodePoint(Number.parseInt(point, 16))).slice(1, -1),
   );
   const value: unknown = JSON.parse(`"${json}"`);
@@ -61,12 +67,15 @@ function assertTextFidelity(pages: string[], message: string): void {
 
 function assertBudget(pages: string[]): void {
   assert.ok(pages.length >= 1 && pages.length <= TYPED_DATA_DISPLAY_LIMITS.pages);
-  for (const [index, page] of pages.entries()) {
-    const displayed = `${page}\n\n${SIGNATURE_APPROVAL_NOTE}`;
+  for (const page of pages) {
+    const displayed = wrapDetailText(`${page}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+    assertDetailWidth(displayed);
+    assertTrustedLineStarts(displayed);
     assert.ok(typedDataDisplayLines(displayed) <= TYPED_DATA_DISPLAY_LIMITS.lines, displayed);
-    assert.ok(displayed.length <= 30 * 65, 'total character budget includes line breaks');
-    assert.ok(page.includes(`Page ${index + 1} of ${pages.length}`));
-    assert.ok(page.includes(`Account:   ${groupQrlAddress(SIGNER)}`));
+    assert.equal(typedDataDisplayLines(displayed), displayed.split('\n').length);
+    assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 1));
+    assert.doesNotMatch(page, /^Page \d+ of \d+$/m);
+    assert.ok(unfoldDetail(page).includes(`Account:   ${groupQrlAddress(SIGNER)}`));
   }
   for (const line of messageRows(pages)) {
     assert.ok(line.startsWith('| '), 'body rows stay visibly separate from dialog chrome');
@@ -80,7 +89,7 @@ function assertBudget(pages: string[]): void {
     ]) {
       assert.equal(line.startsWith(label), false, `body row cannot impersonate ${label}`);
     }
-    assert.ok(line.length <= TYPED_DATA_DISPLAY_LIMITS.lineChars);
+    assert.ok(line.length <= DETAIL_LINE_COLUMNS);
     assert.equal(typedDataDisplayLines(line), 1, 'each message row fits the column budget');
   }
 }
@@ -96,7 +105,9 @@ test('a QuantaSwap-shaped order shows its complete text exactly once across page
   assert.ok(pages.length > 1);
   const displayed = messageContents(pages).join('');
   assertTextFidelity(pages, QUANTASWAP_MESSAGE);
-  assert.equal(displayed, JSON.stringify(QUANTASWAP_MESSAGE).slice(1, -1));
+  assert.equal(displayed, QUANTASWAP_MESSAGE.replace('\0', '\\u0000'));
+  assert.ok(displayed.includes('"maker":"'));
+  assert.equal(displayed.includes('\\"'), false);
   for (const part of ['QuantaSwap Protocol V2', '\\u0000', ...Object.values(QUANTASWAP_ORDER)]) {
     assert.equal(displayed.split(part).length - 1, 1, part);
   }
@@ -118,7 +129,11 @@ for (const message of ['', 'Hello, wallet', '  preserve  spaces  ', '(empty mess
     assertTextFidelity(pages, message);
     assert.deepEqual(messageRows(pages), [`| ${message || '(empty message)'}`]);
     assert.ok(pages[0]?.includes(`Message (text, ${message.length} bytes):`));
-    assert.ok(pages[0]?.includes('Requested by: wallet renderer (dApp origin not provided)'));
+    assert.ok(
+      unfoldDetail(pages[0] ?? '').includes(
+        'Requested by: wallet renderer (dApp origin not provided)',
+      ),
+    );
   });
 }
 
@@ -141,13 +156,61 @@ test('the 704-byte forged dialog chrome and hostile tail remain inside the messa
   }
 });
 
+test('a 247-byte message keeps the forged page counter inside bounded gutter rows', () => {
+  assert.equal(Buffer.byteLength(GTK_WRAP_MESSAGE), 247);
+  const { pages } = summariseSignatureRequest(messageRequest(GTK_WRAP_MESSAGE));
+  assertBudget(pages);
+  assertTextFidelity(pages, GTK_WRAP_MESSAGE);
+  assert.ok(messageContents(pages).join('').includes('Page 1 of 1'));
+  assert.doesNotMatch(pages.join('\n'), /^Page 1 of 1$/m);
+});
+
+test('every invisible character category and control byte round-trips through visible escapes', () => {
+  const points = [
+    ...Array.from({ length: 32 }, (_, index) => index),
+    ...Array.from({ length: 33 }, (_, index) => 0x7f + index),
+    0x061c,
+    0xe000,
+    0xf0000,
+    0x0378,
+    0x2028,
+    0x2029,
+    0x034f,
+    0x115f,
+    0x1160,
+    0x3164,
+    0xffa0,
+    0x180b,
+    0x180e,
+    0x180f,
+    0x2800,
+    0xfff9,
+    0xfffa,
+    0xfffb,
+    0xfe00,
+    0xfe0f,
+    0xe0100,
+    0xe01ef,
+    0xe0020,
+    0xe0061,
+    0xe007f,
+  ];
+  const message = String.fromCodePoint(...points);
+  const { pages } = summariseSignatureRequest(messageRequest(message));
+  assertBudget(pages);
+  assertTextFidelity(pages, message);
+  for (const point of points) {
+    assert.equal(messageContents(pages).join('').includes(String.fromCodePoint(point)), false);
+  }
+});
+
 test('header labels aligned to the new content width retain the gutter', () => {
   for (const label of ['Account:', 'Page ', 'Message (', 'Requested by', SIGNATURE_APPROVAL_NOTE]) {
-    const message = ' '.repeat(62) + label;
+    const message = ' '.repeat(46) + label;
     const { pages } = summariseSignatureRequest(messageRequest(message));
     assertBudget(pages);
     assertTextFidelity(pages, message);
-    assert.equal(messageRows(pages)[1], `| ${label.slice(0, 62)}`);
+    assert.ok(messageRows(pages)[1]?.startsWith(`| ${label.slice(0, 8)}`));
     assert.equal(messageContents(pages).slice(1).join(''), label);
   }
 });
@@ -165,16 +228,16 @@ test('space-only rows keep a visible gutter for every Unicode space separator', 
   }
 });
 
-test('ASCII text wraps at 62 content columns including an exact final row', () => {
-  for (const length of [61, 62, 63, 124, 125]) {
+test('ASCII text wraps at 46 content columns including an exact final row', () => {
+  for (const length of [45, 46, 47, 92, 93]) {
     const message = 'a'.repeat(length);
     const { pages } = summariseSignatureRequest(messageRequest(message));
     assertBudget(pages);
     assertTextFidelity(pages, message);
     const rows = messageContents(pages);
-    assert.equal(rows.length, Math.ceil(length / 62));
-    assert.ok(rows.slice(0, -1).every((line) => line.length === 62));
-    assert.equal(rows.at(-1)?.length, length % 62 || 62);
+    assert.equal(rows.length, Math.ceil(length / 46));
+    assert.ok(rows.slice(0, -1).every((line) => line.length === 46));
+    assert.equal(rows.at(-1)?.length, length % 46 || 46);
   }
 });
 
@@ -195,8 +258,8 @@ test('binary messages show every byte once in fixed-width hex lines with either 
     const rows = messageContents(pages);
     assert.equal(rows.join(''), hex);
     assert.deepEqual(Buffer.from(rows.join(''), 'hex'), Buffer.from(bytes));
-    assert.ok(rows.slice(0, -1).every((line) => line.length === 62));
-    assert.equal(rows.at(-1)?.length, 4);
+    assert.ok(rows.slice(0, -1).every((line) => line.length === 46));
+    assert.equal(rows.at(-1)?.length, hex.length % 46);
   }
 });
 
@@ -232,7 +295,7 @@ for (const [char, escaped] of [
   ['\n', '\\n'],
   ['\r', '\\r'],
   ['\t', '\\t'],
-  ['"', '\\"'],
+  ['"', '"'],
   ['\\', '\\\\'],
   ['\u202e', '\\u202e'],
   ['\u2066', '\\u2066'],
@@ -243,8 +306,8 @@ for (const [char, escaped] of [
   ['\u{e0061}', '\\u{e0061}'],
 ] as const) {
   test(`message escape ${escaped} stays intact at a line boundary`, () => {
-    const prefix = 'a'.repeat(61);
-    const suffix = 'b'.repeat(61);
+    const prefix = 'a'.repeat(46);
+    const suffix = 'b'.repeat(46);
     const message = prefix + char + suffix;
     const { pages } = summariseSignatureRequest(messageRequest(message));
     assertBudget(pages);
