@@ -270,7 +270,7 @@ test('validated request -> trusted summary -> session signer -> SDK-style verifi
     assert.match(
       summariseSignatureRequest(wire.request, {
         connectedChainId: EXPECTED_CHAIN_ID,
-      }).detail,
+      }).pages.join('\n'),
       /Scheme: +QRL-SIGN-TYPED-v2/,
     );
     const result = await signRequest(session, wire.request, wire.chainId, Date.now());

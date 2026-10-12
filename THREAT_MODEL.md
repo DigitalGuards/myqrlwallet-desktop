@@ -141,27 +141,34 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   code points (including tags, variation selectors and Hangul fillers), and
   braille blank are escaped in domain/message text and dApp names/URLs.
   Supplementary code points use visible `\u{...}` escapes. Other punctuation
-  supplied by a dApp is preserved. The whole typed-data detail, including the
-  final approval note, has a budget of 30 wrapped lines at 64 display columns.
-  Word boundaries, unbroken tokens and blank lines consume that budget; wide
-  ASCII glyphs and non-ASCII code points count as two columns. This leaves
-  room for native dialog controls within roughly 700 logical pixels at common
-  desktop font sizes. Exact height depends on OS font metrics and scaling.
-  Small requests keep their existing text. Full provenance, account, scheme,
-  domain metadata, primary type and chain warnings appear first. If these
-  required details cannot fit in full with the omission warning, confirmation
-  rejects before showing an approval dialog.
-  Message rows share the remaining space, with at most 20 leaves and an
-  80-character path prefix. Long string/byte previews use a 64-character budget
-  including an ellipsis and the original character/byte length. Addresses are
-  displayed in full or omitted as whole fields. Omitted leaves are counted with an
-  `and N more fields` warning, followed by
-  `WARNING: additional fields are included in this signature.` Both lines
-  appear immediately after the primary type, above all message rows in the
-  native dialog, which does not scroll. Every value in the validated payload
-  participates in the signature, including hidden tails. Users must assess
-  that omission before approving. The native dialog defaults to Cancel;
-  Escape also cancels.
+  supplied by a dApp is preserved. Review uses sequential OS-native
+  `dialog.showMessageBox` pages. Every page starts with the unverified dApp
+  name/URL (or wallet-renderer provenance), full grouped account, scheme and
+  `Page k of n`. Page one also shows the full domain block, primary type,
+  wallet chain ID and all chain warnings. Oversized mandatory metadata rejects
+  before any dialog opens.
+  Each page, including the approval note, has a budget of 30 wrapped lines at
+  64 display columns. Word boundaries, unbroken tokens and blank lines consume
+  that budget; wide ASCII glyphs and non-ASCII code points count as two columns.
+  This leaves room for native dialog controls within roughly 700 logical
+  pixels at common desktop font sizes. Exact height depends on OS font metrics
+  and scaling. Every message row appears once, in order, and stays on one page.
+  All addresses and integers are shown in full. Labels over 80 characters
+  elide the middle of the path, preserve the complete leaf name and array
+  indices, and include a unique row number to distinguish hidden ancestors.
+  A long leaf with many indices can exceed the label target and still counts
+  toward the page budget.
+  String/byte previews use a 64-character budget including an ellipsis and
+  the original character/byte length. Formatting escapes only bounded input
+  prefixes; full metadata is size-checked before escaping. Preview tails still
+  participate in the signature. Rows are generated lazily and preparation
+  stops when an eleventh page would be required. Such requests fail closed
+  with a desktop review-size error before any dialog is shown.
+  Pages before the last offer `Next` and `Cancel`. Only the last offers
+  `Approve & sign` and `Cancel`; a single-page request offers approval on its
+  first page. Cancel is the default and Escape cancels on every page. Cancelling
+  at any point rejects the entire request, and the signer is called only after
+  the last page is approved.
 - **What main trusts:** the IPC sender check, strict request schema, and its
   own pinned network identity. The domain chain ID is compared numerically
   with the `Wallet network chainId` and a mismatch raises a warning. A domain
@@ -199,8 +206,11 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   address casing before confirmation through the same public checksum helper
   used by the signer. Uniform-case bodies are accepted; mixed-case bodies must
   match the checksum. The helper imports only public SHAKE256 hashing and
-  address-shape logic. Key derivation and signing remain isolated. The signer
-  validates and hashes the complete payload and selects its scheme before
+  address-shape logic; it also derives public Ledger addresses from public keys.
+  The crypto import lint fence includes package subpaths
+  and allows only `@noble/hashes/sha3.js` in `src/shared/addressCase.ts` outside
+  the signer and test scopes. Key derivation and signing remain isolated. The
+  signer validates and hashes the complete payload and selects its scheme before
   `signRequest` enters `session.withSeed` to decrypt the seed and sign. Signing
   requires an unlocked session and `assertSessionSigner` must match the request
   account. Wallet secret-key buffers are wiped in `finally`. Main's response

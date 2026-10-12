@@ -29,18 +29,21 @@ export async function confirmSignature(
   req: SignatureRequest,
   context: ConfirmContext = {},
 ): Promise<boolean> {
-  const { title, message, detail } = summariseSignatureRequest(req, context);
-  const { response } = await dialog.showMessageBox(parent, {
-    type: 'warning',
-    buttons: ['Approve & sign', 'Cancel'],
-    defaultId: 1,
-    cancelId: 1,
-    title,
-    message,
-    detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
-    noLink: true,
-  });
-  return response === 0;
+  const { title, message, pages } = summariseSignatureRequest(req, context);
+  for (const [index, detail] of pages.entries()) {
+    const { response } = await dialog.showMessageBox(parent, {
+      type: 'warning',
+      buttons: [index === pages.length - 1 ? 'Approve & sign' : 'Next', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title,
+      message,
+      detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
+      noLink: true,
+    });
+    if (response !== 0) return false;
+  }
+  return true;
 }
 
 /**

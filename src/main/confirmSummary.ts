@@ -80,7 +80,7 @@ export function originDetail(origin: DAppOrigin | undefined): string {
 export interface ConfirmSummary {
   title: string;
   message: string;
-  detail: string;
+  pages: string[];
 }
 
 /** What main knows beyond the request itself when it draws the confirmation. */
@@ -101,13 +101,25 @@ export interface ConfirmContext {
 export const TYPED_DATA_DISPLAY_LIMITS = {
   lines: 30,
   lineChars: 64,
-  fields: 20,
+  pages: 10,
   valueChars: 64,
   labelChars: 80,
 } as const;
 
 export const SIGNATURE_APPROVAL_NOTE =
   'Approve only if you initiated this and the details are correct.';
+
+const TYPED_METADATA_ERROR =
+  'Typed-data security details exceed the confirmation display limit. Shorten the dApp origin or domain metadata.';
+
+/** Full metadata must fit on page one. Bound escaping before measuring it. */
+function fullTypedText(value: string): string {
+  const maxChars = TYPED_DATA_DISPLAY_LIMITS.lines * TYPED_DATA_DISPLAY_LIMITS.lineChars;
+  if (value.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
+  const escaped = singleLineText(value.slice(0, maxChars));
+  if (escaped.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
+  return escaped;
+}
 
 /**
  * Conservative native word-wrap accounting, including long unbroken tokens.
@@ -155,52 +167,52 @@ function singleLineText(value: string): string {
 }
 
 function displayTypedText(value: string, length: string): string {
-  const escaped = `"${singleLineText(value)}"`;
-  if (escaped.length <= TYPED_DATA_DISPLAY_LIMITS.valueChars) return escaped;
+  // Escape only a bounded input prefix, even for maximum-size control text.
+  const limit = TYPED_DATA_DISPLAY_LIMITS.valueChars;
+  const escaped = `"${singleLineText(value.slice(0, limit))}"`;
+  if (value.length <= limit && escaped.length <= limit) return escaped;
   const suffix = `…" [${length}]`;
   const prefix = Array.from(escaped)
-    .slice(0, TYPED_DATA_DISPLAY_LIMITS.valueChars - suffix.length)
+    .slice(0, limit - suffix.length)
     .join('');
   return prefix + suffix;
 }
 
-interface TypedRow {
-  label: string;
-  value: string;
-}
-
-function typedMessageRows(payload: TypedDataPayload): { rows: TypedRow[]; omitted: number } {
-  const rows: TypedRow[] = [];
+function* typedMessageRows(payload: TypedDataPayload): Generator<string> {
   let count = 0;
-  const add = (path: string, type: string, value: string): void => {
+  const formatRow = (path: string, type: string, value: string): string => {
     count += 1;
-    if (rows.length >= TYPED_DATA_DISPLAY_LIMITS.fields) return;
-    const label =
-      path.length > TYPED_DATA_DISPLAY_LIMITS.labelChars
-        ? `${path.slice(0, TYPED_DATA_DISPLAY_LIMITS.labelChars)} [path truncated]`
-        : path;
-    rows.push({ label: `${label} (${type})`, value });
+    let label = path;
+    if (path.length > TYPED_DATA_DISPLAY_LIMITS.labelChars) {
+      // Keep the complete leaf and its indices. The row number distinguishes
+      // paths whose elided ancestors differ, including repeated leaf names.
+      const leaf = path.slice(path.lastIndexOf('.') + 1);
+      const suffix = `…#${count}.${leaf}`;
+      const prefixChars = Math.max(8, TYPED_DATA_DISPLAY_LIMITS.labelChars - suffix.length);
+      label = path.slice(0, prefixChars) + suffix;
+    }
+    return `${label} (${type}): ${value}`;
   };
-  const walkStruct = (type: string, data: unknown, path: string): void => {
+  function* walkStruct(type: string, data: unknown, path: string): Generator<string> {
     if (!isRecord(data)) throw new Error('invalid typed-data summary struct');
     const fields = payload.types[type];
     if (!fields) throw new Error('missing typed-data summary type');
-    for (const field of fields) walk(field.type, data[field.name], `${path}.${field.name}`);
-  };
-  const walk = (type: string, value: unknown, path: string): void => {
+    for (const field of fields) yield* walk(field.type, data[field.name], `${path}.${field.name}`);
+  }
+  function* walk(type: string, value: unknown, path: string): Generator<string> {
     const parsed = parseFieldType(type, payload.types);
     if (parsed.kind === 'ref') {
-      walkStruct(parsed.name, value, path);
+      yield* walkStruct(parsed.name, value, path);
     } else if (parsed.kind === 'array') {
       if (!isArray(value)) throw new Error('invalid typed-data summary array');
-      if (value.length === 0) add(path, type, '[]');
-      for (const [index, item] of value.entries()) walk(parsed.inner, item, `${path}[${index}]`);
+      if (value.length === 0) yield formatRow(path, type, '[]');
+      for (const [index, item] of value.entries())
+        yield* walk(parsed.inner, item, `${path}[${index}]`);
     } else {
-      add(path, type, typedScalar(type, value, payload.types));
+      yield formatRow(path, type, typedScalar(type, value, payload.types));
     }
-  };
-  walkStruct(payload.primaryType, payload.message, 'message');
-  return { rows, omitted: count - rows.length };
+  }
+  yield* walkStruct(payload.primaryType, payload.message, 'message');
 }
 
 function typedScalar(type: string, value: unknown, types: TypeMap, shorten = true): string {
@@ -210,7 +222,7 @@ function typedScalar(type: string, value: unknown, types: TypeMap, shorten = tru
   if (parsed.kind === 'bool' && typeof value === 'boolean') return String(value);
   if (typeof value !== 'string') throw new Error('invalid typed-data summary value');
   if (parsed.kind === 'address') return groupQrlAddress(value);
-  if (!shorten) return `"${singleLineText(value)}"`;
+  if (!shorten) return `"${fullTypedText(value)}"`;
   const length =
     parsed.kind === 'bytes' || parsed.kind === 'bytesN'
       ? `${(value.length - 2) / 2} bytes`
@@ -218,18 +230,24 @@ function typedScalar(type: string, value: unknown, types: TypeMap, shorten = tru
   return displayTypedText(value, length);
 }
 
-function typedDataDetail(
+function typedDataPages(
   req: Extract<SignatureRequest, { kind: 'typedData' }>,
   connectedChainId: number | undefined,
-): string {
+): string[] {
   const { payload } = req;
   const scheme = typedDataSchemeVersion(payload);
-  const lines = [
-    originDetail(req.origin) || 'Requested by: wallet renderer (dApp origin not provided)',
-    '',
+  const header = [
+    ...(req.origin
+      ? [
+          'Requested by dApp (unverified, dApp-supplied):',
+          `Name:    ${fullTypedText(req.origin.name)}`,
+          `URL:     ${req.origin.url ? fullTypedText(req.origin.url) : '(not provided)'}`,
+        ]
+      : ['Requested by: wallet renderer (dApp origin not provided)']),
     row('Account:', groupQrlAddress(req.signer)),
     row('Scheme:', scheme),
   ];
+  const lines: string[] = [];
   for (const [name, type] of [
     ['name', 'string'],
     ['version', 'string'],
@@ -258,33 +276,37 @@ function typedDataDetail(
     );
   }
   lines.push(`Primary type: ${payload.primaryType}`);
-  const { rows, omitted } = typedMessageRows(payload);
-  // Keep a complete prefix of message rows. Recompute the omission notice as
-  // rows are removed so its own wrapped width is always reserved above them.
-  for (let shown = rows.length; shown >= 0; shown -= 1) {
-    const hidden = omitted + rows.length - shown;
-    const detail = [
-      ...lines,
-      ...(hidden > 0
-        ? [
-            `and ${hidden} more fields`,
-            'WARNING: additional fields are included in this signature.',
-          ]
-        : []),
-      `Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`,
-      ...rows.slice(0, shown).map((field) => `${field.label}: ${field.value}`),
-    ].join('\n');
-    if (
-      typedDataDisplayLines(`${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`) <=
-      TYPED_DATA_DISPLAY_LIMITS.lines
-    ) {
-      return detail;
+  const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
+  // Reserve the widest page counter before the total is known. Metadata is
+  // mandatory on page one; every subsequent page repeats the compact header.
+  const base = [...header, `Page ${maxPages} of ${maxPages}`].join('\n');
+  const continuationLines = typedDataDisplayLines(
+    `${base}\nMessage fields:\n\n${SIGNATURE_APPROVAL_NOTE}`,
+  );
+  let used = continuationLines + typedDataDisplayLines(lines.join('\n'));
+  if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(TYPED_METADATA_ERROR);
+  const bodies = [lines];
+  let body = lines;
+  body.push('Message fields:');
+  // Consume rows lazily so a request over the page limit stops formatting as
+  // soon as it is known to be too large. No dialog is shown during preparation.
+  for (const field of typedMessageRows(payload)) {
+    const cost = typedDataDisplayLines(field);
+    if (used + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
+      if (bodies.length >= maxPages || continuationLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
+        throw new Error(
+          `Typed-data request is too large to review safely on desktop (maximum ${maxPages} pages).`,
+        );
+      }
+      body = ['Message fields:'];
+      bodies.push(body);
+      used = continuationLines;
     }
+    body.push(field);
+    used += cost;
   }
-  // Required provenance and domain metadata can themselves be schema-valid
-  // bulk text. Fail before approval when their full display cannot fit.
-  throw new Error(
-    'Typed-data security details exceed the confirmation display limit. Shorten the dApp origin or domain metadata.',
+  return bodies.map((bodyLines, index) =>
+    [...header, `Page ${index + 1} of ${bodies.length}`, ...bodyLines].join('\n'),
   );
 }
 
@@ -406,7 +428,7 @@ export function summariseSignatureRequest(
       return {
         title: 'Confirm transaction',
         message: `Send ${formatQuanta(tx.value)}? Max cost ${formatQuanta(maxCost)}.`,
-        detail: detail + originDetail(req.origin),
+        pages: [detail + originDetail(req.origin)],
       };
     }
     case 'message':
@@ -415,16 +437,17 @@ export function summariseSignatureRequest(
         message: 'Sign this message with your wallet key?',
         // req.signer is trustworthy to display: main verified it against the
         // unlocked session before this modal, and the signer re-enforces it.
-        detail:
+        pages: [
           `${row('Account:', groupQrlAddress(req.signer))}\n` +
-          `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
-          originDetail(req.origin),
+            `Message (hex):\n${req.messageHex.slice(0, 256)}${req.messageHex.length > 256 ? '…' : ''}` +
+            originDetail(req.origin),
+        ],
       };
     case 'typedData':
       return {
         title: 'Confirm typed-data signature',
         message: 'Sign this structured data with your wallet key?',
-        detail: typedDataDetail(req, context.connectedChainId),
+        pages: typedDataPages(req, context.connectedChainId),
       };
   }
 }

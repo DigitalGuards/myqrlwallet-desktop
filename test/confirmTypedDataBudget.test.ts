@@ -7,169 +7,162 @@ import {
   typedDataDisplayLines,
 } from '../src/main/confirmSummary';
 import { groupQrlAddress } from '../src/shared/address';
-import { SignatureRequestSchema } from '../src/shared/schemas';
-import { type TypedDataPayload } from '../src/shared/typedData';
+import type { TypedDataPayload } from '../src/shared/typedData';
 import { payloadWith, SIGNER, typedRequest } from './typedDataFixtures';
+import {
+  ATTACKER_SPENDER,
+  RECIPIENTS,
+  REVIEW_CONTRACT,
+  REVIEW_ORIGIN,
+  UNLIMITED,
+  permitPayload,
+  reviewCases,
+  reviewRequest,
+  withReviewDomain,
+} from './typedDataReviewFixtures';
 
-const ORIGIN = {
-  via: 'dapp',
-  name: 'QRL Connect Test dApp',
-  url: 'https://dapp.example/',
-  channelId: '12345678-abcd-1234-abcd-123456789012',
-} as const;
-const CONTRACT = `Q${'b'.repeat(128)}`;
-
-function withDomain(payload: TypedDataPayload): TypedDataPayload {
-  return {
-    ...payload,
-    types: {
-      ...payload.types,
-      QRLDomain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-      ],
-    },
-    domain: { name: 'Batch payout', version: '1', chainId: 3151909, verifyingContract: CONTRACT },
-  };
+function messageRows(pages: string[]): string[] {
+  return pages.flatMap((page) => page.split('\n').filter((line) => line.startsWith('message.')));
 }
 
-function summaryWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909): string {
-  const request = SignatureRequestSchema.parse({
-    kind: 'typedData',
-    payload,
-    signer: SIGNER,
-    origin: ORIGIN,
-  });
+function assertBudget(pages: string[]): void {
+  assert.ok(pages.length >= 1 && pages.length <= 10);
+  for (const [i, detail] of pages.entries()) {
+    const displayed = `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`;
+    assert.ok(typedDataDisplayLines(displayed) <= 30, displayed);
+    assert.ok(displayed.length <= 30 * 65, 'total character budget includes line breaks');
+    assert.ok(detail.includes(`Page ${i + 1} of ${pages.length}`));
+    assert.doesNotMatch(detail, /more fields|additional fields|up to .* shown/);
+  }
+}
+
+function pagesWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909): string[] {
+  const request = reviewRequest(payload);
   const before = structuredClone(request);
-  const summary = summariseSignatureRequest(request, { connectedChainId });
+  const { pages } = summariseSignatureRequest(request, { connectedChainId });
   assert.deepEqual(request, before);
-  assert.deepEqual(summariseSignatureRequest(request, { connectedChainId }), summary);
-  return summary.detail;
-}
-
-function assertBudget(detail: string): void {
-  const displayed = `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`;
-  assert.ok(typedDataDisplayLines(displayed) <= 30, displayed);
-  assert.ok(displayed.length <= 30 * 65, 'total character budget includes line breaks');
-}
-
-function assertOmissions(detail: string, total: number): string[] {
-  const rows = detail.split('\n').filter((line) => line.startsWith('message.'));
-  assert.ok(rows.length < total);
-  const notice = `and ${total - rows.length} more fields\nWARNING: additional fields are included in this signature.`;
-  assert.ok(detail.includes(notice), detail);
-  assert.ok(detail.indexOf(notice) > detail.indexOf('Primary type:'));
-  assert.ok(detail.indexOf(notice) < detail.indexOf('Message fields'));
-  return rows;
-}
-
-function assertSecurityDetails(detail: string): void {
-  const header = detail.slice(0, detail.indexOf('Message fields'));
-  for (const value of [
-    'Requested by dApp (unverified, dApp-supplied):',
-    ORIGIN.name,
-    ORIGIN.url,
-    ORIGIN.channelId,
-    `Account:   ${groupQrlAddress(SIGNER)}`,
-    'Scheme:    QRL-SIGN-TYPED-v2',
-    'Domain name: "Batch payout"',
-    'Domain version: "1"',
-    'Domain chainId: 3151909',
-    `Domain verifyingContract: ${groupQrlAddress(CONTRACT)}`,
-    'Wallet network chainId:',
-    'Primary type:',
-  ]) {
-    assert.ok(header.includes(value), value);
+  assert.deepEqual(summariseSignatureRequest(request, { connectedChainId }).pages, pages);
+  assertBudget(pages);
+  for (const page of pages) {
+    assert.ok(page.startsWith('Requested by dApp (unverified, dApp-supplied):'));
+    for (const value of [
+      REVIEW_ORIGIN.name,
+      REVIEW_ORIGIN.url,
+      `Account:   ${groupQrlAddress(SIGNER)}`,
+      'Scheme:    QRL-SIGN-TYPED-',
+    ]) {
+      assert.ok(page.includes(value), value);
+      assert.ok(page.indexOf(value) < page.indexOf('Page '));
+    }
   }
+  return pages;
 }
 
-test('25 long string fields fit with the full security header, footer and exact omission count', () => {
-  const fields = Array.from({ length: 25 }, (_, index) => ({
-    name: `note${index}`,
-    type: 'string',
-  }));
-  const payload = withDomain({
-    types: { QRLDomain: [{ name: 'name', type: 'string' }], Notes: fields },
-    primaryType: 'Notes',
-    domain: { name: 'Notes' },
-    message: Object.fromEntries(fields.map(({ name }) => [name, 'a'.repeat(1000)])),
+for (const { label, payload, paths } of reviewCases) {
+  test(`${label} with origin shows every row exactly once in order within ten pages`, () => {
+    const pages = pagesWithOrigin(payload);
+    assert.deepEqual(
+      messageRows(pages).map((row) => row.split(' (')[0]),
+      paths,
+    );
+    const [first, ...rest] = pages;
+    assert.ok(first);
+    for (const name of ['name', 'version', 'chainId', 'verifyingContract', 'salt']) {
+      assert.ok(first.includes(`Domain ${name}:`));
+    }
+    assert.ok(first.includes(`Primary type: ${payload.primaryType}`));
+    assert.ok(rest.every((page) => !page.includes('Domain name:') && !page.includes('WARNING:')));
   });
-  const detail = summaryWithOrigin(payload);
-  assertBudget(detail);
-  assertSecurityDetails(detail);
-  const rows = assertOmissions(detail, 25);
-  assert.ok(rows.length > 0);
-  for (const [index, row] of rows.entries()) {
-    assert.ok(row.startsWith(`message.note${index} (string): "aaaa`));
-    assert.match(row, /…" \[1000 characters\]$/);
-  }
+}
+
+test('unlimited Permit to an attacker shows the full spender and value', () => {
+  const pages = pagesWithOrigin(permitPayload(UNLIMITED));
+  assert.ok(pages.length > 1);
+  const rows = messageRows(pages);
+  assert.equal(rows.length, 5);
+  assert.equal(rows[1], `message.spender (address): ${groupQrlAddress(ATTACKER_SPENDER)}`);
+  assert.equal(rows[2], `message.value (uint256): ${UNLIMITED}`);
+  assert.equal(rows[4], `message.deadline (uint256): ${UNLIMITED}`);
 });
 
-test('12 address recipients fit by omitting whole fields and preserving every displayed address', () => {
-  const recipients = Array.from(
-    { length: 12 },
-    (_, index) => `Q${(index + 1).toString(16).padStart(128, '0')}`,
-  );
-  const payload = withDomain(payloadWith('address[]', recipients));
+test('all 12 addresses remain complete and grouped, with chain warnings on page one', () => {
+  const payload = withReviewDomain(payloadWith('address[]', RECIPIENTS));
   for (const connectedChainId of [3151909, 1]) {
-    const detail = summaryWithOrigin(payload, connectedChainId);
-    assertBudget(detail);
-    assertSecurityDetails(detail);
-    const rows = assertOmissions(detail, recipients.length);
-    assert.ok(rows.length > 0);
-    for (const [index, row] of rows.entries()) {
-      const recipient = recipients[index];
-      assert.ok(recipient);
-      assert.equal(row, `message.value[${index}] (address): ${groupQrlAddress(recipient)}`);
-      assert.doesNotMatch(row, /…|truncated/);
-    }
+    const pages = pagesWithOrigin(payload, connectedChainId);
+    assert.deepEqual(
+      messageRows(pages),
+      RECIPIENTS.map((address, i) => `message.value[${i}] (address): ${groupQrlAddress(address)}`),
+    );
+    const first = pages[0];
+    assert.ok(first);
+    assert.ok(first?.includes(`Domain verifyingContract: ${groupQrlAddress(REVIEW_CONTRACT)}`));
     if (connectedChainId === 1) {
       const warning = 'WARNING: domain chainId differs from the wallet network.';
-      assert.ok(detail.includes(warning));
-      assert.ok(detail.indexOf(warning) < detail.indexOf('Message fields'));
+      assert.ok(first.includes(warning));
+      assert.ok(first.indexOf(warning) < first.indexOf('Message fields'));
     }
   }
 });
 
-test('long bytes, wide text and escaped controls share the same total display budget', () => {
+test('25 long bytes, wide strings and escaped controls fit with every row present', () => {
   for (const [type, value, ending] of [
     ['bytes', `0x${'ab'.repeat(1000)}`, '…" [1000 bytes]'],
     ['string', 'W'.repeat(1000), '…" [1000 characters]'],
     ['string', '界'.repeat(1000), '…" [1000 characters]'],
     ['string', '\u202e'.repeat(1000), '…" [1000 characters]'],
   ] as const) {
-    const detail = summaryWithOrigin(
+    const pages = pagesWithOrigin(
       payloadWith(
         `${type}[]`,
         Array.from({ length: 25 }, () => value),
       ),
     );
-    assertBudget(detail);
-    const rows = assertOmissions(detail, 25);
-    assert.ok(rows.length > 0);
+    const rows = messageRows(pages);
+    assert.deepEqual(
+      rows.map((row) => row.split(' (')[0]),
+      Array.from({ length: 25 }, (_, i) => `message.value[${i}]`),
+    );
     assert.ok(rows.every((row) => row.endsWith(ending)));
-    assert.doesNotMatch(detail, /\u202e/);
+    assert.doesNotMatch(pages.join('\n'), /\u202e/);
     assert.match(
-      detail,
+      pages[0] ?? '',
       /WARNING: this signature is not bound to a chain and can be replayed on other chains\./,
     );
   }
 });
 
-test('long field paths consume wrapped space, with omissions counted through nested arrays', () => {
-  const name = 'long_field_name_'.repeat(4);
-  const payload = payloadWith(
-    'uint8[][]',
-    Array.from({ length: 4 }, () => Array.from({ length: 25 }, () => 1)),
-  );
-  payload.types['Payload'] = [{ name, type: 'uint8[][]' }];
-  payload.message = { [name]: payload.message['value'] };
-  const detail = summaryWithOrigin(payload);
-  assertBudget(detail);
-  const rows = assertOmissions(detail, 100);
-  assert.ok(rows.length > 0 && rows.length < 5);
+test('middle-elided paths keep full leaf names and distinguish hidden ancestors', () => {
+  const outer = 'outer_'.repeat(10);
+  const inner = 'inner_'.repeat(10);
+  const longLeaf = 's'.repeat(64);
+  const fields = [
+    { name: 'owner', type: 'uint8' },
+    { name: 'spender', type: 'uint8' },
+    { name: longLeaf, type: 'uint8' },
+  ];
+  const leaf = { owner: 1, spender: 2, [longLeaf]: 3 };
+  const pages = pagesWithOrigin({
+    types: {
+      QRLDomain: [{ name: 'name', type: 'string' }],
+      Root: [{ name: outer, type: 'Branch' }],
+      Branch: [
+        { name: `${inner}a`, type: 'Leaf' },
+        { name: `${inner}b`, type: 'Leaf' },
+      ],
+      Leaf: fields,
+    },
+    primaryType: 'Root',
+    domain: { name: 'Paths' },
+    message: { [outer]: { [`${inner}a`]: leaf, [`${inner}b`]: leaf } },
+  });
+  const rows = messageRows(pages);
+  assert.equal(rows.length, 6);
+  const labels = rows.map((row) => row.split(' (')[0]);
+  assert.equal(new Set(labels).size, 6);
+  for (const [i, field] of [...fields, ...fields].entries()) {
+    assert.ok(labels[i]?.endsWith(`.${field.name}`));
+    assert.ok(labels[i]?.includes(`…#${i + 1}.`));
+  }
 });
 
 test('full domain text and salt are retained; oversized mandatory metadata rejects', () => {
@@ -183,12 +176,14 @@ test('full domain text and salt are retained; oversized mandatory metadata rejec
     { name: 'salt', type: 'bytes32' },
   ];
   payload.domain = { name, version, salt };
-  const { detail } = summariseSignatureRequest(typedRequest(payload));
-  assertBudget(detail);
-  assert.ok(detail.includes(`Domain name: "${name}"`));
-  assert.ok(detail.includes(`Domain version: "${version}"`));
-  assert.ok(detail.includes(`Domain salt: "${salt}"`));
-  assert.doesNotMatch(detail, /…|truncated/);
+  const { pages } = summariseSignatureRequest(typedRequest(payload));
+  assertBudget(pages);
+  const first = pages[0];
+  assert.ok(first);
+  assert.ok(first?.includes(`Domain name: "${name}"`));
+  assert.ok(first.includes(`Domain version: "${version}"`));
+  assert.ok(first.includes(`Domain salt: "${salt}"`));
+  assert.doesNotMatch(first, /…|truncated/);
   for (const key of ['name', 'version']) {
     const large = structuredClone(payload);
     large.domain[key] = 'x'.repeat(16 * 1024);
@@ -200,43 +195,53 @@ test('full domain text and salt are retained; oversized mandatory metadata rejec
   }
 });
 
-test('even a zero-row display names all omitted fields and keeps the warning', () => {
-  const payload = withDomain(payloadWith('address[]', [CONTRACT, SIGNER]));
+test('large page-one metadata moves complete message rows to subsequent pages', () => {
+  const payload = withReviewDomain(payloadWith('address[]', [REVIEW_CONTRACT, SIGNER]));
   payload.domain['name'] = 'n'.repeat(150);
-  const detail = summaryWithOrigin(payload, 1);
-  assertBudget(detail);
-  assert.deepEqual(assertOmissions(detail, 2), []);
-  assert.ok(detail.includes(`Domain name: "${'n'.repeat(150)}"`));
+  const pages = pagesWithOrigin(payload, 1);
+  assert.ok(pages[0]?.includes(`Domain name: "${'n'.repeat(150)}"`));
+  assert.deepEqual(
+    messageRows(pages),
+    [REVIEW_CONTRACT, SIGNER].map(
+      (address, i) => `message.value[${i}] (address): ${groupQrlAddress(address)}`,
+    ),
+  );
 });
 
-test('small payload text stays unchanged', () => {
-  const { detail } = summariseSignatureRequest(typedRequest(payloadWith('string', 'hello')));
-  assert.equal(
-    detail,
-    [
-      'Requested by: wallet renderer (dApp origin not provided)',
-      '',
-      `Account:   ${groupQrlAddress(SIGNER)}`,
-      'Scheme:    QRL-SIGN-TYPED-v1',
-      'Domain name: "Test dApp"',
-      'Domain version: (not provided)',
-      'Domain chainId: (not provided)',
-      'Domain verifyingContract: (not provided)',
-      'Domain salt: (not provided)',
-      'WARNING: this signature is not bound to a chain and can be replayed on other chains.',
-      'Primary type: Payload',
-      'Message fields (up to 20 shown):',
-      'message.value (string): "hello"',
-    ].join('\n'),
+test('maximum valid control text escapes bounded prefixes and stops at the page limit', (t) => {
+  const value = '\u0007'.repeat(16 * 1024);
+  const request = typedRequest(
+    payloadWith(
+      'string[][]',
+      Array.from({ length: 8 }, (_, i) => Array.from({ length: i === 7 ? 244 : 256 }, () => value)),
+    ),
   );
-  assertBudget(detail);
+  const stringify = t.mock.method(JSON, 'stringify');
+  assert.throws(
+    () => summariseSignatureRequest(request),
+    /too large to review safely on desktop \(maximum 10 pages\)/,
+  );
+  const sizes = stringify.mock.calls.map((call) => {
+    const value: unknown = call.arguments[0];
+    return typeof value === 'string' ? value.length : 0;
+  });
+  assert.ok(sizes.length > 1 && sizes.length < 300);
+  assert.ok(Math.max(...sizes) <= TYPED_DATA_DISPLAY_LIMITS.valueChars);
+});
+
+test('small payloads fit on a single page with every field', () => {
+  const { pages } = summariseSignatureRequest(typedRequest(payloadWith('string', 'hello')));
+  assertBudget(pages);
+  assert.equal(pages.length, 1);
+  assert.match(pages[0] ?? '', /Page 1 of 1/);
+  assert.deepEqual(messageRows(pages), ['message.value (string): "hello"']);
 });
 
 test('line accounting includes blanks, word boundaries, long tokens and wide characters', () => {
   assert.deepEqual(TYPED_DATA_DISPLAY_LIMITS, {
     lines: 30,
     lineChars: 64,
-    fields: 20,
+    pages: 10,
     valueChars: 64,
     labelChars: 80,
   });

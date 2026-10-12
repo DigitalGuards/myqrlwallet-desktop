@@ -7,8 +7,8 @@
  * (no umbrella "typescript-eslint" package required).
  *
  * The load-bearing block here is the crypto-boundary guard: node:crypto,
- * @node-rs/argon2, and the @theqrl signing libraries may only be imported
- * inside src/signer/**. Everywhere else those imports are an error, so a stray
+ * @noble/hashes, @node-rs/argon2, and the @theqrl signing libraries are fenced
+ * to src/signer/**, with one public address-checksum exception. A stray
  * edit cannot start materialising key material outside the signer
  * utilityProcess. The signer (and the crypto tests) override that ban.
  */
@@ -20,18 +20,25 @@ import globals from 'globals';
 const CRYPTO_ONLY_MODULES = [
   'node:crypto',
   'crypto',
+  '@noble/hashes',
   '@node-rs/argon2',
   '@theqrl/mldsa87',
   '@theqrl/wallet.js',
   '@theqrl/web3',
+  '@theqrl/qrl-cryptography',
 ];
+
+const CRYPTO_IMPORT_MESSAGE =
+  'Cryptographic primitives may only be imported inside src/signer/**. Route key material through the signer utilityProcess.';
 
 const cryptoImportGuard = {
   paths: CRYPTO_ONLY_MODULES.map((name) => ({
     name,
-    message:
-      'Cryptographic primitives may only be imported inside src/signer/**. Route key material through the signer utilityProcess.',
+    message: CRYPTO_IMPORT_MESSAGE,
   })),
+  patterns: [
+    { group: CRYPTO_ONLY_MODULES.map((name) => `${name}/*`), message: CRYPTO_IMPORT_MESSAGE },
+  ],
 };
 
 export default [
@@ -113,6 +120,26 @@ export default [
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
+    },
+  },
+
+  // Public address derivation and QIP-55 checks use SHAKE256. Every
+  // other crypto module remains fenced, including other hash entry points.
+  {
+    files: ['src/shared/addressCase.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          ...cryptoImportGuard,
+          patterns: [
+            {
+              group: [...CRYPTO_ONLY_MODULES.map((name) => `${name}/*`), '!@noble/hashes/sha3.js'],
+              message: CRYPTO_IMPORT_MESSAGE,
+            },
+          ],
+        },
       ],
     },
   },

@@ -1,6 +1,20 @@
-/** Public QIP-55 checksum validation shared by main and the isolated signer. */
+/** Public QRL address derivation and QIP-55 checksum validation. */
 import { shake256 } from '@noble/hashes/sha3.js';
 import { isQrlAddress, QRL_ADDRESS_HEX_LENGTH } from './address';
+import { MLDSA87 } from './constants';
+
+/** Derive a public address from the fixed ML-DSA-87 descriptor and public key. */
+export function publicKeyToQrlAddress(publicKey: Uint8Array): string {
+  if (publicKey.length !== MLDSA87.PUBLIC_KEY_BYTES) {
+    throw new Error('Public key has the wrong length');
+  }
+  const descriptor = Uint8Array.from([0x01, 0x00, 0x00]);
+  const input = new Uint8Array(descriptor.length + publicKey.length);
+  input.set(descriptor);
+  input.set(publicKey, descriptor.length);
+  const hash = shake256(input, { dkLen: QRL_ADDRESS_HEX_LENGTH / 2 });
+  return `Q${Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
 
 /** Uniform-case bodies pass; mixed-case bodies must match wallet.js QIP-55. */
 export function hasValidQrlAddressCase(value: string): boolean {
