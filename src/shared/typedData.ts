@@ -102,22 +102,26 @@ const ATOMIC_RE = /^(?:(address|bool|string|bytes)|(u?int)(\d+)|bytes(\d+)|(.+?)
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+function errorPrefix(value: string): string {
+  return value.length > 64 ? `${value.slice(0, 64)}...` : value;
+}
+
 function assertIdentifier(value: string, label: string): void {
   if (
-    !IDENTIFIER_RE.test(value) ||
     value.length > TYPED_DATA_LIMITS.maxIdentifierLength ||
+    !IDENTIFIER_RE.test(value) ||
     UNSAFE_OBJECT_KEYS.has(value)
   ) {
-    throw new Error(`invalid ${label}: ${value}`);
+    throw new Error(`invalid ${label}: ${errorPrefix(value)}`);
   }
 }
 
 export function parseFieldType(type: FieldType, types: TypeMap, depth = 0): AtomicKind {
   if (depth > TYPED_DATA_LIMITS.maxArrayNesting) {
-    throw new Error(`type nesting too deep: ${type}`);
+    throw new Error(`type nesting too deep: ${errorPrefix(type)}`);
   }
   if (type.length > TYPED_DATA_LIMITS.maxFieldTypeLength) {
-    throw new Error(`field type too long: ${type}`);
+    throw new Error('field type too long');
   }
   const m = ATOMIC_RE.exec(type);
   if (m) {
@@ -128,14 +132,14 @@ export function parseFieldType(type: FieldType, types: TypeMap, depth = 0): Atom
     if (intKind) {
       const width = Number(intWidthStr);
       if (!Number.isInteger(width) || width < 8 || width > 256 || width % 8 !== 0) {
-        throw new Error(`invalid int width: ${type}`);
+        throw new Error(`invalid int width: ${errorPrefix(type)}`);
       }
       return { kind: intKind === 'uint' ? 'uintN' : 'intN', width };
     }
     if (bytesWidthStr) {
       const width = Number(bytesWidthStr);
       if (!Number.isInteger(width) || width < 1 || width > 32) {
-        throw new Error(`invalid bytesN width: ${type}`);
+        throw new Error(`invalid bytesN width: ${errorPrefix(type)}`);
       }
       return { kind: 'bytesN', width };
     }
@@ -144,7 +148,7 @@ export function parseFieldType(type: FieldType, types: TypeMap, depth = 0): Atom
       if (sizeStr) {
         const size = Number(sizeStr);
         if (!Number.isSafeInteger(size) || size <= 0 || size > TYPED_DATA_LIMITS.maxArrayLength) {
-          throw new Error(`invalid array size: ${type}`);
+          throw new Error(`invalid array size: ${errorPrefix(type)}`);
         }
         return { kind: 'array', inner: innerType, size };
       }
@@ -154,7 +158,7 @@ export function parseFieldType(type: FieldType, types: TypeMap, depth = 0): Atom
   if (Object.prototype.hasOwnProperty.call(types, type)) {
     return { kind: 'ref', name: type };
   }
-  throw new Error(`unknown type: ${type}`);
+  throw new Error(`unknown type: ${errorPrefix(type)}`);
 }
 
 function isReservedAtomicTypeName(name: string): boolean {
@@ -173,12 +177,19 @@ function isReservedAtomicTypeName(name: string): boolean {
 }
 
 function baseTypeName(type: FieldType): string {
-  return type.replace(/(\[\d*\])+$/, '');
+  let end = type.length;
+  while (end > 0 && type[end - 1] === ']') {
+    let start = end - 2;
+    while (start >= 0 && type.charCodeAt(start) >= 48 && type.charCodeAt(start) <= 57) start--;
+    if (start < 0 || type[start] !== '[') break;
+    end = start;
+  }
+  return type.slice(0, end);
 }
 
 function collectDependencies(primary: string, types: TypeMap): Set<string> {
   if (!Object.prototype.hasOwnProperty.call(types, primary)) {
-    throw new Error(`unknown primary type: ${primary}`);
+    throw new Error(`unknown primary type: ${errorPrefix(primary)}`);
   }
   const visited = new Set<string>();
   const visit = (name: string, path: string[]): void => {
@@ -229,7 +240,10 @@ function validateTypeMap(types: TypeMap): void {
         throw new Error(`bad field in ${name}`);
       }
       if (typeof f.type !== 'string' || !f.type) {
-        throw new Error(`bad field type in ${name}.${f.name}`);
+        throw new Error(`bad field type in ${name}.${errorPrefix(f.name)}`);
+      }
+      if (f.type.length > TYPED_DATA_LIMITS.maxFieldTypeLength) {
+        throw new Error('field type too long');
       }
       assertIdentifier(f.name, `field name in ${name}`);
       if (seen.has(f.name)) {
@@ -277,7 +291,7 @@ export function parseIntValue(v: unknown, typeLabel: string): bigint {
       return isNegative ? -abs : abs;
     }
     if (!/^-?(0|[1-9]\d*)$/.test(v)) {
-      throw new Error(`invalid ${typeLabel} string: ${v}`);
+      throw new Error(`invalid ${errorPrefix(typeLabel)} string: ${errorPrefix(v)}`);
     }
     return BigInt(v);
   }
@@ -311,7 +325,9 @@ function validateDomainTypes(types: TypeMap): void {
       );
     }
     if (f.type !== expected) {
-      throw new Error(`QRLDomain field "${f.name}" must be type "${expected}", got "${f.type}"`);
+      throw new Error(
+        `QRLDomain field "${f.name}" must be type "${expected}", got "${errorPrefix(f.type)}"`,
+      );
     }
     if (f.name === 'name') hasName = true;
   }
@@ -379,7 +395,7 @@ function consumeValue(budget: ValueBudget): void {
   if (--budget.remaining < 0) throw new Error('typed data contains too many encoded values');
 }
 
-/** Used by the signer to check address checksum casing before hashing. */
+/** Both IPC boundaries can check public address checksum casing. */
 type AddressCheck = (address: string) => void;
 
 function validateStruct(
@@ -429,7 +445,7 @@ function validateValue(
         throw new Error('array exceeds length limit');
       }
       if (parsed.size !== undefined && parsed.size !== value.length) {
-        throw new Error(`fixed array ${type} requires length ${parsed.size}`);
+        throw new Error(`fixed array ${errorPrefix(type)} requires length ${parsed.size}`);
       }
       for (const item of value) {
         validateValue(parsed.inner, item, types, budget, depth + 1, addressCheck);

@@ -136,17 +136,27 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   dApp provenance, full scheme tag, domain name/version/chainId/verifyingContract
   and salt, primary type, and message values labelled with types and nested
   paths or array indices. Addresses retain every character in eight-character
-  groups. Strings are quoted; line breaks, controls and direction marks are
-  escaped. The display caps message leaves at 20, labels at 240 characters and
-  escaped string/byte text at 240 characters. Truncated text is marked and
-  omitted leaves are counted with an `and N more fields` warning. Every value
-  in the validated payload participates in the signature, including hidden
+  groups. Strings are quoted. Unicode controls, format characters, private-use
+  and unassigned code points, line/paragraph separators, default-ignorable
+  code points (including tags, variation selectors and Hangul fillers), and
+  braille blank are escaped in domain/message text and dApp names/URLs.
+  Supplementary code points use visible `\u{...}` escapes. Other punctuation
+  supplied by a dApp is preserved. The display caps message leaves at 20,
+  labels at 240 characters and escaped string/byte text at 240 characters.
+  Truncated text is marked and omitted leaves are counted with an
+  `and N more fields` warning, followed by
+  `WARNING: additional fields are included in this signature.` Both lines
+  appear immediately after the primary type, above all message rows in the
+  native dialog, which does not scroll. Every value in the validated payload
+  participates in the signature, including hidden
   tails. Users must assess that omission before approving.
 - **What main trusts:** the IPC sender check, strict request schema, and its
   own pinned network identity. The domain chain ID is compared numerically
-  with that network and a mismatch raises a warning; the requested domain is
-  preserved in the signature. This path works offline. dApp name, URL and
-  channel remain explicitly unverified renderer-supplied metadata. Main
+  with the `Wallet network chainId` and a mismatch raises a warning. A domain
+  without a chain ID warns that the signature is not bound to a chain and can
+  be replayed on other chains. The requested domain is preserved in the
+  signature. This path works offline. dApp name, URL and channel remain
+  explicitly unverified renderer-supplied metadata. Main
   authenticates neither domain ownership nor contract behavior. Renderer
   display text, precomputed digests and scheme choices are rejected as extra
   request fields.
@@ -154,17 +164,33 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   before hashing: 32 struct types, 32 fields per type, 256 declared fields,
   type-graph depth 12, array-type nesting 12, 256 elements per array, 2048
   encoded values (including containers), and value depth 24. Identifiers are
-  at most 64 characters; field types at most 128. Strings and dynamic bytes
+  at most 64 characters; field types at most 128. The field-type cap runs
+  before dependency traversal, and removing array suffixes uses a linear
+  scan. Diagnostics echo at most a 64-character prefix of unbounded input.
+  The typed-data IPC arm also caps aggregate JSON-equivalent size at 256 MiB
+  before semantic validation, counting escaped UTF-8 text and hex expansion
+  without allocating a complete serialization. The allowed 2048 values at
+  16 KiB each need at most 192 MiB with six-byte JSON escapes; declarations,
+  keys and delimiters keep the conservative maximum below 193 MiB. This cap
+  preserves every payload allowed by the semantic limits. Aggregate traversal
+  also bounds raw nesting at 64 levels and node visits at 2851 (the encoded
+  value budget plus type-map metadata), covering valid payloads while bounding
+  work on wide or repeatedly shared malformed trees. Strings and dynamic bytes
   are at most 16 KiB each, including UTF-8 expansion. Integer strings are
   at most 80 characters; numbers must be safe integers. Signed and unsigned
   widths are multiples of eight from 8 to 256 and values must fit that width.
   Fixed bytes have exact lengths from 1 to 32. Missing, unknown, duplicate,
   unsafe, cyclic, unreachable and reserved-shadowing declarations fail closed.
   `QRLDomain` requires `name` and fixes each optional domain field's type.
-- **Signer boundary:** `src/shared/typedData.ts` validates structure and bounds
-  without crypto in main, and the private signer protocol re-runs the schema.
-  The signer checks QIP-55 address casing, hashes the complete payload, and
-  signs only while unlocked and after `assertSessionSigner` matches the request
+- **Signer boundary:** `src/shared/typedData.ts` validates structure and bounds,
+  and the private signer protocol re-runs the schema. Main checks QIP-55
+  address casing before confirmation through the same public checksum helper
+  used by the signer. Uniform-case bodies are accepted; mixed-case bodies must
+  match the checksum. The helper imports only public SHAKE256 hashing and
+  address-shape logic. Key derivation and signing remain isolated. The signer
+  validates and hashes the complete payload and selects its scheme before
+  `signRequest` enters `session.withSeed` to decrypt the seed and sign. Signing
+  requires an unlocked session and `assertSessionSigner` must match the request
   account. Wallet secret-key buffers are wiped in `finally`. Main's response
   parser also binds the returned account, request kind and scheme. Production
   uses hedged ML-DSA-87 signing; deterministic mode is confined to direct test

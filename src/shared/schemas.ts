@@ -12,12 +12,13 @@
 import { z } from 'zod';
 import { MLDSA87, SCHEME } from './constants';
 import { QRL_ADDRESS_PATTERN } from './address';
+import { assertValidQrlAddressCase } from './addressCase';
 import { typedDataSchemeVersion, validateTypedDataPayload } from './typedData';
+import { hasBoundedTypedDataIpcSize } from './typedDataIpcSize';
 
 /** A native QIP-55 address: uppercase `Q` plus 128 hexadecimal characters.
- * Shape-only by design: checksum-case enforcement lives at the wallet
- * boundary in the signer (src/signer/addressCase.ts), inside the crypto
- * fence, so shared schemas stay free of crypto imports. */
+ * This schema checks shape. Typed-data payloads also check public checksum
+ * casing here; transaction addresses are checked again by the signer. */
 export const AddressSchema = z
   .string()
   .regex(QRL_ADDRESS_PATTERN, 'must be an uppercase-Q-prefixed 64-byte hex address');
@@ -166,19 +167,24 @@ export const DAppOriginSchema = z
 
 /**
  * Parse the bounded type graph and every value before main computes a summary.
- * The shared validator performs no hashing and is reused at the signer boundary.
+ * Both boundaries check public address checksums using the same QIP-55 rule.
  */
-export const TypedDataPayloadSchema = z.unknown().transform((value, context) => {
-  try {
-    return validateTypedDataPayload(value);
-  } catch (error) {
-    context.addIssue({
-      code: 'custom',
-      message: error instanceof Error ? error.message : 'invalid typed data payload',
-    });
-    return z.NEVER;
-  }
-});
+export const TypedDataPayloadSchema = z
+  .unknown()
+  .refine(hasBoundedTypedDataIpcSize, 'typed data exceeds aggregate IPC size limit')
+  .transform((value, context) => {
+    try {
+      return validateTypedDataPayload(value, (address) =>
+        assertValidQrlAddressCase(address, 'typed-data'),
+      );
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'invalid typed data payload',
+      });
+      return z.NEVER;
+    }
+  });
 
 export const TypedDataSignatureRequestSchema = z
   .object({

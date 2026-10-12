@@ -169,6 +169,72 @@ test('malformed payload fails before seed derivation', () => {
   assert.throws(() => signTypedData('invalid seed', payloadWith('uint8', 256)), /out of range/);
 });
 
+test('production signRequest rejects malformed payloads before session seed access', async (t) => {
+  const vector = canonical.schemeSigningVectors[0];
+  assert.ok(vector);
+  const session = new SignerSession(() => {});
+  t.mock.getter(session, 'unlocked', () => true);
+  t.mock.getter(session, 'address', () => vector.signer);
+  const seedAccess = t.mock.method(session, 'withSeed', () => {
+    throw new Error('seed decryption reached');
+  });
+  for (const [payload, error] of [
+    [payloadWith('uint8', 256), /out of range/],
+    [payloadWith('address', `QaA${'a1'.repeat(63)}`), /checksum casing/],
+    [payloadWith('[]'.repeat(500000) + 'x'), /field type too long/],
+    [payloadWith('Payload', {}), /cyclic type reference/],
+  ] as const) {
+    await assert.rejects(
+      signRequest(
+        session,
+        { kind: 'typedData', signer: vector.signer, payload },
+        EXPECTED_CHAIN_ID,
+        Date.now(),
+      ),
+      error,
+    );
+    assert.equal(seedAccess.mock.callCount(), 0);
+  }
+  await assert.rejects(
+    signRequest(
+      session,
+      typedRequest(vector.payload, vector.signer),
+      EXPECTED_CHAIN_ID,
+      Date.now(),
+    ),
+    /seed decryption reached/,
+  );
+  assert.equal(seedAccess.mock.callCount(), 1);
+});
+
+test('production signRequest prepares its digest and scheme before the seed callback', async (t) => {
+  const vector = canonical.schemeSigningVectors[0];
+  assert.ok(vector);
+  const payload = payloadWith('uint8', 1);
+  const original = structuredClone(payload);
+  const session = new SignerSession(() => {});
+  t.mock.getter(session, 'unlocked', () => true);
+  t.mock.getter(session, 'address', () => vector.signer);
+  const seedAccess = t.mock.method(session, 'withSeed', <T>(fn: (seed: string) => T): T => {
+    // Changing the source after preparation cannot change the prepared signature.
+    payload.types['Payload'] = [{ name: 'value', type: 'address' }];
+    payload.message['value'] = 'invalid';
+    return fn(vector.hexSeed);
+  });
+  const result = await signRequest(
+    session,
+    { kind: 'typedData', signer: vector.signer, payload },
+    EXPECTED_CHAIN_ID,
+    Date.now(),
+  );
+  assert.equal(seedAccess.mock.callCount(), 1);
+  assert.equal(result.kind, 'typedData');
+  assert.ok(result.kind === 'typedData');
+  assert.equal(result.schemeVersion, SCHEME.TAG_TYPED);
+  assert.equal(result.digest, hex(computeTypedDataDigest(original)));
+  assert.equal(verifyForSigner(result, original, vector.signer), true);
+});
+
 test('validated request -> trusted summary -> session signer -> SDK-style verification', async () => {
   const vector = canonical.schemeSigningVectors[0];
   assert.ok(vector);

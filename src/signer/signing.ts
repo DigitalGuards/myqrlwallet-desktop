@@ -28,7 +28,7 @@ import type {
   UnsignedTransaction,
 } from '../shared/schemas';
 import { QRL_ADDRESS_PATTERN } from '../shared/address';
-import { typedDataSchemeVersion } from '../shared/typedData';
+import { typedDataSchemeVersion, type TypedDataSchemeVersion } from '../shared/typedData';
 import { computeTypedDataDigest, typedDataSchemeTag } from './typedData';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
@@ -216,6 +216,16 @@ export function signTypedData(
 ): TypedDataSignatureResult {
   const digest = computeTypedDataDigest(payload);
   const schemeVersion = typedDataSchemeVersion(payload);
+  return signTypedDataDigest(hexSeed, digest, schemeVersion, randomized);
+}
+
+/** Sign a digest prepared inside the signer before the session decrypts its seed. */
+export function signTypedDataDigest(
+  hexSeed: string,
+  digest: Uint8Array,
+  schemeVersion: TypedDataSchemeVersion,
+  randomized = true,
+): TypedDataSignatureResult {
   const wallet = newWalletFromExtendedSeed(hexSeed);
   try {
     if (wallet.sk.length !== SIZES.SECRET_KEY_BYTES) {

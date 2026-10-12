@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { SignatureRequestSchema, TypedDataPayloadSchema } from '../src/shared/schemas';
 import { parseSignerRequest } from '../src/shared/protocolGuards';
 import {
   TYPED_DATA_LIMITS as LIMITS,
+  encodeType,
+  parseFieldType,
   type TypedDataPayload,
   type TypeMap,
 } from '../src/shared/typedData';
+import {
+  hasBoundedTypedDataIpcSize,
+  TYPED_DATA_MAX_IPC_BYTES,
+} from '../src/shared/typedDataIpcSize';
 import { computeTypedDataDigest } from '../src/signer/typedData';
 import { EXPECTED_CHAIN_ID } from '../src/main/config';
 import { payloadWith, SIGNER } from './typedDataFixtures';
@@ -21,7 +28,7 @@ function rejects(payload: unknown, reason: RegExp): void {
     parseSignerRequest({ type: 'signer:sign', id: 1, request, chainId: EXPECTED_CHAIN_ID }),
     null,
   );
-  assert.throws(() => computeTypedDataDigest(payload), reason);
+  assert.throws(() => computeTypedDataDigest(payload), { message: reason });
 }
 
 function accepts(payload: TypedDataPayload): void {
@@ -107,6 +114,107 @@ test('identifier and field type lengths, unsafe names and duplicates reject', ()
     },
     /duplicate field/,
   );
+});
+
+test('million-character field types reject in main within a bounded subprocess', () => {
+  const schemaUrl = new URL('../src/shared/schemas.ts', import.meta.url).href;
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      '--input-type=module',
+      '--eval',
+      `
+    import assert from 'node:assert/strict';
+    import { SignatureRequestSchema } from ${JSON.stringify(schemaUrl)};
+    const payload = ${JSON.stringify(payloadWith())};
+    payload.types.Payload[0].type = '[]'.repeat(500000) + 'x';
+    const started = performance.now();
+    const result = SignatureRequestSchema.safeParse({ kind: 'typedData', payload, signer: ${JSON.stringify(SIGNER)} });
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].message, 'field type too long');
+    assert.ok(performance.now() - started < 250, 'main validation exceeded 250 ms');
+  `,
+    ],
+    { timeout: 10_000, encoding: 'utf8' },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('all type declarations are capped before traversal and diagnostics bound echoed input', () => {
+  const type = '[]'.repeat(500000) + 'x';
+  const payload = payloadWith(type);
+  assert.throws(() => encodeType('Payload', payload.types), { message: 'field type too long' });
+  assert.throws(() => parseFieldType(type, payload.types), { message: 'field type too long' });
+  const unused = payloadWith();
+  unused.types['Unused'] = [{ name: 'value', type }];
+  rejects(unused, /^field type too long$/);
+  const domain = payloadWith();
+  domain.types['QRLDomain'] = [{ name: 'name', type }];
+  rejects(domain, /^field type too long$/);
+  const longName = 'a'.repeat(100000) + 'private-tail';
+  const parsed = TypedDataPayloadSchema.safeParse({ ...payloadWith(), primaryType: longName });
+  assert.equal(parsed.success, false);
+  if (!parsed.success)
+    assert.equal(parsed.error.issues[0]?.message, `invalid primary type: ${'a'.repeat(64)}...`);
+  assert.throws(() => parseFieldType('x'.repeat(100) + 'private-tail', {}), {
+    message: `unknown type: ${'x'.repeat(64)}...`,
+  });
+});
+
+test('aggregate IPC cap rejects oversized trees before semantic validation', () => {
+  const leaf = '\u0000'.repeat(LIMITS.maxDynamicBytes);
+  const count = Math.ceil(TYPED_DATA_MAX_IPC_BYTES / (leaf.length * 6));
+  const payload = payloadWith(
+    'string[]',
+    Array.from({ length: count }, () => leaf),
+  );
+  const parsed = SignatureRequestSchema.safeParse({ kind: 'typedData', payload, signer: SIGNER });
+  assert.equal(parsed.success, false);
+  if (!parsed.success)
+    assert.equal(parsed.error.issues[0]?.message, 'typed data exceeds aggregate IPC size limit');
+});
+
+test('aggregate traversal bounds deep, wide and repeatedly shared malformed input', () => {
+  const wide = Array.from({ length: 4096 }, () => 0);
+  let deep: unknown = 0;
+  for (let i = 0; i < 65; i++) deep = [deep];
+  let shared: unknown = 0;
+  for (let i = 0; i < 32; i++) shared = [shared, shared];
+  for (const value of [wide, deep, shared]) {
+    const parsed = TypedDataPayloadSchema.safeParse(payloadWith('uint8', value));
+    assert.equal(parsed.success, false);
+    if (!parsed.success)
+      assert.equal(parsed.error.issues[0]?.message, 'typed data exceeds aggregate IPC size limit');
+  }
+});
+
+test('aggregate cap accommodates the full value budget with worst-case JSON escaping and hex expansion', () => {
+  const conservativeMaximum =
+    LIMITS.maxEncodedValues * (LIMITS.maxDynamicBytes * 6 + LIMITS.maxIdentifierLength + 32) +
+    LIMITS.maxTotalFields * (LIMITS.maxIdentifierLength + LIMITS.maxFieldTypeLength + 32) +
+    LIMITS.maxTypes * (LIMITS.maxIdentifierLength + 8);
+  assert.ok(conservativeMaximum < TYPED_DATA_MAX_IPC_BYTES);
+  for (const [type, value] of [
+    ['string', '\u0000'.repeat(LIMITS.maxDynamicBytes)],
+    ['bytes', `0x${'ab'.repeat(LIMITS.maxDynamicBytes)}`],
+  ]) {
+    const payload = payloadWith();
+    payload.types['Payload'] = Array.from({ length: 8 }, (_, i) => ({
+      name: `list${i}`,
+      type: `${type}[]`,
+    }));
+    payload.message = Object.fromEntries(
+      Array.from({ length: 8 }, (_, i) => [
+        `list${i}`,
+        Array.from({ length: i === 7 ? 245 : 256 }, () => value),
+      ]),
+    );
+    assert.equal(hasBoundedTypedDataIpcSize(payload), true);
+    assert.equal(TypedDataPayloadSchema.safeParse(payload).success, true);
+  }
 });
 
 test('atomic shadowing, reserved domain, unused and unknown types reject', () => {

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { summariseSignatureRequest, TYPED_DATA_DISPLAY_LIMITS } from '../src/main/confirmSummary';
+import {
+  originDetail,
+  summariseSignatureRequest,
+  TYPED_DATA_DISPLAY_LIMITS,
+} from '../src/main/confirmSummary';
 import { groupQrlAddress } from '../src/shared/address';
 import { SignatureRequestSchema } from '../src/shared/schemas';
 import { isRecord, isArray } from '../src/shared/guards';
@@ -79,14 +83,23 @@ test('domain chain comparison is numeric, preserves the request and shows mismat
     /WARNING/,
   );
   const summary = summariseSignatureRequest(request, { connectedChainId: 1 });
-  assert.match(summary.detail, /Connected chainId: 1/);
-  assert.match(summary.detail, /WARNING: domain chainId differs from the connected chain/);
+  assert.match(summary.detail, /Wallet network chainId: 1/);
+  assert.match(summary.detail, /WARNING: domain chainId differs from the wallet network/);
   assert.match(summary.detail, /Domain chainId: 3151909/);
   assert.deepEqual(request, before);
   const noChain = summariseSignatureRequest(typedRequest(payloadWith()));
   assert.match(noChain.detail, /Domain chainId: \(not provided\)/);
   assert.match(noChain.detail, /QRL-SIGN-TYPED-v1/);
-  assert.doesNotMatch(noChain.detail, /WARNING/);
+  assert.match(
+    noChain.detail,
+    /WARNING: this signature is not bound to a chain and can be replayed on other chains\./,
+  );
+  assert.ok(noChain.detail.indexOf('WARNING:') < noChain.detail.indexOf('Primary type:'));
+  const configured = summariseSignatureRequest(typedRequest(payloadWith()), {
+    connectedChainId: 3151909,
+  });
+  assert.match(configured.detail, /Wallet network chainId: 3151909/);
+  assert.match(configured.detail, /can be replayed on other chains/);
 });
 
 test('summary caps fields precisely and names every omitted signed leaf', () => {
@@ -97,7 +110,7 @@ test('summary caps fields precisely and names every omitted signed leaf', () => 
   assert.doesNotMatch(detail, /message.value\[20\]/);
   assert.match(
     detail,
-    /and 7 more fields\nWARNING: additional fields are included in this signature/,
+    /Primary type: Payload\nand 7 more fields\nWARNING: additional fields are included in this signature\.\nMessage fields/,
   );
   const empty = summariseSignatureRequest(typedRequest(payloadWith('address[]', []))).detail;
   assert.match(empty, /message.value \(address\[\]\): \[\]/);
@@ -108,14 +121,116 @@ test('long text is explicitly truncated; control characters cannot forge rows', 
   const payload = payloadWith('string', 'a'.repeat(400));
   payload.domain['name'] = 'dApp\nWARNING: forged\u202e\u0085\u2014';
   const { detail } = summariseSignatureRequest(typedRequest(payload));
-  assert.ok(detail.includes('Domain name: "dApp\\nWARNING: forged\\u202e\\u0085\\u2014"'));
+  assert.ok(detail.includes('Domain name: "dApp\\nWARNING: forged\\u202e\\u0085\u2014"'));
   assert.match(detail, /\[truncated; 400 characters total\]/);
   assert.doesNotMatch(detail, /\nWARNING: forged/);
-  assert.doesNotMatch(detail, /[\u202e\u0085\u2014]/);
+  assert.doesNotMatch(detail, /[\u202e\u0085]/);
   const quoted = summariseSignatureRequest(
     typedRequest(payloadWith('string', '"\nScheme: v1')),
   ).detail;
   assert.ok(quoted.includes('message.value (string): "\\"\\nScheme: v1"'));
+});
+
+const invisiblePoints = [
+  ['Cc', 0x0007],
+  ['Cc C1', 0x0085],
+  ['Cf', 0x061c],
+  ['Co BMP', 0xe000],
+  ['Co supplementary', 0xf0000],
+  ['Cn', 0x0378],
+  ['Zl', 0x2028],
+  ['Zp', 0x2029],
+  ['combining grapheme joiner', 0x034f],
+  ['Hangul choseong filler', 0x115f],
+  ['Hangul jungseong filler', 0x1160],
+  ['Hangul filler', 0x3164],
+  ['halfwidth Hangul filler', 0xffa0],
+  ['Mongolian selector 1', 0x180b],
+  ['Mongolian selector 2', 0x180c],
+  ['Mongolian selector 3', 0x180d],
+  ['Mongolian vowel separator', 0x180e],
+  ['Mongolian selector 4', 0x180f],
+  ['braille blank', 0x2800],
+  ['interlinear annotation anchor', 0xfff9],
+  ['interlinear annotation separator', 0xfffa],
+  ['interlinear annotation terminator', 0xfffb],
+  ['variation selector 1', 0xfe00],
+  ['variation selector 16', 0xfe0f],
+  ['variation selector 17', 0xe0100],
+  ['variation selector 256', 0xe01ef],
+  ['tag space', 0xe0020],
+  ['tag letter', 0xe0061],
+  ['cancel tag', 0xe007f],
+] as const;
+
+for (const [label, point] of invisiblePoints) {
+  test(`typed data and origin escape invisible ${label}`, () => {
+    const char = String.fromCodePoint(point);
+    const escaped =
+      point > 0xffff ? `\\u{${point.toString(16)}}` : `\\u${point.toString(16).padStart(4, '0')}`;
+    const text = `before${char}after`;
+    const payload = payloadWith('string', text);
+    payload.domain['name'] = text;
+    const { detail } = summariseSignatureRequest(typedRequest(payload));
+    assert.ok(detail.includes(`Domain name: "before${escaped}after"`));
+    assert.ok(detail.includes(`message.value (string): "before${escaped}after"`));
+    const origin = originDetail({
+      via: 'dapp',
+      name: text,
+      url: `https://dapp.example/${text}`,
+      channelId: 'abc',
+    });
+    assert.ok(origin.includes(`Name:    before${escaped}after`));
+    assert.ok(origin.includes(`URL:     https://dapp.example/before${escaped}after`));
+    assert.equal(detail.includes(char), false);
+    assert.equal(origin.includes(char), false);
+  });
+}
+
+test('tag-encoded instructions stay visible in the trusted dialog and origin', () => {
+  const hidden = Array.from(' and transfer all to attacker', (char) =>
+    String.fromCodePoint(0xe0000 + char.charCodeAt(0)),
+  ).join('');
+  const request = SignatureRequestSchema.parse({
+    kind: 'typedData',
+    signer: SIGNER,
+    payload: payloadWith('string', hidden),
+    origin: {
+      via: 'dapp',
+      name: `dApp${hidden}`,
+      url: `https://dapp.example/${hidden}`,
+      channelId: 'abc',
+    },
+  });
+  const { detail } = summariseSignatureRequest(request);
+  assert.equal(detail.includes(hidden), false);
+  assert.ok(detail.includes('Name:    dApp\\u{e0020}\\u{e0061}'));
+  assert.ok(detail.includes('URL:     https://dapp.example/\\u{e0020}'));
+  assert.ok(detail.includes('message.value (string): "\\u{e0020}'));
+});
+
+test('dApp punctuation remains byte-faithful in domain, message and origin text', () => {
+  const text = 'before\u2014after';
+  const payload = payloadWith('string', text);
+  payload.domain['name'] = text;
+  const request = SignatureRequestSchema.parse({
+    kind: 'typedData',
+    signer: SIGNER,
+    payload,
+    origin: { via: 'dapp', name: text, url: `https://dapp.example/${text}`, channelId: 'abc' },
+  });
+  const before = structuredClone(request);
+  const { detail } = summariseSignatureRequest(request);
+  for (const prefix of [
+    'Domain name: "',
+    'message.value (string): "',
+    'Name:    ',
+    'URL:     https://dapp.example/',
+  ]) {
+    assert.ok(detail.includes(`${prefix}${text}`));
+  }
+  assert.equal(detail.includes('\\u2014'), false);
+  assert.deepEqual(request, before);
 });
 
 test('URL whitespace and direction marks cannot forge trusted origin rows', () => {

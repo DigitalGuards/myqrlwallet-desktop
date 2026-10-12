@@ -1,7 +1,9 @@
 /** Session-bound signing shared by the utility-process entrypoint and tests. */
 import type { SignatureRequest, SignatureResult } from '../shared/schemas';
 import type { SignerSession } from './session';
-import { assertSessionSigner, signMessage, signTransaction, signTypedData } from './signing';
+import { typedDataSchemeVersion } from '../shared/typedData';
+import { assertSessionSigner, signMessage, signTransaction, signTypedDataDigest } from './signing';
+import { computeTypedDataDigest } from './typedData';
 
 export async function signRequest(
   session: SignerSession,
@@ -16,7 +18,10 @@ export async function signRequest(
       return session.withSeedAsync((seed) => signTransaction(seed, request.tx, chainId), now);
     case 'message':
       return session.withSeed((seed) => signMessage(seed, request.messageHex), now);
-    case 'typedData':
-      return session.withSeed((seed) => signTypedData(seed, request.payload), now);
+    case 'typedData': {
+      const digest = computeTypedDataDigest(request.payload);
+      const schemeVersion = typedDataSchemeVersion(request.payload);
+      return session.withSeed((seed) => signTypedDataDigest(seed, digest, schemeVersion), now);
+    }
   }
 }

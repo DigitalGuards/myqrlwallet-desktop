@@ -100,8 +100,14 @@ function singleLineText(value: string): string {
   return JSON.stringify(value)
     .slice(1, -1)
     .replace(
-      /[\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2014\u2028-\u202e\u2060-\u206f\ufeff]/g,
-      (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+      /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu,
+      (char) => {
+        const point = char.codePointAt(0);
+        if (point === undefined) return char;
+        return point > 0xffff
+          ? `\\u{${point.toString(16)}}`
+          : `\\u${point.toString(16).padStart(4, '0')}`;
+      },
     );
 }
 
@@ -184,25 +190,30 @@ function typedDataDetail(
     );
   }
   if (connectedChainId !== undefined) {
-    lines.push(`Connected chainId: ${connectedChainId}`);
+    lines.push(`Wallet network chainId: ${connectedChainId}`);
     const domainChain = payload.domain['chainId'];
     if (
       domainChain !== undefined &&
       parseIntValue(domainChain, 'uint256') !== BigInt(connectedChainId)
     ) {
-      lines.push('WARNING: domain chainId differs from the connected chain.');
+      lines.push('WARNING: domain chainId differs from the wallet network.');
     }
+  }
+  if (payload.domain['chainId'] === undefined) {
+    lines.push(
+      'WARNING: this signature is not bound to a chain and can be replayed on other chains.',
+    );
   }
   lines.push(`Primary type: ${payload.primaryType}`);
   const { rows, omitted } = typedMessageRows(payload);
-  lines.push(`Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`);
-  for (const field of rows) lines.push(`${field.label}: ${field.value}`);
   if (omitted > 0) {
     lines.push(
       `and ${omitted} more fields`,
       'WARNING: additional fields are included in this signature.',
     );
   }
+  lines.push(`Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`);
+  for (const field of rows) lines.push(`${field.label}: ${field.value}`);
   return lines.join('\n');
 }
 
