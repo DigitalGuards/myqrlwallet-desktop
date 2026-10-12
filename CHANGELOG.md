@@ -13,6 +13,19 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - Shared bounded validation at the main and signer boundaries, plus account and
   scheme binding on signer responses.
 
+### Security
+
+- Trusted confirmations page through long requests: every field appears once,
+  Approve is offered only on the last page, and requests over 10 pages are
+  refused.
+- One confirmation at a time. A second request while one is open fails with
+  "another confirmation is already open", and no dialog page opens sooner than
+  1 second after the request arrived or the previous page closed, so a
+  double-click cannot approve a request the user has not seen.
+- Every confirmation page carries a request number assigned by the app.
+- Lock, autolock, a signer exit, and a wallet window reload or crash close an
+  open confirmation and reject it.
+
 ### Fixed
 
 - Offline dApp message signing passes the configured network ID through the
