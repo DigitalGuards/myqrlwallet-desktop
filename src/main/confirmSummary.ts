@@ -250,7 +250,7 @@ function typedDataPages(
     row('Account:', groupQrlAddress(req.signer)),
     row('Scheme:', scheme),
     row(
-      'Request:',
+      'Typed data:',
       `${fullTypedText(payload.primaryType)} / ${typedScalar('string', payload.domain['name'], payload.types)}`,
     ),
   ];

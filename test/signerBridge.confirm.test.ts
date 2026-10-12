@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { register } from 'node:module';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, beforeEach, test, type TestContext } from 'node:test';
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
@@ -23,11 +24,11 @@ const { app, BrowserWindow, dialog, utilityProcess } = await import('electron');
 const { abortPendingConfirms, confirmSignature, confirmRemoveWallet } =
   await import('../src/main/confirm');
 const { SignerBridge } = await import('../src/main/signerBridge');
+const { ARM_DELAY_MS } = await import('../src/main/confirmationGate');
 
 // The packaged main bundle supplies this CommonJS global.
 Object.defineProperty(globalThis, '__dirname', { value: '.', configurable: true });
-mkdirSync('out', { recursive: true });
-const userData = mkdtempSync(path.join('out', 'confirm-test-'));
+const userData = mkdtempSync(path.join(tmpdir(), 'desktop-confirm-test-'));
 after(() => {
   rmSync(userData, { recursive: true, force: true });
   Reflect.deleteProperty(globalThis, '__dirname');
@@ -163,7 +164,7 @@ test('locking aborts active removal despite a racing approval and refuses concur
     assert.rejects(confirmRemoveWallet(parent, SIGNER), { message: lockError }),
     assert.rejects(confirmSignature(parent, request), { message: busyError }),
   ];
-  await opened;
+  await finishConfirmation(t, opened);
   assert.equal(signals.length, 1);
   await bridge.lock();
   await Promise.all(rejected);
@@ -214,6 +215,7 @@ for (const cause of ['manual lock', 'autolock', 'signer exit'] as const) {
       { message: lockError },
     );
     await flushConfirmations();
+    await advanceConfirmations(t, ARM_DELAY_MS);
     assert.equal(shown.mock.callCount(), 1);
     await advanceConfirmations(t, 999);
     if (cause === 'manual lock') await bridge.lock();

@@ -130,7 +130,7 @@ test('repeating the Next button index on the final page cancels', async (t) => {
   assert.equal(shown.length, expectedPages.length);
 });
 
-test('a single-page request offers approval immediately', async (t) => {
+test('a single-page request offers approval on its only page', async (t) => {
   const { shown } = mockDialogs(t);
   assert.equal(
     await finishConfirmation(
@@ -190,7 +190,7 @@ test('a native dialog failure rejects its request and releases the busy slot', a
     confirmSignature(parent, request, context),
     /native dialog failed/,
   );
-  await rejected;
+  await finishConfirmation(t, rejected);
   assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
   assert.equal(shown.length, 1);
 });

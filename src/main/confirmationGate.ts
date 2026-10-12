@@ -44,11 +44,11 @@ export class ConfirmationGate {
     approvalId: number,
   ): Promise<boolean> {
     if (this.active) throw new Error('another confirmation is already open');
+    this.lastClosedAt = Math.max(this.lastClosedAt, this.clock.now());
     const controller = new AbortController();
     const { signal } = controller;
-    this.active = controller;
     const requestNumber = ++this.requestNumber;
-    const { webContents } = parent;
+    let webContents: BrowserWindow['webContents'] | undefined;
     const navigated = () => {
       controller.abort(
         new Error('Wallet window reloaded or navigated during confirmation. Please try again.'),
@@ -62,11 +62,13 @@ export class ConfirmationGate {
     const rendererGone = () => {
       controller.abort(new Error('Wallet renderer stopped during confirmation. Please try again.'));
     };
-    webContents.on('did-start-navigation', navigationStarted);
-    webContents.on('did-navigate', navigated);
-    webContents.on('render-process-gone', rendererGone);
-    parent.on('closed', rendererGone);
     try {
+      this.active = controller;
+      webContents = parent.webContents;
+      webContents.on('did-start-navigation', navigationStarted);
+      webContents.on('did-navigate', navigated);
+      webContents.on('render-process-gone', rendererGone);
+      parent.on('closed', rendererGone);
       for (const [index, options] of pages.entries()) {
         await this.waitToArm(signal);
         signal.throwIfAborted();
@@ -87,11 +89,11 @@ export class ConfirmationGate {
       }
       return true;
     } finally {
-      webContents.off('did-start-navigation', navigationStarted);
-      webContents.off('did-navigate', navigated);
-      webContents.off('render-process-gone', rendererGone);
-      parent.off('closed', rendererGone);
       this.active = undefined;
+      webContents?.off('did-start-navigation', navigationStarted);
+      webContents?.off('did-navigate', navigated);
+      webContents?.off('render-process-gone', rendererGone);
+      parent.off('closed', rendererGone);
     }
   }
 }

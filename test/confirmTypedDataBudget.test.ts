@@ -50,7 +50,7 @@ function pagesWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909):
       REVIEW_ORIGIN.url,
       `Account:   ${groupQrlAddress(SIGNER)}`,
       'Scheme:    QRL-SIGN-TYPED-',
-      `Request:   ${payload.primaryType} / `,
+      `Typed data:${payload.primaryType} / `,
     ]) {
       assert.ok(page.includes(value), value);
       assert.ok(page.indexOf(value) < page.indexOf('Page '));
@@ -74,11 +74,29 @@ test('every page identifies its primary type and domain for the same dApp and ac
     payload.domain['name'] = name;
     const pages = pagesWithOrigin(payload);
     assert.ok(pages.length > 1);
-    const identity = `Request:   ${primaryType} / "${name}"`;
+    const identity = `Typed data:${primaryType} / "${name}"`;
     assert.ok(pages.every((page) => page.split('\n').includes(identity)));
     identities.push(identity);
   }
   assert.equal(new Set(identities).size, 3);
+});
+
+test('a primary type named Request99 keeps the aligned Typed data label on every page', () => {
+  const payload = withReviewDomain(payloadWith('address[]', RECIPIENTS));
+  payload.types['Request99'] = payload.types['Payload'] ?? [];
+  delete payload.types['Payload'];
+  payload.primaryType = 'Request99';
+  const pages = pagesWithOrigin(payload);
+  assert.ok(pages.length > 1);
+  for (const page of pages) {
+    const rows = page.split('\n');
+    const identity = rows.find((line) => line.startsWith('Typed data:'));
+    const account = rows.find((line) => line.startsWith('Account:'));
+    assert.ok(identity && account);
+    assert.ok(identity.startsWith('Typed data:Request99 / '));
+    assert.equal(identity.indexOf('Request99'), account.indexOf(groupQrlAddress(SIGNER)));
+    assert.doesNotMatch(page, /^Request:/m);
+  }
 });
 
 test('request identity escapes domain controls and bounds long domain previews on every page', () => {
@@ -90,10 +108,10 @@ test('request identity escapes domain controls and bounds long domain previews o
     assert.ok(pages.length > 1);
     const expected =
       name.length === 65
-        ? `Request:   Payload / "${'W'.repeat(45)}…" [65 characters]`
-        : 'Request:   Payload / "dApp\\nLogin\\u202e\\u0085"';
+        ? `Typed data:Payload / "${'W'.repeat(45)}…" [65 characters]`
+        : 'Typed data:Payload / "dApp\\nLogin\\u202e\\u0085"';
     for (const page of pages) {
-      const identity = page.split('\n').find((line) => line.startsWith('Request:'));
+      const identity = page.split('\n').find((line) => line.startsWith('Typed data:'));
       assert.equal(identity, expected);
       assert.doesNotMatch(page, /[\u202e\u0085]|\nLogin/);
     }

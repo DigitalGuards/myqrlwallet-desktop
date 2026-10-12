@@ -17,7 +17,7 @@ import {
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
 const { confirmSignature, confirmRemoveWallet } = await import('../src/main/confirm');
-const { ARM_DELAY_MS } = await import('../src/main/confirmationGate');
+const { ARM_DELAY_MS, confirmationGate } = await import('../src/main/confirmationGate');
 beforeEach(mockConfirmationClock);
 
 const message: SignatureRequest = { kind: 'message', signer: SIGNER, messageHex: '0x01' };
@@ -58,6 +58,64 @@ function manualDialogs(t: TestContext, approveOnAbort = false) {
   return { parent, shown, click };
 }
 
+for (const idle of [0, ARM_DELAY_MS * 3]) {
+  test(`request arrival arms the first dialog after ${idle} ms idle`, async (t) => {
+    const { parent, shown, click } = manualDialogs(t);
+    await advanceConfirmations(t, idle);
+    const arrivedAt = Date.now();
+    const approved = confirmationGate.show(parent, [{ message: 'Confirm signature' }], 1);
+    await flushConfirmations();
+    assert.equal(shown.length, 0);
+    assert.equal(click(1), false);
+    await advanceConfirmations(t, ARM_DELAY_MS - 1);
+    assert.equal(shown.length, 0);
+    assert.equal(click(1), false);
+    await assert.rejects(confirmSignature(parent, message), busyError);
+    await advanceConfirmations(t, 1);
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0]?.at, arrivedAt + ARM_DELAY_MS);
+    click(1);
+    assert.equal(await approved, true);
+  });
+}
+
+test('a throwing webContents getter releases the busy slot for a healthy parent', async (t) => {
+  const { parent, shown, click } = manualDialogs(t);
+  const failedParent = new BrowserWindow();
+  Object.defineProperty(failedParent, 'webContents', {
+    get() {
+      throw new Error('webContents unavailable');
+    },
+  });
+  const pages = [{ message: 'Confirm signature' }];
+  await assert.rejects(confirmationGate.show(failedParent, pages, 1), /webContents unavailable/);
+  const approved = confirmationGate.show(parent, pages, 1);
+  await flushConfirmations();
+  assert.equal(shown.length, 0);
+  await advanceConfirmations(t, ARM_DELAY_MS);
+  assert.equal(shown.length, 1);
+  click(1);
+  assert.equal(await approved, true);
+});
+
+test('a listener registration failure removes earlier listeners and releases the busy slot', async (t) => {
+  const { parent, shown, click } = manualDialogs(t);
+  const failedParent = new BrowserWindow();
+  t.mock.method(failedParent, 'on', () => {
+    throw new Error('listener registration failed');
+  });
+  await assert.rejects(confirmSignature(failedParent, message), /listener registration failed/);
+  for (const event of ['did-start-navigation', 'did-navigate', 'render-process-gone']) {
+    assert.equal(failedParent.webContents.listenerCount(event), 0);
+  }
+  assert.equal(failedParent.listenerCount('closed'), 0);
+  const approved = confirmSignature(parent, message);
+  await advanceConfirmations(t, ARM_DELAY_MS);
+  assert.equal(shown.length, 1);
+  click(1);
+  assert.equal(await approved, true);
+});
+
 for (const owner of ['signature', 'removal'] as const) {
   test(`${owner} holds the busy slot while open and during the next request's arming delay`, async (t) => {
     const { parent, shown, click } = manualDialogs(t);
@@ -69,7 +127,11 @@ for (const owner of ['signature', 'removal'] as const) {
     await flushConfirmations();
     await assert.rejects(confirmSignature(parent, message), busyError);
     await assert.rejects(confirmRemoveWallet(parent, SIGNER), busyError);
+    assert.equal(shown.length, 0);
+    await advanceConfirmations(t, ARM_DELAY_MS);
     assert.equal(shown.length, 1);
+    await assert.rejects(confirmSignature(parent, message), busyError);
+    await assert.rejects(confirmRemoveWallet(parent, SIGNER), busyError);
     click(owner === 'signature' ? 1 : 0);
     assert.equal(await first, true);
     const second = start();
@@ -98,14 +160,12 @@ for (const response of [0, 1]) {
       await advanceConfirmations(t, offset);
       const second = confirmRemoveWallet(parent, SIGNER);
       await flushConfirmations();
-      if (offset < ARM_DELAY_MS) {
-        assert.equal(shown.length, 1);
-        await advanceConfirmations(t, ARM_DELAY_MS - offset - 1);
-        assert.equal(shown.length, 1);
-        await advanceConfirmations(t, 1);
-      }
+      assert.equal(shown.length, 1);
+      await advanceConfirmations(t, ARM_DELAY_MS - 1);
+      assert.equal(shown.length, 1);
+      await advanceConfirmations(t, 1);
       assert.equal(shown.length, 2);
-      assert.equal(shown[1]?.at, closedAt + Math.max(offset, ARM_DELAY_MS));
+      assert.equal(shown[1]?.at, closedAt + offset + ARM_DELAY_MS);
       click(0);
       assert.equal(await second, true);
     });
@@ -130,6 +190,7 @@ test('a double-click on Next cannot skip a page or reach approval', async (t) =>
     /user rejected signature/,
   );
   await flushConfirmations();
+  await advanceConfirmations(t, ARM_DELAY_MS);
   assert.equal(click(0), true);
   await flushConfirmations();
   await advanceConfirmations(t, 100);
@@ -152,6 +213,7 @@ for (const firstRequest of [message, typed]) {
     const first = confirmSignature(parent, firstRequest, context);
     await flushConfirmations();
     await assert.rejects(confirmSignature(parent, message), busyError);
+    await advanceConfirmations(t, ARM_DELAY_MS);
     click(1); // Approve a message or cancel the first typed-data page.
     assert.equal(await first, firstRequest.kind === 'message');
     const second = confirmSignature(parent, message);
@@ -211,12 +273,6 @@ for (const event of rendererEvents) {
   for (const state of ['open', 'arming first page', 'arming next page'] as const) {
     test(`renderer ${event.name} aborts a signature ${state} through the signing failure path`, async (t) => {
       const { parent, shown, click } = manualDialogs(t, true);
-      if (state === 'arming first page') {
-        const previous = confirmSignature(parent, message);
-        await flushConfirmations();
-        click(0);
-        await previous;
-      }
       let signed = false;
       const rejected = assert.rejects(
         signWithConfirmation(typed, {
@@ -232,11 +288,12 @@ for (const event of rendererEvents) {
         event.error,
       );
       await flushConfirmations();
+      if (state !== 'arming first page') await advanceConfirmations(t, ARM_DELAY_MS);
       if (state === 'arming next page') {
         click(0);
         await flushConfirmations();
       }
-      assert.equal(shown.length, 1);
+      assert.equal(shown.length, state === 'arming first page' ? 0 : 1);
       const openedCount = shown.length;
       parent.webContents.emit(event.event, event.detail);
       await rejected;
@@ -246,6 +303,8 @@ for (const event of rendererEvents) {
       assert.equal(parent.webContents.listenerCount(event.event), 0);
       const fresh = confirmSignature(parent, message);
       await flushConfirmations();
+      assert.equal(shown.length, openedCount);
+      await advanceConfirmations(t, ARM_DELAY_MS);
       assert.equal(shown.length, openedCount + 1);
       click(0);
       assert.equal(await fresh, false);
@@ -253,19 +312,14 @@ for (const event of rendererEvents) {
   }
   for (const arming of [false, true]) {
     test(`renderer ${event.name} aborts wallet removal (arming: ${arming})`, async (t) => {
-      const { parent, shown, click } = manualDialogs(t);
-      if (arming) {
-        const previous = confirmSignature(parent, message);
-        await flushConfirmations();
-        click(0);
-        await previous;
-      }
+      const { parent, shown } = manualDialogs(t);
       const rejected = assert.rejects(confirmRemoveWallet(parent, SIGNER), event.error);
-      await flushConfirmations();
+      if (arming) await flushConfirmations();
+      else await advanceConfirmations(t, ARM_DELAY_MS);
       parent.webContents.emit(event.event, event.detail);
       await rejected;
       await advanceConfirmations(t, ARM_DELAY_MS * 2);
-      assert.equal(shown.length, 1);
+      assert.equal(shown.length, arming ? 0 : 1);
     });
   }
 }
@@ -274,6 +328,7 @@ test('subframe and same-document navigation preserve the active request', async 
   const { parent, shown, click } = manualDialogs(t);
   const approved = confirmSignature(parent, message);
   await flushConfirmations();
+  await advanceConfirmations(t, ARM_DELAY_MS);
   parent.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
   parent.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
   assert.equal(shown[0]?.options.signal?.aborted, false);
