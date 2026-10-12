@@ -142,7 +142,12 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   braille blank are escaped in domain/message text and dApp names/URLs.
   Supplementary code points use visible `\u{...}` escapes. Other punctuation
   supplied by a dApp is preserved. Review uses sequential OS-native
-  `dialog.showMessageBox` pages. Every page starts with the unverified dApp
+  `dialog.showMessageBox` pages. Every page's native message header includes
+  `Request N`, assigned by a main-process counter shared by signing and wallet
+  removal. The number increases for each accepted confirmation request, remains
+  the same across its pages, and survives locks and renderer reloads during the
+  main-process lifetime. dApps cannot choose this number. The detail starts with
+  the unverified dApp
   name/URL (or wallet-renderer provenance), full grouped account, scheme,
   primary type with a bounded domain-name preview, and `Page k of n`.
   Page one also shows the full domain block, primary type, wallet chain ID
@@ -170,6 +175,20 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   uses the same order. Cancel is the default and Escape cancels on every page.
   Cancelling at any point rejects the entire request, and the signer is called
   only after the last page is approved.
+  Signing and wallet removal allow one open or arming confirmation at a time.
+  Concurrent requests fail visibly with `another confirmation is already open`;
+  there is no queue of waiting confirmations. A shared monotonic clock enforces
+  `ARM_DELAY_MS = 1000` between the close of a dialog and the opening of the next
+  dialog, across requests and between pages. Approval, cancellation, abort and
+  native-dialog errors all start this delay. During that interval, a second
+  click has no confirmation page to act on. Main checks the abort signal again
+  after waiting and immediately before opening each page.
+  Main-frame navigation or reload (`did-start-navigation`, `did-navigate`) and
+  renderer crashes (`render-process-gone`) abort an open dialog or its arming
+  timer and reject through the existing failure path. A stale confirmation
+  cannot open its next page after these events. Subframe and same-document
+  navigation preserve the current request. Lock, autolock and signer exit also
+  abort the open or arming confirmation; continuing requires a fresh request.
 - **What main trusts:** the IPC sender check, strict request schema, and its
   own pinned network identity. The domain chain ID is compared numerically
   with the `Wallet network chainId` and a mismatch raises a warning. A domain
@@ -326,8 +345,9 @@ WALLET_INFO), or spam the wallet with pairing prompts.
   surfaces only the unlock window; delivery (which reveals and focuses the
   wallet window) happens after a successful unlock. A protocol launch must
   never become a lock-screen bypass. Signature and remove-wallet confirmations
-  share one queue. A lock, autolock or signer exit aborts open confirmation
-  pages and rejects queued requests before they can open a dialog. After
+  share one busy slot and a 1000 ms arming delay between dialog pages. A lock,
+  autolock or signer exit aborts the open or arming confirmation. Renderer
+  navigation, reload or crash also aborts that confirmation. After
   unlocking, confirmations require fresh requests; aborted requests stay rejected.
 - Liveness invariant the renderer relies on: `REQUEST_SIGNATURE` must always
   settle (approve, reject, error, or signer-exit rejection). The renderer's

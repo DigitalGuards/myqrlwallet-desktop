@@ -1,6 +1,9 @@
 // Redirect Electron only in the native confirmation tests' Node process.
 const mockUrl = `data:text/javascript,${encodeURIComponent(`
-  export class BrowserWindow {}
+  import { EventEmitter } from 'node:events';
+  export class BrowserWindow extends EventEmitter {
+    webContents = new EventEmitter();
+  }
   export const dialog = {
     async showMessageBox() { throw new Error('Unexpected native dialog'); }
   };

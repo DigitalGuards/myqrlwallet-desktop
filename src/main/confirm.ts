@@ -5,7 +5,7 @@
  * "what is being signed". The user authorises the exact summary main computed
  * from the validated request, and only then does main ask the signer to sign.
  */
-import { type BrowserWindow, type MessageBoxOptions, dialog } from 'electron';
+import type { BrowserWindow } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
 import {
@@ -13,45 +13,13 @@ import {
   SIGNATURE_APPROVAL_NOTE,
   summariseSignatureRequest,
 } from './confirmSummary';
+import { confirmationGate } from './confirmationGate';
 
-const pendingConfirms = new Set<AbortController>();
-let confirmationQueue: Promise<void> = Promise.resolve();
-
-/** Close every confirmation when its signing session ends. */
+/** Abort the open or arming confirmation when its signing session ends. */
 export function abortPendingConfirms(): void {
-  for (const controller of pendingConfirms) {
-    controller.abort(new Error('Wallet locked during confirmation. Please unlock and try again.'));
-  }
-}
-
-function confirmPages(
-  parent: BrowserWindow,
-  pages: MessageBoxOptions[],
-  approvalId: number,
-): Promise<boolean> {
-  const controller = new AbortController();
-  const { signal } = controller;
-  // Register before waiting so a session ending also aborts queued requests.
-  pendingConfirms.add(controller);
-  const confirmation = confirmationQueue.then(async () => {
-    try {
-      for (const [index, options] of pages.entries()) {
-        signal.throwIfAborted();
-        const { response } = await dialog.showMessageBox(parent, { ...options, signal });
-        // Electron resolves an aborted dialog with cancelId. Surface the lock failure.
-        signal.throwIfAborted();
-        if (response !== (index === pages.length - 1 ? approvalId : 0)) return false;
-      }
-      return true;
-    } finally {
-      pendingConfirms.delete(controller);
-    }
-  });
-  confirmationQueue = confirmation.then(
-    () => undefined,
-    () => undefined,
+  confirmationGate.abort(
+    new Error('Wallet locked during confirmation. Please unlock and try again.'),
   );
-  return confirmation;
 }
 
 /**
@@ -70,7 +38,7 @@ export async function confirmSignature(
   context: ConfirmContext = {},
 ): Promise<boolean> {
   const { title, message, pages } = summariseSignatureRequest(req, context);
-  return confirmPages(
+  return confirmationGate.show(
     parent,
     pages.map((detail, index) => ({
       type: 'warning',
@@ -97,7 +65,7 @@ export async function confirmRemoveWallet(
   parent: BrowserWindow,
   address: string,
 ): Promise<boolean> {
-  return confirmPages(
+  return confirmationGate.show(
     parent,
     [
       {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
-import { test, type TestContext } from 'node:test';
+import { beforeEach, test, type TestContext } from 'node:test';
 import type { MessageBoxOptions } from 'electron';
 import type { SignatureRequest } from '../src/shared/schemas';
 import {
@@ -11,6 +11,7 @@ import {
 import { signWithConfirmation } from '../src/main/signatureRequest';
 import { payloadWith, SIGNER, typedRequest } from './typedDataFixtures';
 import { RECIPIENTS, reviewRequest, withReviewDomain } from './typedDataReviewFixtures';
+import { finishConfirmation, mockConfirmationClock } from './confirmationClock';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -19,6 +20,7 @@ const parent = new BrowserWindow();
 const request = reviewRequest(withReviewDomain(payloadWith('address[]', RECIPIENTS)));
 const context = { connectedChainId: 3151909 };
 const expectedPages = summariseSignatureRequest(request, context).pages;
+beforeEach(mockConfirmationClock);
 
 function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
   const shown: MessageBoxOptions[] = [];
@@ -54,25 +56,28 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
   assert.ok(expectedPages.length > 1);
   const { shown } = mockDialogs(t);
   let signed = false;
-  await signWithConfirmation(request, {
-    signer: {
-      status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-      sign: async () => {
-        assert.equal(shown.length, expectedPages.length);
-        signed = true;
-        return {
-          kind: 'typedData',
-          signer: SIGNER,
-          signature: '0x02',
-          publicKey: '0x00',
-          descriptor: '0x010000',
-          digest: '0x00',
-          schemeVersion: 'QRL-SIGN-TYPED-v2',
-        };
+  await finishConfirmation(
+    t,
+    signWithConfirmation(request, {
+      signer: {
+        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: async () => {
+          assert.equal(shown.length, expectedPages.length);
+          signed = true;
+          return {
+            kind: 'typedData',
+            signer: SIGNER,
+            signature: '0x02',
+            publicKey: '0x00',
+            descriptor: '0x010000',
+            digest: '0x00',
+            schemeVersion: 'QRL-SIGN-TYPED-v2',
+          };
+        },
       },
-    },
-    confirm: (req, ctx) => confirmSignature(parent, req, ctx),
-  });
+      confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+    }),
+  );
   assert.equal(signed, true);
   assert.equal(shown.length, expectedPages.length);
   for (const [i, options] of shown.entries()) {
@@ -88,18 +93,21 @@ for (let cancelAt = 0; cancelAt < expectedPages.length; cancelAt++) {
   test(`cancelling page ${cancelAt + 1} rejects the entire signing request`, async (t) => {
     const { shown } = mockDialogs(t, cancelAt);
     let signatures = 0;
-    await assert.rejects(
-      signWithConfirmation(request, {
-        signer: {
-          status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-          sign: async () => {
-            signatures++;
-            throw new Error('unexpected signing');
+    await finishConfirmation(
+      t,
+      assert.rejects(
+        signWithConfirmation(request, {
+          signer: {
+            status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+            sign: async () => {
+              signatures++;
+              throw new Error('unexpected signing');
+            },
           },
-        },
-        confirm: (req, ctx) => confirmSignature(parent, req, ctx),
-      }),
-      /user rejected signature/,
+          confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+        }),
+        /user rejected signature/,
+      ),
     );
     assert.equal(shown.length, cancelAt + 1);
     assert.equal(signatures, 0);
@@ -110,7 +118,7 @@ for (const page of [0, expectedPages.length - 1]) {
   for (const response of [-1, 2]) {
     test(`unexpected response ${response} on page ${page + 1} cancels`, async (t) => {
       const { shown } = mockDialogs(t, page, response);
-      assert.equal(await confirmSignature(parent, request, context), false);
+      assert.equal(await finishConfirmation(t, confirmSignature(parent, request, context)), false);
       assert.equal(shown.length, page + 1);
     });
   }
@@ -118,14 +126,17 @@ for (const page of [0, expectedPages.length - 1]) {
 
 test('repeating the Next button index on the final page cancels', async (t) => {
   const { shown } = mockDialogs(t, expectedPages.length - 1, 0);
-  assert.equal(await confirmSignature(parent, request, context), false);
+  assert.equal(await finishConfirmation(t, confirmSignature(parent, request, context)), false);
   assert.equal(shown.length, expectedPages.length);
 });
 
 test('a single-page request offers approval immediately', async (t) => {
   const { shown } = mockDialogs(t);
   assert.equal(
-    await confirmSignature(parent, typedRequest(payloadWith('string', 'hello')), context),
+    await finishConfirmation(
+      t,
+      confirmSignature(parent, typedRequest(payloadWith('string', 'hello')), context),
+    ),
     true,
   );
   assert.equal(shown.length, 1);
@@ -134,7 +145,7 @@ test('a single-page request offers approval immediately', async (t) => {
 });
 
 for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
-  test(`concurrent signatures and wallet removal share one queue (cancel at ${cancelAt})`, async (t) => {
+  test(`concurrent signatures and wallet removal are refused (cancel at ${cancelAt})`, async (t) => {
     const { shown } = mockDialogs(t, cancelAt);
     const message: SignatureRequest = { kind: 'message', signer: SIGNER, messageHex: '0x01' };
     const transaction: SignatureRequest = {
@@ -152,29 +163,25 @@ for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
       },
     };
     const firstPageCount = cancelAt === -1 ? expectedPages.length : cancelAt + 1;
-    assert.deepEqual(
-      await Promise.all([
-        confirmSignature(parent, request, context),
+    const first = confirmSignature(parent, request, context);
+    await Promise.all(
+      [
         confirmSignature(parent, request, context),
         confirmRemoveWallet(parent, SIGNER),
         confirmSignature(parent, message),
         confirmSignature(parent, transaction),
-      ]),
-      [cancelAt === -1, true, true, true, true],
+      ].map((pending) => assert.rejects(pending, /another confirmation is already open/)),
     );
-    const typedPages = [...expectedPages.slice(0, firstPageCount), ...expectedPages];
+    assert.equal(await finishConfirmation(t, first), cancelAt === -1);
+    const typedPages = expectedPages.slice(0, firstPageCount);
     assert.deepEqual(
-      shown.slice(0, typedPages.length).map(({ detail }) => detail),
+      shown.map(({ detail }) => detail),
       typedPages.map((detail) => `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`),
-    );
-    assert.deepEqual(
-      shown.slice(typedPages.length).map(({ title }) => title),
-      ['Remove wallet from this device?', 'Confirm message signature', 'Confirm transaction'],
     );
   });
 }
 
-test('a native dialog failure rejects its request and releases the queue', async (t) => {
+test('a native dialog failure rejects its request and releases the busy slot', async (t) => {
   const { shown, mock } = mockDialogs(t);
   mock.mock.mockImplementationOnce(async () => {
     throw new Error('native dialog failed');
@@ -183,9 +190,8 @@ test('a native dialog failure rejects its request and releases the queue', async
     confirmSignature(parent, request, context),
     /native dialog failed/,
   );
-  const next = confirmRemoveWallet(parent, SIGNER);
   await rejected;
-  assert.equal(await next, true);
+  assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
   assert.equal(shown.length, 1);
 });
 
@@ -249,7 +255,7 @@ test('exactly ten pages can be reviewed and the next row fails closed', async (t
   assert.ok(rowCount > 0);
   assert.equal(summariseSignatureRequest(largest, context).pages.length, 10);
   const { shown } = mockDialogs(t);
-  assert.equal(await confirmSignature(parent, largest, context), true);
+  assert.equal(await finishConfirmation(t, confirmSignature(parent, largest, context)), true);
   assert.equal(shown.length, 10);
   const oversized = typedRequest(
     payloadWith(
