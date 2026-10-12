@@ -35,7 +35,11 @@
   "overrides": {
     "@theqrl/mldsa87": "$@theqrl/mldsa87",
     "@theqrl/wallet.js": "$@theqrl/wallet.js",
-    "@theqrl/qrl-cryptography": "0.3.3"
+    "@theqrl/qrl-cryptography": "0.3.3",
+    "brace-expansion@1": "1.1.21",
+    "brace-expansion@2": "2.1.7",
+    "brace-expansion@5": "5.0.12",
+    "fast-uri@>=3.0.0 <3.1.8": "3.1.8"
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
@@ -58,7 +62,7 @@
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^42.0.0",
+    "electron": "^42.11.12",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
     "eslint": "^10.6.0",
