@@ -223,6 +223,9 @@ function typedScalar(type: string, value: unknown, types: TypeMap, shorten = tru
   if (typeof value !== 'string') throw new Error('invalid typed-data summary value');
   if (parsed.kind === 'address') return groupQrlAddress(value);
   if (!shorten) return `"${fullTypedText(value)}"`;
+  if ((parsed.kind === 'bytes' || parsed.kind === 'bytesN') && value.length <= 66) {
+    return `"${value}"`;
+  }
   const length =
     parsed.kind === 'bytes' || parsed.kind === 'bytesN'
       ? `${(value.length - 2) / 2} bytes`

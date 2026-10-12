@@ -131,6 +131,43 @@ test('25 long bytes, wide strings and escaped controls fit with every row presen
   }
 });
 
+test('hex values through 66 characters remain complete within the page budget', () => {
+  for (const [type, size] of [
+    ['bytes1', 1],
+    ['bytes30', 30],
+    ['bytes31', 31],
+    ['bytes32', 32],
+    ['bytes', 0],
+    ['bytes', 31],
+    ['bytes', 32],
+  ] as const) {
+    const value = `0x${'ab'.repeat(size)}`;
+    const pages = pagesWithOrigin(
+      payloadWith(
+        `${type}[]`,
+        Array.from({ length: 25 }, () => value),
+      ),
+    );
+    assert.deepEqual(
+      messageRows(pages),
+      Array.from({ length: 25 }, (_, i) => `message.value[${i}] (${type}): "${value}"`),
+    );
+  }
+});
+
+test('hex values over 66 characters retain the bounded preview and byte count', () => {
+  for (const size of [33, 1000]) {
+    const value = `0x${'ab'.repeat(size)}`;
+    const pages = pagesWithOrigin(payloadWith('bytes', value));
+    const [row] = messageRows(pages);
+    assert.ok(row);
+    const displayed = row.slice('message.value (bytes): '.length);
+    assert.ok(displayed.startsWith('"0xabab'));
+    assert.ok(displayed.endsWith(`…" [${size} bytes]`));
+    assert.ok(displayed.length <= TYPED_DATA_DISPLAY_LIMITS.valueChars);
+  }
+});
+
 test('middle-elided paths keep full leaf names and distinguish hidden ancestors', () => {
   const outer = 'outer_'.repeat(10);
   const inner = 'inner_'.repeat(10);

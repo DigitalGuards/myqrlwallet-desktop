@@ -4,6 +4,12 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
   export const dialog = {
     async showMessageBox() { throw new Error('Unexpected native dialog'); }
   };
+  export const utilityProcess = {
+    fork() { throw new Error('Unexpected signer process'); }
+  };
+  export const app = {
+    getPath() { throw new Error('Unexpected app path'); }
+  };
 `)}`;
 
 export function resolve(specifier, context, nextResolve) {

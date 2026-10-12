@@ -5,7 +5,7 @@
  * "what is being signed". The user authorises the exact summary main computed
  * from the validated request, and only then does main ask the signer to sign.
  */
-import { type BrowserWindow, dialog } from 'electron';
+import { type BrowserWindow, type MessageBoxOptions, dialog } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
 import {
@@ -13,6 +13,33 @@ import {
   SIGNATURE_APPROVAL_NOTE,
   summariseSignatureRequest,
 } from './confirmSummary';
+
+const pendingConfirms = new Set<AbortController>();
+
+/** Close every confirmation when its signing session ends. */
+export function abortPendingConfirms(): void {
+  for (const controller of pendingConfirms) {
+    controller.abort(new Error('Wallet locked during confirmation. Please unlock and try again.'));
+  }
+}
+
+async function confirmPages(parent: BrowserWindow, pages: MessageBoxOptions[]): Promise<boolean> {
+  const controller = new AbortController();
+  const { signal } = controller;
+  pendingConfirms.add(controller);
+  try {
+    for (const options of pages) {
+      signal.throwIfAborted();
+      const { response } = await dialog.showMessageBox(parent, { ...options, signal });
+      // Electron resolves an aborted dialog with cancelId. Surface the lock failure.
+      signal.throwIfAborted();
+      if (response !== 0) return false;
+    }
+    return true;
+  } finally {
+    pendingConfirms.delete(controller);
+  }
+}
 
 /**
  * Show the modal confirmation and return whether the user approved. The dialog
@@ -30,8 +57,9 @@ export async function confirmSignature(
   context: ConfirmContext = {},
 ): Promise<boolean> {
   const { title, message, pages } = summariseSignatureRequest(req, context);
-  for (const [index, detail] of pages.entries()) {
-    const { response } = await dialog.showMessageBox(parent, {
+  return confirmPages(
+    parent,
+    pages.map((detail, index) => ({
       type: 'warning',
       buttons: [index === pages.length - 1 ? 'Approve & sign' : 'Next', 'Cancel'],
       defaultId: 1,
@@ -40,10 +68,8 @@ export async function confirmSignature(
       message,
       detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
       noLink: true,
-    });
-    if (response !== 0) return false;
-  }
-  return true;
+    })),
+  );
 }
 
 /**
@@ -57,17 +83,18 @@ export async function confirmRemoveWallet(
   parent: BrowserWindow,
   address: string,
 ): Promise<boolean> {
-  const { response } = await dialog.showMessageBox(parent, {
-    type: 'warning',
-    buttons: ['Remove wallet', 'Cancel'],
-    defaultId: 1,
-    cancelId: 1,
-    title: 'Remove wallet from this device?',
-    message: 'Permanently remove this wallet from this device?',
-    detail:
-      `Account: ${groupQrlAddress(address)}\n\n` +
-      'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
-    noLink: true,
-  });
-  return response === 0;
+  return confirmPages(parent, [
+    {
+      type: 'warning',
+      buttons: ['Remove wallet', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Remove wallet from this device?',
+      message: 'Permanently remove this wallet from this device?',
+      detail:
+        `Account: ${groupQrlAddress(address)}\n\n` +
+        'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+      noLink: true,
+    },
+  ]);
 }
