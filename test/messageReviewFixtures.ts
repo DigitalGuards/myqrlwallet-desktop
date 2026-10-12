@@ -30,6 +30,18 @@ export const DIALOG_CHROME_MESSAGE = [
   'sell 100000 Quanta at market; expiry 1y'.padEnd(65),
 ].join('');
 
+export const GTK_WRAP_MESSAGE = [
+  'sell 1 Quanta at market; expiry 5m'.padEnd(48),
+  ' '.repeat(16),
+  SIGNATURE_APPROVAL_NOTE,
+  'Account: forged  ',
+  'Page 1 of 1  ',
+  'Message (text, 247 bytes):  ',
+  'sell 100000 Quanta at market; expiry 1y',
+]
+  .join('')
+  .padEnd(247);
+
 export function messageRequest(value: string | Uint8Array, origin?: DAppOrigin) {
   const bytes = typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value);
   return SignatureRequestSchema.parse({

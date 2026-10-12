@@ -2,6 +2,41 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Main wraps every trusted confirmation detail line at 48 display columns with
+  a conservative glyph-width model calibrated against the default GTK sans
+  font (DejaVu Sans). ASCII advances above 0.8 em and `OQGDHNU&` count as two
+  columns, including lowercase `m` and `w`. Non-ASCII advances above 1.27 em
+  count as three columns.
+  Known ultra-wide glyphs in U+2E3A-U+2E3B, U+FDFA-U+FDFD and U+12000-U+1254F
+  use atomic, reversible `\u{...}` escapes.
+- Every main-wrapped line carrying dApp or renderer text starts with a
+  main-written U+200E LEFT-TO-RIGHT MARK followed by its label or gutter, keeping
+  Hebrew and Arabic paragraphs' markers on the left. Supplied U+200E remains
+  escaped. Message bodies use a `| ` gutter; metadata, typed data, transaction
+  recipients and transaction data continue with `    | `.
+  Trusted notes, labels, verified signer and wallet-removal accounts,
+  wallet-renderer provenance and main-formatted numeric values continue with
+  a plain four-space indent, breaking at word boundaries where possible.
+  The pipe identifies dApp-supplied text on main-wrapped continuations and
+  message body rows.
+- Residual risk: rows made of unusually wide glyphs can still wrap in some
+  fonts. The wrapped overflow then shows without a main-written marker and
+  can resemble dialog chrome. The native bold page label and approval flow
+  are unaffected.
+- Multi-page reviews show their page indicator beside the request number in
+  the native bold label. Message and typed-data reviews retain the 30-line and
+  10-page limits, counting every wrapped detail line before opening a dialog.
+
+### Fixed
+
+- Message reviews keep JSON quotes literal while escaping backslashes and
+  invisible characters, preserving the exact signed bytes. Typed-data previews
+  and continuations preserve complete escapes and Unicode code points.
+
 ## 1.4.0 - 2026-10-12
 
 ### Added

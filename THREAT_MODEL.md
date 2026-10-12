@@ -122,26 +122,90 @@ something the user did not intend.
 - Buys: malformed/oversized inputs are rejected at the boundary; the user sees
   what is being signed in a context the dApp cannot draw over.
 
+#### Trusted dialog layout
+
+Main wraps every confirmation detail line, including transaction and
+wallet-removal reviews, at `DETAIL_LINE_COLUMNS = 48`
+(`src/main/confirmSummary.ts`). The conservative glyph-width model is calibrated
+against DejaVu Sans, the default GTK sans font in the review environment.
+All 95 printable ASCII advances were checked against DejaVu Sans 2.37's `hmtx`
+metrics at 2048 units per em.
+The characters above 0.8 em count as two columns: `#`, `%`, `+`, `<`, `=`, `>`,
+`@`, `M`, `W`, `^`, `m`, `w` and `~`. `O`, `Q`, `G`, `D`, `H`, `N`, `U` and `&`
+also count as two columns because hinting can round their advances past a
+single column. Non-ASCII code points count as two columns, with three columns
+for the 96 code points whose DejaVu Sans advance exceeds 1.27 em. The table was
+derived with fontTools from `DejaVuSans.ttf` 2.37's Unicode cmap and `hmtx`
+metrics. U+20A7 and U+20AF meet this cutoff at exactly two digit widths
+(1.27246 em); the other 94 exceed two digit widths. Main's leading U+200E
+LEFT-TO-RIGHT MARK has zero width.
+Known ultra-wide glyphs use atomic visible `\u{...}` escapes: U+2E3A-U+2E3B
+(two- and three-em dashes), U+FDFA-U+FDFD (Arabic ligatures), and
+U+12000-U+1254F (Cuneiform blocks).
+
+Residual risk: rows made of unusually wide glyphs can still wrap in some fonts.
+The wrapped overflow then shows without a main-written marker and can resemble
+dialog chrome. Native font metrics and scaling vary by platform. The native
+bold page label and approval flow are unaffected.
+
+Trusted text continues with a plain four-space indent and breaks at word
+boundaries where possible. This includes static headings and notes, field
+labels, the main-verified signer account (`Account:` or transaction `From:`),
+the wallet-removal account, wallet-renderer provenance, and numbers formatted
+by main such as transaction amounts, fees, gas limits and chain IDs.
+
+Rows containing dApp or renderer text begin with a main-written U+200E followed
+by a fixed app-owned label; typed-data fields use `message.` and their path/type
+prefix. Their continuations begin with U+200E followed by `    | `. This includes
+origin name, URL and channel values, typed-data metadata, paths and values
+(including addresses and integers), and transaction recipient and data. Callers
+select the source when formatting each row, before page assembly and budget accounting. Plain
+continuations contain only trusted text. Message body rows use U+200E followed
+by `| ` on every line. The mark gives each paragraph a left-to-right direction,
+keeping the marker on the left even when its text begins with Hebrew or Arabic.
+U+200E supplied by the dApp is escaped. The pipe identifies dApp or renderer text
+on every main-wrapped continuation and message body row.
+
+The wrapper preserves complete escape sequences, code points and boundary
+spaces. Full addresses and long path/type prefixes retain their row's
+continuation style. Code-side wrapping keeps each main-created continuation
+visibly attached to its source row, subject to the native-wrapping residual
+risk above.
+
+The only page indicator is in the native bold `message` field:
+`Request N, page k of n` for multi-page reviews, or `Request N` for one page.
+The detail field has no app-generated page counter. A forged counter inside
+dApp text stays in the detail field and cannot reach the bold label, including
+when the toolkit adds a continuation.
+
 #### Message signatures
 
 Main presents the complete message from the validated request in sequential
 trusted native dialogs (`src/main/confirmSummary.ts`, `src/main/confirm.ts`).
 Every byte appears exactly once across the message bodies, in order. Valid
-UTF-8 uses `Message (text, N bytes):` and the typed-data escaping rules below
-for controls, invisible characters and bidirectional marks. A leading UTF-8
-BOM is retained and escaped. Every text and hex body row begins with the fixed
-ASCII gutter `| `, including the final row and rows containing only spaces.
-This keeps dApp-chosen account labels, page counters, headings and approval
-instructions visibly inside the message body. Space padding, including Unicode
-space separators, cannot create an unmarked row that impersonates dialog chrome.
-An empty message shows a single explicit row, `| (empty message)`.
-The gutter uses two of the 64 display columns, leaving 62 for content. Text
+UTF-8 uses `Message (text, N bytes):` and a dedicated message escaper. Double
+quotes stay literal so JSON is readable; backslashes become `\\`. Controls,
+invisible characters and bidirectional marks use the visible escapes described
+below, as do the known ultra-wide glyphs. Removing only the main-written leading
+direction mark and body gutter, then decoding those escapes, recovers the exact
+signed UTF-8 bytes. A leading UTF-8 BOM is retained and escaped. Every
+main-wrapped text and hex body row begins
+with U+200E and the fixed ASCII gutter `| `, including the final row and rows
+containing only spaces. Main's markers keep dApp-chosen account labels, page
+counters, headings and approval instructions visibly inside those rows. Space
+padding, including Unicode space separators, retains the gutter on each
+main-wrapped row. An empty message shows U+200E followed by `| (empty message)`.
+Toolkit-created continuations carry the residual risk described above.
+The gutter uses two of the 48 display columns, leaving 46 for content. Text
 wraps with complete escape sequences and Unicode code points. Invalid UTF-8
-uses `Message (hex, N bytes):` and hexadecimal rows of up to 31 complete bytes.
+uses `Message (hex, N bytes):` and hexadecimal rows of up to 46 hex characters
+(23 complete bytes).
 
 Every page repeats the full grouped account, unverified dApp origin block
-(or wallet-renderer provenance), byte count and `Page k of n`. The existing
-30-line budget includes this metadata and the approval note. Preparation
+(or wallet-renderer provenance) and byte count. The bold label carries the
+request number and page indicator. The existing 30-line budget counts explicit
+detail lines, including blank lines, metadata continuations and the wrapped
+approval note. Preparation
 stops at the 10-page cap; an oversized review fails with
 `message too long to review in the trusted dialog` before a dialog opens or
 the signer is called. Pages before the last offer `Next` and `Cancel`.
@@ -167,23 +231,29 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   and unassigned code points, line/paragraph separators, default-ignorable
   code points (including tags, variation selectors and Hangul fillers), and
   braille blank are escaped in domain/message text and dApp names/URLs.
-  Supplementary code points use visible `\u{...}` escapes. Other punctuation
-  supplied by a dApp is preserved. Review uses sequential OS-native
-  `dialog.showMessageBox` pages. Every page's native message header includes
-  `Request N`, assigned by a main-process counter shared by signing and wallet
-  removal. The number increases for each accepted confirmation request, remains
+  Known ultra-wide glyphs from the ranges listed above are also escaped.
+  Supplementary code points and known ultra-wide glyphs use visible `\u{...}`
+  escapes. Other punctuation supplied by a dApp is preserved. Review uses
+  sequential OS-native `dialog.showMessageBox` pages. Every page's native
+  message header includes
+  `Request N`, plus `page k of n` when there are multiple pages, in its bold
+  label. The request number comes from a main-process counter shared by signing
+  and wallet removal. It increases for each accepted confirmation request, remains
   the same across its pages, and survives locks and renderer reloads during the
   main-process lifetime. dApps cannot choose this number. The detail starts with
   the unverified dApp
   name/URL (or wallet-renderer provenance), full grouped account, scheme,
-  a `Signing:` row with the primary type and a bounded domain-name preview,
-  and `Page k of n`.
+  and a `Signing:` row with the primary type and a bounded domain-name preview.
   Page one also shows the full domain block, primary type, wallet chain ID
   and all chain warnings. Oversized mandatory metadata rejects
   before any dialog opens.
-  Each page, including the approval note, has a budget of 30 wrapped lines at
-  64 display columns. Word boundaries, unbroken tokens and blank lines consume
-  that budget; wide ASCII glyphs and non-ASCII code points count as two columns.
+  Each page, including the approval note, has a budget of 30 explicit lines at
+  `DETAIL_LINE_COLUMNS` (48 display columns). Both continuation styles, word
+  boundaries, unbroken tokens and blank lines consume that budget; wide ASCII
+  glyphs and non-ASCII code points use the two- and three-column classes above,
+  except main's zero-width leading U+200E. The budget covers main-wrapped lines;
+  unusually wide fonts or glyphs can add toolkit-created continuations as
+  described above.
   This leaves room for native dialog controls within roughly 700 logical
   pixels at common desktop font sizes. Exact height depends on OS font metrics
   and scaling. Every message row appears once, in order, and stays on one page.
@@ -193,7 +263,8 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   A long leaf with many indices can exceed the label target and still counts
   toward the page budget.
   String/byte previews use a 64-character budget including an ellipsis and
-  the original character/byte length. Formatting escapes only bounded input
+  the original character/byte length. Preview truncation and wrapping preserve
+  complete escape sequences and code points. Formatting escapes only bounded input
   prefixes; full metadata is size-checked before escaping. Preview tails still
   participate in the signature. Rows are generated lazily and preparation
   stops when an eleventh page would be required. Such requests fail closed

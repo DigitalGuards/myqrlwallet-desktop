@@ -12,6 +12,7 @@ import {
   type ConfirmContext,
   SIGNATURE_APPROVAL_NOTE,
   summariseSignatureRequest,
+  wrapDetailText,
 } from './confirmSummary';
 import { confirmationGate } from './confirmationGate';
 
@@ -47,7 +48,7 @@ export async function confirmSignature(
       cancelId: index === pages.length - 1 ? 0 : 1,
       title,
       message,
-      detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
+      detail: wrapDetailText(`${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`),
       noLink: true,
     })),
     1,
@@ -75,9 +76,10 @@ export async function confirmRemoveWallet(
         cancelId: 1,
         title: 'Remove wallet from this device?',
         message: 'Permanently remove this wallet from this device?',
-        detail:
+        detail: wrapDetailText(
           `Account: ${groupQrlAddress(address)}\n\n` +
-          'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+            'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+        ),
         noLink: true,
       },
     ],

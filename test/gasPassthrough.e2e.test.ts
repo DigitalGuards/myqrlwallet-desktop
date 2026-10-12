@@ -15,6 +15,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { isArray, isRecord } from '../src/shared/guards';
+import { assertDetailWidth, unfoldDetail } from './confirmLayout';
 
 process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
@@ -151,7 +152,10 @@ function decodeType2Head(rawTx: string): {
 
 /** Pull the value of one aligned `Label:   value` detail row. */
 function detailRow(detail: string, label: string): string {
-  const line = detail.split('\n').find((l) => l.startsWith(label));
+  assertDetailWidth(detail);
+  const line = unfoldDetail(detail)
+    .split('\n')
+    .find((l) => l.startsWith(label));
   assert.ok(line, `expected a "${label}" row in:\n${detail}`);
   return line.slice(label.length).trim();
 }
