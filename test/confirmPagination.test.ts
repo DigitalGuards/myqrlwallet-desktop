@@ -409,6 +409,21 @@ test('a single-page request offers approval on its only page', async (t) => {
   assert.match(shown[0]?.message ?? '', /^Request \d+\n/);
 });
 
+test('message, typed-data and removal dialogs keep short questions in their bold labels', async (t) => {
+  const { shown } = mockDialogs(t);
+  for (const request of [messageRequest('hello'), typedRequest(payloadWith('string', 'hello'))]) {
+    assert.equal(await finishConfirmation(t, confirmSignature(parent, request, context)), true);
+  }
+  assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
+  const questions = shown.map(({ message }) => message.split('\n').slice(1).join('\n'));
+  assert.deepEqual(questions, [
+    'Sign this message with your wallet key?',
+    'Sign this structured data with your wallet key?',
+    'Permanently remove this wallet from this device?',
+  ]);
+  assert.ok(questions.every((question) => question.length <= 48));
+});
+
 for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
   test(`concurrent signatures and wallet removal are refused (cancel at ${cancelAt})`, async (t) => {
     const { shown } = mockDialogs(t, cancelAt);

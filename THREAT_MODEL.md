@@ -137,15 +137,19 @@ metrics at 2048 units per em.
 The characters above 0.8 em count as two columns: `#`, `%`, `+`, `<`, `=`, `>`,
 `@`, `M`, `W`, `^`, `m`, `w` and `~`. `O`, `Q`, `G`, `D`, `H`, `N`, `U` and `&`
 also count as two columns because hinting can round their advances past a
-single column. Non-ASCII code points count as two columns, with three columns
-for the 96 code points whose DejaVu Sans advance exceeds 1.27 em. The table was
-derived with fontTools from `DejaVuSans.ttf` 2.37's Unicode cmap and `hmtx`
-metrics. U+20A7 and U+20AF meet this cutoff at exactly two digit widths
+single column. Non-ASCII BMP code points count as two columns, with three columns
+for entries in the calibrated width table. Every code point above U+FFFF
+counts as three columns, covering native six-digit hex fallback boxes when a
+usable font is missing. The width table contains the 96 code points whose
+DejaVu Sans advance exceeds 1.27 em, derived with fontTools from
+`DejaVuSans.ttf` 2.37's Unicode cmap and `hmtx` metrics. U+20A7 and U+20AF
+meet this cutoff at exactly two digit widths
 (1.27246 em); the other 94 exceed two digit widths. Main's leading U+200E
 LEFT-TO-RIGHT MARK has zero width.
 Known ultra-wide glyphs use atomic visible `\u{...}` escapes: U+2E3A-U+2E3B
 (two- and three-em dashes), U+FDFA-U+FDFD (Arabic ligatures), and
-U+12000-U+1254F (Cuneiform blocks).
+U+12000-U+1254F (Cuneiform blocks). Escaped characters use the width of their
+visible escape text.
 
 Residual risk: rows made of unusually wide glyphs can still wrap in some fonts.
 The wrapped overflow then shows without a main-written marker and can resemble
@@ -236,7 +240,7 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   code points (including tags, variation selectors and Hangul fillers), and
   braille blank are escaped in domain/message text and dApp names/URLs.
   Known ultra-wide glyphs from the ranges listed above are also escaped.
-  Supplementary code points and known ultra-wide glyphs use visible `\u{...}`
+  Escaped supplementary code points and known ultra-wide glyphs use visible `\u{...}`
   escapes. Other punctuation supplied by a dApp is preserved. Review uses
   sequential OS-native `dialog.showMessageBox` pages. Every page's native
   message header includes
@@ -261,6 +265,9 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   This leaves room for native dialog controls within roughly 700 logical
   pixels at common desktop font sizes. Exact height depends on OS font metrics
   and scaling. Every message row appears once, in order, and stays on one page.
+  Each `Message fields:` heading stays on the same page as its first complete
+  row. When that row cannot fit on page one, the heading moves with it to the
+  next page, leaving the mandatory metadata on page one.
   All addresses and integers are shown in full. Labels over 80 characters
   elide the middle of the path, preserve the complete leaf name and array
   indices, and include a unique row number to distinguish hidden ancestors.
@@ -365,8 +372,10 @@ settlement that runs out of gas defers the payout into a credit).
   assembled itself. The trusted confirm window names the limit's source ("set by
   the dApp; wallet estimate N"), warns when the request exceeds
   `max(4x estimate, estimate + 1,000,000)`, prices the worst case as gas limit x
-  maxFeePerGas, and repeats the max cost in its message line, because for a
-  zero-value contract call the fee is the whole cost.
+  maxFeePerGas, and repeats the max cost on its own line of the bold message
+  (`Send 1 Quanta?` then `Max cost ... Quanta.`), because for a zero-value
+  contract call the fee is the whole cost. The explicit line break keeps the
+  toolkit from wrapping the label.
 - Buys: the fee the user approves is computed from the gas limit that will be
   signed, and an inflated limit is visible and priced before approval. Unused
   gas is refunded; a call that fails out of gas or burns gas can consume the
@@ -390,7 +399,7 @@ fallback logs a warning.
 - Control: both values must be `0x` quantities; the IPC schema caps every
   decimal amount at 80 digits; the trusted confirm window prices the worst
   case as gas limit x maxFeePerGas, shows the priority fee next to it, and
-  repeats the max cost in its message line.
+  repeats the max cost on its own line of the bold message.
 - Buys: the 2x base-fee headroom keeps a transaction includable through
   several full blocks of base-fee rises; unused headroom is refunded.
 - Limit: the RPC endpoint is trusted for fee levels, as it was for

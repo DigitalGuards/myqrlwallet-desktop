@@ -173,8 +173,14 @@ export function displayWidth(value: string): number {
     if (point === undefined || char === LEFT_TO_RIGHT_MARK) continue;
     if (point <= 0x7f) {
       width += WIDE_ASCII.includes(char) ? 2 : 1;
+    } else if (
+      point > 0xffff ||
+      THREE_COLUMN_RANGES.some(([start, end]) => point >= start && point <= end)
+    ) {
+      // Astral glyphs can fall back to wide six-digit hex boxes in native fonts.
+      width += 3;
     } else {
-      width += THREE_COLUMN_RANGES.some(([start, end]) => point >= start && point <= end) ? 3 : 2;
+      width += 2;
     }
   }
   return width;
@@ -464,27 +470,35 @@ function typedDataPages(
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
   // Metadata is mandatory on page one; later pages repeat the compact header.
   const base = header.join('\n');
-  const continuationLines = typedDataDisplayLines(
-    `${base}\nMessage fields:\n\n${SIGNATURE_APPROVAL_NOTE}`,
-  );
-  let used = continuationLines + typedDataDisplayLines(lines.join('\n'));
+  const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  const heading = 'Message fields:';
+  const headingLines = typedDataDisplayLines(heading);
+  const continuationLines = baseLines + headingLines;
+  let used = baseLines + typedDataDisplayLines(lines.join('\n'));
   if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(TYPED_METADATA_ERROR);
   const bodies = [lines];
   let body = lines;
-  body.push('Message fields:');
+  let needsHeading = true;
   // Consume rows lazily so a request over the page limit stops formatting as
   // soon as it is known to be too large. No dialog is shown during preparation.
   for (const field of typedMessageRows(payload)) {
     const cost = typedDataDisplayLines(field);
-    if (used + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
+    if (used + cost + (needsHeading ? headingLines : 0) > TYPED_DATA_DISPLAY_LIMITS.lines) {
       if (bodies.length >= maxPages || continuationLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
         throw new Error(
           `Typed-data request is too large to review safely on desktop (maximum ${maxPages} pages).`,
         );
       }
-      body = ['Message fields:'];
+      body = [];
       bodies.push(body);
-      used = continuationLines;
+      used = baseLines;
+      needsHeading = true;
+    }
+    // Keep the section heading with its first complete row on every page.
+    if (needsHeading) {
+      body.push(heading);
+      used += headingLines;
+      needsHeading = false;
     }
     body.push(field);
     used += cost;
@@ -572,8 +586,8 @@ function gasLines(
  * are approving:
  *   max fee  = gas limit * maxFeePerGas
  *   max cost = amount + max fee
- * and the max cost is repeated in the dialog's prominent message line, because
- * for a zero-value contract call the fee IS the whole cost.
+ * and the max cost is repeated on its own line of the dialog's prominent
+ * message, because for a zero-value contract call the fee is the whole cost.
  */
 export function summariseSignatureRequest(
   req: SignatureRequest,
@@ -608,7 +622,8 @@ export function summariseSignatureRequest(
       ].join('\n');
       return {
         title: 'Confirm transaction',
-        message: `Send ${formatQuanta(tx.value)}? Max cost ${formatQuanta(maxCost)}.`,
+        // Two explicit lines keep the max cost prominent without a toolkit wrap.
+        message: `Send ${formatQuanta(tx.value)}?\nMax cost ${formatQuanta(maxCost)}.`,
         pages: [wrapDetailText(detail + originDetail(req.origin))],
       };
     }

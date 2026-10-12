@@ -350,14 +350,48 @@ test('non-ASCII advances above 1.27 em use three columns and wrap at 15 glyphs',
   }
   for (const point of [
     0x01c3, 0x01c6, 0x01f0, 0x01f3, 0x166f, 0x1677, 0x2032, 0x20a6, 0x20a8, 0x20ae, 0x20b0, 0x2327,
-    0x2329, 0x27f4, 0x2800, 0x1030b, 0x1030d, 0x1f02f, 0x1f062, 0x1f633, 0x1f635,
+    0x2329, 0x27f4, 0x2800, 0xffff,
   ]) {
     assert.equal(displayWidth(String.fromCodePoint(point)), 2, `U+${point.toString(16)}`);
   }
 });
 
+test('astral code points use three columns, including missing-font fallback glyphs', () => {
+  for (const point of [
+    0x10000, 0x1030b, 0x1030d, 0x1f02f, 0x1f062, 0x1f512, 0x1f633, 0x1f635, 0x1f642, 0x20000,
+    0xe0061, 0x10ffff,
+  ]) {
+    assert.equal(displayWidth(String.fromCodePoint(point)), 3, `U+${point.toString(16)}`);
+  }
+  for (const point of [0x10000, 0x1030b, 0x1030d, 0x1f512, 0x1f642, 0x20000]) {
+    const char = String.fromCodePoint(point);
+    for (const length of [14, 15, 16, 30, 31]) {
+      const message = char.repeat(length);
+      const { pages } = summariseSignatureRequest(messageRequest(message));
+      assertBudget(pages);
+      assertTextFidelity(pages, message);
+      const rows = messageContents(pages);
+      assert.equal(rows.length, Math.ceil(length / 15));
+      assert.ok(rows.slice(0, -1).every((line) => line === char.repeat(15)));
+      assert.equal(rows.at(-1), char.repeat(length % 15 || 15));
+    }
+  }
+});
+
+test('twenty lock glyphs followed by Next retain the gutter and exact signed bytes', () => {
+  const lock = '\u{1f512}';
+  const message = lock.repeat(20) + ' Next';
+  const { pages } = summariseSignatureRequest(messageRequest(message));
+  assertBudget(pages);
+  assertTextFidelity(pages, message);
+  assert.deepEqual(messageRows(pages), [
+    `\u200e| ${lock.repeat(15)}`,
+    `\u200e| ${lock.repeat(5)} Next`,
+  ]);
+});
+
 test('mixed width classes fill the content budget and preserve the next complete code point', () => {
-  for (const char of ['\u2031', '\u{1f634}']) {
+  for (const char of ['\u2031', '\u{1f634}', '\u{1f512}', '\u{10000}', '\u{20000}']) {
     const fullRow = `${char.repeat(14)}Oaa`;
     const message = fullRow + char;
     const { pages } = summariseSignatureRequest(messageRequest(message));
