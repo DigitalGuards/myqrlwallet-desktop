@@ -127,11 +127,14 @@ Typed-data signing supports QRL-SIGN-TYPED v1 and v2 with byte-identical web
 wallet and Connect SDK digests. An address field, including an address array or
 a domain verifying contract, selects v2's 64-byte value slots. Address-free
 payloads retain v1. The trusted dialog shows dApp provenance, scheme, domain,
-primary type and up to 20 message fields, with explicit truncation and a warning
-when the domain chain ID differs from the wallet's configured network. Main
-validates every resource bound before confirmation; the signer checks them
-again and binds the request to its unlocked account. Message and typed-data
-signing work offline.
+primary type and every message field once across sequential pages, with bounded
+string/byte previews and a warning when the domain chain ID differs from the
+wallet's configured network. Approval is available only on the last page, and
+reviews above 10 pages are refused. Message signing receives the same complete
+paginated review: every byte appears once as escaped text or full hex, with a
+visible `| ` gutter on every body row. Main validates every resource bound
+before confirmation; the signer checks them again and binds the request to its
+unlocked account. Message and typed-data signing work offline.
 
 ## Architecture: four processes, one trust gradient
 
@@ -332,7 +335,11 @@ no network). The suites exercise the load-bearing signer logic directly:
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted
-  domain/message rows with truncation and chain warnings.
+  domain/message rows and chain warnings.
+- `confirmTypedDataBudget.test.ts`, `confirmMessageBudget.test.ts`, and
+  `confirmPagination.test.ts` cover every typed-data field and message byte
+  appearing once across pages, the message body gutter, approval only on the
+  last page, and refusal above 10 pages.
 - `signer.session.test.ts` - the unlock lifecycle: correct-password unlock,
   `withSeed` yields exactly the stored seed, wrong-password authentication
   failure, `lock()` teardown, and the autolock timer firing (mock timers).

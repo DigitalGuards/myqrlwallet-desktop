@@ -2,6 +2,18 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Trusted message-signing confirmations show every byte across paginated
+  review: valid UTF-8 appears as text with visible control and invisible-character
+  escapes, and binary messages appear in full hex. Every body row has a visible
+  `| ` gutter to separate message content from dialog labels and approval
+  instructions; empty messages have an explicit row. Each page repeats the
+  account and unverified origin. Approval is available only on the last page;
+  requests exceeding the 10-page review budget are refused before a dialog opens.
+
 ## 1.4.0 - 2026-10-12
 
 ### Added
