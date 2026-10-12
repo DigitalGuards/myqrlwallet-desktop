@@ -2,6 +2,22 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Added
+
+- Desktop dApp typed-data signing using QRL-SIGN-TYPED v1/v2 in the isolated
+  signer, with canonical wallet/SDK digest and deterministic signature parity.
+- Trusted typed-data confirmation showing scheme, domain, nested message fields,
+  address groups, explicit display limits and domain-chain mismatch warnings.
+- Shared bounded validation at the main and signer boundaries, plus account and
+  scheme binding on signer responses.
+
+### Fixed
+
+- Offline dApp message signing passes the configured network ID through the
+  private signer protocol, satisfying its positive-chain-ID guard.
+
 ## 1.3.1 - 2026-09-28
 
 ### Changed

@@ -20,14 +20,8 @@ import { randomBytes } from 'node:crypto';
 import { aesGcmEncrypt } from './aead';
 import { deriveKek } from './kdf';
 import { SignerSession } from './session';
-import {
-  assertSessionSigner,
-  deriveSeedFromHexSeed,
-  deriveSeedFromMnemonic,
-  generateMnemonic,
-  signMessage,
-  signTransaction,
-} from './signing';
+import { deriveSeedFromHexSeed, deriveSeedFromMnemonic, generateMnemonic } from './signing';
+import { signRequest } from './signRequest';
 import { wipe } from './zeroize';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../shared/constants';
 import type { EncryptedSeed, SignerOutbound, SignerRequest } from '../shared/protocol';
@@ -167,33 +161,8 @@ async function handle(req: SignerRequest): Promise<void> {
         return;
       }
       case 'signer:sign': {
-        if (!session.unlocked) throw new Error('locked');
-        const { request } = req;
-        // The signer is the last line of defense: whatever main/renderer
-        // validated, never sign with a different account than the request
-        // names. session.address is non-null while unlocked.
-        assertSessionSigner(request, session.address ?? '');
-        if (request.kind === 'transaction') {
-          // req.chainId is authoritative (main read it from the node); the
-          // signer binds the signed tx to it and ignores any renderer tx.chainId.
-          const result = await session.withSeedAsync(
-            (hexSeed) => signTransaction(hexSeed, request.tx, req.chainId),
-            now,
-          );
-          send({ id: req.id, ok: true, type: 'signer:sign', result });
-        } else if (request.kind === 'message') {
-          const result = session.withSeed(
-            (hexSeed) => signMessage(hexSeed, request.messageHex),
-            now,
-          );
-          send({ id: req.id, ok: true, type: 'signer:sign', result });
-        } else {
-          // typedData: the byte-exact EIP-712-style hasher
-          // (myqrlwallet-frontend src/utils/signing/typedData.ts) is not yet
-          // ported into the desktop signer. Fail loudly rather than emit a
-          // signature over a digest the dApp side would not reproduce.
-          throw new Error('typedData signing not yet wired in desktop scaffold; port typedData.ts');
-        }
+        const result = await signRequest(session, req.request, req.chainId, now);
+        send({ id: req.id, ok: true, type: 'signer:sign', result });
         return;
       }
       case 'signer:setAutolock': {

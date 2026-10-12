@@ -121,11 +121,59 @@ something the user did not intend.
   signature.
 - Buys: malformed/oversized inputs are rejected at the boundary; the user sees
   what is being signed in a context the dApp cannot draw over.
-- Limit: typed-data (`qrl_signTypedData`) signing is intentionally NOT wired in
-  this scaffold (`src/signer/index.ts` fails loudly rather than emit a signature
-  over a digest the dApp side would not reproduce). The byte-exact EIP-712-style
-  hasher must be ported from `myqrlwallet-frontend src/utils/signing/typedData.ts`
-  before enabling it. Until then, typed-data requests error out by design.
+
+#### Typed-data signatures
+
+`qrl_signTypedData` uses the web wallet and Connect SDK's QRL-SIGN-TYPED v1/v2
+encoding. A reachable address field (including arrays and the domain's
+`verifyingContract`) selects v2 for the whole payload: 64-byte slots for atomic
+values, matching the QRVM word size. Address-free payloads use v1's 32-byte
+slots. Both schemes use 64-byte SHAKE256 type, struct, array and dynamic-value
+hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
+
+- **What the user sees:** main computes the trusted dialog from the validated
+  request (`src/main/confirmSummary.ts`). It shows the requested account,
+  dApp provenance, full scheme tag, domain name/version/chainId/verifyingContract
+  and salt, primary type, and message values labelled with types and nested
+  paths or array indices. Addresses retain every character in eight-character
+  groups. Strings are quoted; line breaks, controls and direction marks are
+  escaped. The display caps message leaves at 20, labels at 240 characters and
+  escaped string/byte text at 240 characters. Truncated text is marked and
+  omitted leaves are counted with an `and N more fields` warning. Every value
+  in the validated payload participates in the signature, including hidden
+  tails. Users must assess that omission before approving.
+- **What main trusts:** the IPC sender check, strict request schema, and its
+  own pinned network identity. The domain chain ID is compared numerically
+  with that network and a mismatch raises a warning; the requested domain is
+  preserved in the signature. This path works offline. dApp name, URL and
+  channel remain explicitly unverified renderer-supplied metadata. Main
+  authenticates neither domain ownership nor contract behavior. Renderer
+  display text, precomputed digests and scheme choices are rejected as extra
+  request fields.
+- **Input limits:** the same deterministic limits as the web wallet apply
+  before hashing: 32 struct types, 32 fields per type, 256 declared fields,
+  type-graph depth 12, array-type nesting 12, 256 elements per array, 2048
+  encoded values (including containers), and value depth 24. Identifiers are
+  at most 64 characters; field types at most 128. Strings and dynamic bytes
+  are at most 16 KiB each, including UTF-8 expansion. Integer strings are
+  at most 80 characters; numbers must be safe integers. Signed and unsigned
+  widths are multiples of eight from 8 to 256 and values must fit that width.
+  Fixed bytes have exact lengths from 1 to 32. Missing, unknown, duplicate,
+  unsafe, cyclic, unreachable and reserved-shadowing declarations fail closed.
+  `QRLDomain` requires `name` and fixes each optional domain field's type.
+- **Signer boundary:** `src/shared/typedData.ts` validates structure and bounds
+  without crypto in main, and the private signer protocol re-runs the schema.
+  The signer checks QIP-55 address casing, hashes the complete payload, and
+  signs only while unlocked and after `assertSessionSigner` matches the request
+  account. Wallet secret-key buffers are wiped in `finally`. Main's response
+  parser also binds the returned account, request kind and scheme. Production
+  uses hedged ML-DSA-87 signing; deterministic mode is confined to direct test
+  calls and has no IPC field.
+
+These signatures attest to the encoded data. Contract authorization, expiry,
+nonce consumption and replay policies remain the responsibility of the dApp
+verifier. Approval can authorize a malicious request; the dialog cannot infer
+application intent or authenticate a claimed dApp origin.
 
 **dApp-supplied gas limits.** `BuildTransactionRequest.gas` lets a dApp ask for
 a gas limit above the wallet's own estimate, which contract settlement flows

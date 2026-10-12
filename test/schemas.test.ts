@@ -1,3 +1,4 @@
+import { payloadWith } from './typedDataFixtures';
 /**
  * IPC boundary-validation test. Security invariant #4 (CLAUDE.md): every IPC
  * handler zod-PARSES its argument before acting, so malformed / oversized /
@@ -317,7 +318,7 @@ test('Unlock / removeWallet / setActiveWallet multi-wallet arguments', () => {
   );
 });
 
-test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payloads', () => {
+test('SignatureRequest rejects arm-mixing, extra keys and empty typed-data payloads', () => {
   // Strict discriminated union: a message arm carrying a tx field is rejected.
   assert.equal(
     SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0xab', tx: validTx }).success,
@@ -330,14 +331,14 @@ test('SignatureRequest rejects arm-mixing + extra keys and accepts empty payload
     false,
     'extra key rejected',
   );
-  // An empty message and an empty typedData payload are both valid.
+  // Empty message bytes are valid; typed data requires its complete signed structure.
   assert.equal(
     SignatureRequestSchema.safeParse({ kind: 'message', messageHex: '0x', signer: ADDR }).success,
     true,
   );
   assert.equal(
     SignatureRequestSchema.safeParse({ kind: 'typedData', payload: {}, signer: ADDR }).success,
-    true,
+    false,
   );
   // The message bound is on the TOTAL string length (incl. the 0x prefix).
   const maxLen = 2 * 64 * 1024;
@@ -499,7 +500,7 @@ test('SignatureRequest accepts a bounded dApp origin block on every arm', () => 
   assert.equal(
     SignatureRequestSchema.safeParse({
       kind: 'typedData',
-      payload: {},
+      payload: payloadWith(),
       signer: ADDR,
       origin: validOrigin,
     }).success,

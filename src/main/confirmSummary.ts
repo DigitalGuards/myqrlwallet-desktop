@@ -15,6 +15,14 @@
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
 import type { GasBuildRecord } from './buildRecords';
 import { groupQrlAddress } from '../shared/address';
+import { isArray, isRecord } from '../shared/guards';
+import {
+  parseFieldType,
+  parseIntValue,
+  typedDataSchemeVersion,
+  type TypeMap,
+  type TypedDataPayload,
+} from '../shared/typedData';
 
 const DECIMALS = 18n;
 
@@ -54,16 +62,16 @@ export function gasWarningThreshold(estimated: bigint): bigint {
  * dApp-connect session. The values are renderer-supplied (ultimately from the
  * dApp's ORIGINATOR_INFO), so they are labelled unverified: they tell the
  * user WHO CLAIMS to be asking, while the amounts/addresses above remain
- * main-computed facts. Schema-bounded upstream (length caps, no control
- * chars), so they are safe to render verbatim.
+ * main-computed facts. Schema length caps bound the metadata; escaping keeps
+ * URL whitespace and direction marks visible on a single row.
  */
 export function originDetail(origin: DAppOrigin | undefined): string {
   if (!origin) return '';
   return [
     '',
     'Requested by dApp (unverified, dApp-supplied):',
-    `  Name:    ${origin.name}`,
-    `  URL:     ${origin.url || '(not provided)'}`,
+    `  Name:    ${singleLineText(origin.name)}`,
+    `  URL:     ${origin.url ? singleLineText(origin.url) : '(not provided)'}`,
     `  Channel: ${origin.channelId}`,
     'Only approve if you initiated this action in that dApp.',
   ].join('\n');
@@ -81,6 +89,121 @@ export interface ConfirmContext {
   build?: GasBuildRecord | undefined;
   /** The latest block's gas limit, already read on the transaction path. */
   blockGasLimit?: bigint | undefined;
+  /** The network identity pinned by main, independent of renderer input. */
+  connectedChainId?: number | undefined;
+}
+
+export const TYPED_DATA_DISPLAY_LIMITS = { fields: 20, valueChars: 240, labelChars: 240 } as const;
+
+/** Keep untrusted text on one row and make invisible direction/control marks visible. */
+function singleLineText(value: string): string {
+  return JSON.stringify(value)
+    .slice(1, -1)
+    .replace(
+      /[\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2014\u2028-\u202e\u2060-\u206f\ufeff]/g,
+      (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
+}
+
+function displayTypedText(value: string): string {
+  const escaped = `"${singleLineText(value)}"`;
+  if (escaped.length <= TYPED_DATA_DISPLAY_LIMITS.valueChars) return escaped;
+  return `${escaped.slice(0, TYPED_DATA_DISPLAY_LIMITS.valueChars)} [truncated; ${value.length} characters total]`;
+}
+
+interface TypedRow {
+  label: string;
+  value: string;
+}
+
+function typedMessageRows(payload: TypedDataPayload): { rows: TypedRow[]; omitted: number } {
+  const rows: TypedRow[] = [];
+  let count = 0;
+  const add = (path: string, type: string, value: string): void => {
+    count += 1;
+    if (rows.length >= TYPED_DATA_DISPLAY_LIMITS.fields) return;
+    const label =
+      path.length > TYPED_DATA_DISPLAY_LIMITS.labelChars
+        ? `${path.slice(0, TYPED_DATA_DISPLAY_LIMITS.labelChars)} [path truncated]`
+        : path;
+    rows.push({ label: `${label} (${type})`, value });
+  };
+  const walkStruct = (type: string, data: unknown, path: string): void => {
+    if (!isRecord(data)) throw new Error('invalid typed-data summary struct');
+    const fields = payload.types[type];
+    if (!fields) throw new Error('missing typed-data summary type');
+    for (const field of fields) walk(field.type, data[field.name], `${path}.${field.name}`);
+  };
+  const walk = (type: string, value: unknown, path: string): void => {
+    const parsed = parseFieldType(type, payload.types);
+    if (parsed.kind === 'ref') {
+      walkStruct(parsed.name, value, path);
+    } else if (parsed.kind === 'array') {
+      if (!isArray(value)) throw new Error('invalid typed-data summary array');
+      if (value.length === 0) add(path, type, '[]');
+      for (const [index, item] of value.entries()) walk(parsed.inner, item, `${path}[${index}]`);
+    } else {
+      add(path, type, typedScalar(type, value, payload.types));
+    }
+  };
+  walkStruct(payload.primaryType, payload.message, 'message');
+  return { rows, omitted: count - rows.length };
+}
+
+function typedScalar(type: string, value: unknown, types: TypeMap): string {
+  const parsed = parseFieldType(type, types);
+  if (parsed.kind === 'uintN' || parsed.kind === 'intN')
+    return parseIntValue(value, type).toString();
+  if (parsed.kind === 'bool' && typeof value === 'boolean') return String(value);
+  if (typeof value !== 'string') throw new Error('invalid typed-data summary value');
+  return parsed.kind === 'address' ? groupQrlAddress(value) : displayTypedText(value);
+}
+
+function typedDataDetail(
+  req: Extract<SignatureRequest, { kind: 'typedData' }>,
+  connectedChainId: number | undefined,
+): string {
+  const { payload } = req;
+  const scheme = typedDataSchemeVersion(payload);
+  const lines = [
+    originDetail(req.origin) || 'Requested by: wallet renderer (dApp origin not provided)',
+    '',
+    row('Account:', groupQrlAddress(req.signer)),
+    row('Scheme:', scheme),
+  ];
+  for (const [name, type] of [
+    ['name', 'string'],
+    ['version', 'string'],
+    ['chainId', 'uint256'],
+    ['verifyingContract', 'address'],
+    ['salt', 'bytes32'],
+  ] as const) {
+    const value = payload.domain[name];
+    lines.push(
+      `Domain ${name}: ${value === undefined ? '(not provided)' : typedScalar(type, value, payload.types)}`,
+    );
+  }
+  if (connectedChainId !== undefined) {
+    lines.push(`Connected chainId: ${connectedChainId}`);
+    const domainChain = payload.domain['chainId'];
+    if (
+      domainChain !== undefined &&
+      parseIntValue(domainChain, 'uint256') !== BigInt(connectedChainId)
+    ) {
+      lines.push('WARNING: domain chainId differs from the connected chain.');
+    }
+  }
+  lines.push(`Primary type: ${payload.primaryType}`);
+  const { rows, omitted } = typedMessageRows(payload);
+  lines.push(`Message fields (up to ${TYPED_DATA_DISPLAY_LIMITS.fields} shown):`);
+  for (const field of rows) lines.push(`${field.label}: ${field.value}`);
+  if (omitted > 0) {
+    lines.push(
+      `and ${omitted} more fields`,
+      'WARNING: additional fields are included in this signature.',
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -219,10 +342,7 @@ export function summariseSignatureRequest(
       return {
         title: 'Confirm typed-data signature',
         message: 'Sign this structured data with your wallet key?',
-        detail:
-          `${row('Account:', groupQrlAddress(req.signer))}\n` +
-          `Payload keys: ${Object.keys(req.payload).join(', ')}` +
-          originDetail(req.origin),
+        detail: typedDataDetail(req, context.connectedChainId),
       };
   }
 }

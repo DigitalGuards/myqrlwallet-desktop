@@ -24,9 +24,12 @@ import type {
   MessageSignatureResult,
   SignatureRequest,
   TransactionSignatureResult,
+  TypedDataSignatureResult,
   UnsignedTransaction,
 } from '../shared/schemas';
 import { QRL_ADDRESS_PATTERN } from '../shared/address';
+import { typedDataSchemeVersion } from '../shared/typedData';
+import { computeTypedDataDigest, typedDataSchemeTag } from './typedData';
 
 const SCHEME_TAG_MSG = new TextEncoder().encode(SCHEME.TAG_MSG);
 
@@ -198,6 +201,43 @@ export function signMessage(hexSeed: string, messageHex: string): MessageSignatu
       signer: addressOf(wallet),
       digest: bytesToHex(digest),
       schemeVersion: SCHEME.TAG_MSG,
+    };
+  } finally {
+    wallet.zeroize();
+  }
+}
+
+/** The payload selects both the digest tag and ML-DSA-87 context. The optional
+ * deterministic mode is for canonical tests; IPC always uses hedged signing. */
+export function signTypedData(
+  hexSeed: string,
+  payload: unknown,
+  randomized = true,
+): TypedDataSignatureResult {
+  const digest = computeTypedDataDigest(payload);
+  const schemeVersion = typedDataSchemeVersion(payload);
+  const wallet = newWalletFromExtendedSeed(hexSeed);
+  try {
+    if (wallet.sk.length !== SIZES.SECRET_KEY_BYTES) {
+      throw new Error('unexpected secret-key length');
+    }
+    const signature = new Uint8Array(mldsa.CryptoBytes);
+    const rc = mldsa.cryptoSignSignature(
+      signature,
+      digest,
+      wallet.sk,
+      randomized,
+      typedDataSchemeTag(schemeVersion),
+    );
+    if (rc !== 0 || signature.length !== SIZES.SIGNATURE_BYTES) throw new Error('signing failed');
+    return {
+      kind: 'typedData',
+      signature: bytesToHex(signature),
+      publicKey: bytesToHex(wallet.pk),
+      descriptor: bytesToHex(wallet.getDescriptor().toBytes()),
+      signer: addressOf(wallet),
+      digest: bytesToHex(digest),
+      schemeVersion,
     };
   } finally {
     wallet.zeroize();

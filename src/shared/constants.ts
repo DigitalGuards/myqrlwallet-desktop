@@ -125,6 +125,7 @@ export const MLDSA87 = {
 export const SCHEME = {
   TAG_MSG: 'QRL-SIGN-MSG-v1',
   TAG_TYPED: 'QRL-SIGN-TYPED-v1',
+  TAG_TYPED_V2: 'QRL-SIGN-TYPED-v2',
   VERSION_MSG: 1,
   VERSION_TYPED: 1,
 } as const;

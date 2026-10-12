@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { MLDSA87, SCHEME } from './constants';
 import { QRL_ADDRESS_PATTERN } from './address';
+import { typedDataSchemeVersion, validateTypedDataPayload } from './typedData';
 
 /** A native QIP-55 address: uppercase `Q` plus 128 hexadecimal characters.
  * Shape-only by design: checksum-case enforcement lives at the wallet
@@ -164,48 +165,54 @@ export const DAppOriginSchema = z
   .strict();
 
 /**
- * The discriminated signing request. Transactions are the spend path; message
- * and typed-data mirror the wallet's `qrl_signMessage` / `qrl_signTypedData`.
+ * Parse the bounded type graph and every value before main computes a summary.
+ * The shared validator performs no hashing and is reused at the signer boundary.
  */
-export const SignatureRequestSchema = z
-  .discriminatedUnion('kind', [
-    z
-      .object({
-        kind: z.literal('transaction'),
-        tx: UnsignedTransactionSchema,
-        origin: DAppOriginSchema.optional(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('message'),
-        messageHex: HexSchema.max(2 * 64 * 1024),
-        // The account the caller intends to sign with. The signer REJECTS the
-        // request when this differs from the unlocked session's address, so a
-        // renderer whose account state has diverged from the signer (or a dApp
-        // session pinned to another account) can never obtain a signature from
-        // an unintended key. Transactions carry the same binding via tx.from.
-        signer: AddressSchema,
-        origin: DAppOriginSchema.optional(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('typedData'),
-        // The wallet computes the digest; we keep the payload opaque here and
-        // let the signer's typed-data hasher validate structure. Bounded below.
-        payload: z.record(z.string(), z.unknown()),
-        // Same session-address binding as the message arm.
-        signer: AddressSchema,
-        origin: DAppOriginSchema.optional(),
-      })
-      .strict(),
-  ])
-  // Bound the typedData payload so a huge object cannot be pushed across the
-  // boundary (the message arm is already byte-bounded above).
-  .refine((r) => r.kind !== 'typedData' || JSON.stringify(r.payload).length <= 64 * 1024, {
-    message: 'typedData payload too large',
-  });
+export const TypedDataPayloadSchema = z.unknown().transform((value, context) => {
+  try {
+    return validateTypedDataPayload(value);
+  } catch (error) {
+    context.addIssue({
+      code: 'custom',
+      message: error instanceof Error ? error.message : 'invalid typed data payload',
+    });
+    return z.NEVER;
+  }
+});
+
+export const TypedDataSignatureRequestSchema = z
+  .object({
+    kind: z.literal('typedData'),
+    payload: TypedDataPayloadSchema,
+    signer: AddressSchema,
+    origin: DAppOriginSchema.optional(),
+  })
+  .strict();
+
+/** Signing requests mirror qrl_signTransaction, qrl_signMessage and qrl_signTypedData. */
+export const SignatureRequestSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('transaction'),
+      tx: UnsignedTransactionSchema,
+      origin: DAppOriginSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('message'),
+      messageHex: HexSchema.max(2 * 64 * 1024),
+      // The account the caller intends to sign with. The signer REJECTS the
+      // request when this differs from the unlocked session's address, so a
+      // renderer whose account state has diverged from the signer (or a dApp
+      // session pinned to another account) can never obtain a signature from
+      // an unintended key. Transactions carry the same binding via tx.from.
+      signer: AddressSchema,
+      origin: DAppOriginSchema.optional(),
+    })
+    .strict(),
+  TypedDataSignatureRequestSchema,
+]);
 
 /**
  * Passwords are never logged and never persisted. Bounded to defeat
@@ -373,7 +380,7 @@ const TypedDataSignatureResultSchema = z
     kind: z.literal('typedData'),
     ...AccountBoundSignatureFields,
     /** Byte-matches the web wallet and SDK typed-data signing domain. */
-    schemeVersion: z.literal(SCHEME.TAG_TYPED),
+    schemeVersion: z.enum([SCHEME.TAG_TYPED, SCHEME.TAG_TYPED_V2]),
   })
   .strict();
 
@@ -408,6 +415,13 @@ export function parseSignatureResultForRequest(
   const expectedSigner = request.kind === 'transaction' ? request.tx.from : request.signer;
   if (result.signer.toLowerCase() !== expectedSigner.toLowerCase()) {
     throw new Error('signer returned a result for a different account');
+  }
+  if (
+    request.kind === 'typedData' &&
+    result.kind === 'typedData' &&
+    result.schemeVersion !== typedDataSchemeVersion(request.payload)
+  ) {
+    throw new Error('signer returned a result for a different typed-data scheme');
   }
   return result;
 }

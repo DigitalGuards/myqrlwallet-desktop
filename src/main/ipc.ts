@@ -17,6 +17,7 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
+import { EXPECTED_CHAIN_ID } from './config';
 import { recallBuild } from './buildRecords';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import type { ConfirmContext } from './confirmSummary';
@@ -189,19 +190,13 @@ export function registerIpcHandlers(deps: Deps): void {
 
   // ---- spend path ---------------------------------------------------------
   handle(IPC.REQUEST_SIGNATURE, SignatureRequestSchema, async (req) => {
-    // Fast-fail typed-data BEFORE drawing the modal: the signer does not yet
-    // implement the byte-exact typed-data hasher, so do not waste a user
-    // approval on something that cannot be signed.
-    if (req.kind === 'typedData') {
-      throw new Error('typed-data signing is not yet supported in the desktop signer');
-    }
     // Transactions bind to the chain id: resolve it BEFORE the modal (fail fast
     // when the node is unreachable) and require it to match the tx the user is
     // shown, so the value confirmed in the dialog is exactly the value signed.
-    // Message signing is fully offline and must not depend on RPC reachability;
-    // the signer ignores the chain id on that arm.
-    let signingChainId = 0;
-    let confirmContext: ConfirmContext = {};
+    // Message and typed-data signing use the configured network identity for
+    // display and stay offline. Their digests come entirely from the request.
+    let signingChainId = EXPECTED_CHAIN_ID;
+    let confirmContext: ConfirmContext = { connectedChainId: EXPECTED_CHAIN_ID };
     if (req.kind === 'transaction') {
       // The block gas limit is checked HERE, alongside the chain id, because
       // the renderer supplies the transaction it asks to have signed. The
