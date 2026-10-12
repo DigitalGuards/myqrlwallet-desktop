@@ -52,6 +52,20 @@ Earlier testnet balances do not carry over to v3.
 Version 1.1.1 refreshes the shared renderer for Connect 5 relay pairing and
 explicit transaction chain IDs. Upgrade from 1.1.0 before using connected dApps.
 
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Wallet home](docs/screenshots/home.png) | ![dApp connections](docs/screenshots/dapp-sessions.png) |
+| Wallet home (testnet) | dApps paired over QRL Connect |
+| ![Trusted typed-data confirmation](docs/screenshots/dapp-typeddata.png) | ![Trusted send confirmation](docs/screenshots/send-confirm.png) |
+| A dApp's typed-data request in the trusted confirmation, drawn by the main process outside the renderer | Send confirmation with the full recipient, fee cap and chain ID |
+| ![Send result](docs/screenshots/send-status.png) | ![Unlock window](docs/screenshots/unlock.png) |
+| Send result with the transaction hash and block | Native unlock window |
+
+The confirmation dialogs are OS-native message boxes, shown here as drawn on Linux. Windows draws them in its own style.
+
 ## Prerequisites
 
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
@@ -127,11 +141,14 @@ Typed-data signing supports QRL-SIGN-TYPED v1 and v2 with byte-identical web
 wallet and Connect SDK digests. An address field, including an address array or
 a domain verifying contract, selects v2's 64-byte value slots. Address-free
 payloads retain v1. The trusted dialog shows dApp provenance, scheme, domain,
-primary type and up to 20 message fields, with explicit truncation and a warning
-when the domain chain ID differs from the wallet's configured network. Main
-validates every resource bound before confirmation; the signer checks them
-again and binds the request to its unlocked account. Message and typed-data
-signing work offline.
+primary type and every message field once across sequential pages, with bounded
+string/byte previews and a warning when the domain chain ID differs from the
+wallet's configured network. Approval is available only on the last page, and
+reviews above 10 pages are refused. Message signing receives the same complete
+paginated review: every byte appears once as escaped text or full hex, with a
+visible `| ` gutter on every body row. Main validates every resource bound
+before confirmation; the signer checks them again and binds the request to its
+unlocked account. Message and typed-data signing work offline.
 
 ## Architecture: four processes, one trust gradient
 
@@ -332,7 +349,11 @@ no network). The suites exercise the load-bearing signer logic directly:
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted
-  domain/message rows with truncation and chain warnings.
+  domain/message rows and chain warnings.
+- `confirmTypedDataBudget.test.ts`, `confirmMessageBudget.test.ts`, and
+  `confirmPagination.test.ts` cover every typed-data field and message byte
+  appearing once across pages, the message body gutter, approval only on the
+  last page, and refusal above 10 pages.
 - `signer.session.test.ts` - the unlock lifecycle: correct-password unlock,
   `withSeed` yields exactly the stored seed, wrong-password authentication
   failure, `lock()` teardown, and the autolock timer firing (mock timers).

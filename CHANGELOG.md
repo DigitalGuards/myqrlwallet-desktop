@@ -25,6 +25,14 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - Every confirmation page carries a request number assigned by the app.
 - Lock, autolock, a signer exit, and a wallet window reload or crash close an
   open confirmation and reject it.
+- Message signatures get the same complete review: the trusted dialog shows
+  every byte of the message across pages, as text with control and invisible
+  characters escaped or as full hex, and every message row starts with a `| `
+  gutter so message text cannot imitate the dialog's own lines. Before, it
+  showed only the first 128 bytes.
+- Electron 42.11.12, with the upstream fixes for popups and windows from
+  sandboxed documents, cross-origin reads through protocol handlers and
+  preload code cache poisoning by a compromised renderer.
 
 ### Changed
 
