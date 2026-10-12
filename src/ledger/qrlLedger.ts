@@ -22,7 +22,7 @@
  * the trusted caller; this client checks shapes and the address/key binding.
  * Wherever the client runs, the trusted process repeats the address check.
  */
-import { shake256 } from '@noble/hashes/sha3.js';
+import { publicKeyToQrlAddress } from '../shared/addressCase';
 import { MLDSA87 } from '../shared/constants';
 import {
   CLA_BOLOS,
@@ -48,7 +48,6 @@ export const DEFAULT_MAX_PREIMAGE_BYTES = 510;
 
 const ADDRESS_BYTES = 64;
 const ADDRESS_PREFIX = 0x51; // 'Q'
-const MLDSA87_DESCRIPTOR = Uint8Array.from([0x01, 0x00, 0x00]);
 const PK_CHUNKS = 11;
 const PK_CHUNK_BYTES = 258;
 const SIG_CHUNKS = 18;
@@ -86,8 +85,7 @@ export function qrlAddressFromPublicKey(publicKey: Uint8Array): string {
   if (publicKey.length !== MLDSA87.PUBLIC_KEY_BYTES) {
     throw new LedgerError('malformed-response', 'Public key has the wrong length');
   }
-  const digest = shake256(concatBytes(MLDSA87_DESCRIPTOR, publicKey), { dkLen: ADDRESS_BYTES });
-  return `Q${toHex(digest)}`;
+  return publicKeyToQrlAddress(publicKey);
 }
 
 function malformed(what: string): LedgerError {

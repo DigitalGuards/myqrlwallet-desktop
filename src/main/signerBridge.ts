@@ -29,6 +29,8 @@ import {
 } from '../shared/protocolGuards';
 import { parseSignatureResultForRequest } from '../shared/schemas';
 import type { SignatureRequest, SignatureResult } from '../shared/schemas';
+import { abortPendingConfirms } from './confirm';
+import { logMain } from './log';
 
 /** One in-flight request. `settle` runs the per-request result parser, so a
  * malformed signer result rejects and never reaches a caller. */
@@ -133,6 +135,7 @@ export class SignerBridge {
       return;
     }
     if (msg.kind === 'autolock') {
+      abortPendingConfirms();
       this.onSessionDropped();
       return;
     }
@@ -145,6 +148,9 @@ export class SignerBridge {
   }
 
   private onExit(code: number): void {
+    // Electron UtilityProcess exposes only the exit code.
+    logMain(`[signer] exited (code ${code}, signal unavailable)`);
+    abortPendingConfirms();
     // Reject everything in flight; the signer is gone.
     for (const [, p] of this.pending) {
       clearTimeout(p.timer);
@@ -164,6 +170,7 @@ export class SignerBridge {
     this.onSessionDropped();
     if (this.restarts < MAX_RESTARTS) {
       this.restarts += 1;
+      logMain(`[signer] restarting (attempt ${this.restarts}/${MAX_RESTARTS})`);
       void this.fork().catch(() => undefined);
     }
   }
@@ -226,8 +233,10 @@ export class SignerBridge {
     return parseSignatureResultForRequest(result, request);
   }
 
-  lock(): Promise<null> {
-    return this.send((id) => ({ type: 'signer:lock', id }), parseNullResult);
+  async lock(): Promise<null> {
+    const result = await this.send((id) => ({ type: 'signer:lock', id }), parseNullResult);
+    abortPendingConfirms();
+    return result;
   }
 
   /** Re-arm the open session's autolock timer with a new bound (no-op success

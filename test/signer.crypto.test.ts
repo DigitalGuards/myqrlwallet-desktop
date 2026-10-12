@@ -15,6 +15,7 @@
  * is preferred.
  */
 import { test } from 'node:test';
+import { payloadWith } from './typedDataFixtures';
 import assert from 'node:assert/strict';
 
 import * as mldsa from '@theqrl/mldsa87';
@@ -199,7 +200,7 @@ test('assertSessionSigner binds every request arm to the unlocked account', () =
     data: '0x',
   } as const;
   const msg = { kind: 'message', messageHex: '0xab', signer: A } as const;
-  const typed = { kind: 'typedData', payload: {}, signer: A } as const;
+  const typed = { kind: 'typedData', payload: payloadWith(), signer: A } as const;
   const txReq = { kind: 'transaction', tx } as const;
 
   assert.equal(expectedSignerOf(msg), A);

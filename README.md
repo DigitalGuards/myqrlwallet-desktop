@@ -118,15 +118,20 @@ End-to-end, with every key-touching step performed in the signer:
   transaction assembly via the bundled RPC proxy.
 - **Sign + broadcast:** native transfers, QRC20 token transfers, token creation,
   and NFT transfers, plus dApp-connect `qrl_sendTransaction` /
-  `qrl_signTransaction` / `qrl_signMessage`. Each spend is gated by the trusted
+  `qrl_signTransaction` / `qrl_signMessage` / `qrl_signTypedData`. Each signature is gated by the trusted
   main-drawn confirmation modal and is byte-faithful to the web wallet, so
   signatures verify identically. Signing is fully offline, and the confirmed
   chain id is exactly the one signed.
 
-Typed-data signing (`qrl_signTypedData`) is intentionally fast-failed until its
-byte-exact hasher is ported (see
-[`docs/FRONTEND_INTEGRATION.md`](docs/FRONTEND_INTEGRATION.md)); it never signs a
-digest the dApp side could not reproduce.
+Typed-data signing supports QRL-SIGN-TYPED v1 and v2 with byte-identical web
+wallet and Connect SDK digests. An address field, including an address array or
+a domain verifying contract, selects v2's 64-byte value slots. Address-free
+payloads retain v1. The trusted dialog shows dApp provenance, scheme, domain,
+primary type and up to 20 message fields, with explicit truncation and a warning
+when the domain chain ID differs from the wallet's configured network. Main
+validates every resource bound before confirmation; the signer checks them
+again and binds the request to its unlocked account. Message and typed-data
+signing work offline.
 
 ## Architecture: four processes, one trust gradient
 
@@ -248,6 +253,10 @@ npm run build        # electron-vite build (main + preload) + build-renderer.sh
 builds only the frontend into `out/renderer`. Preview the bundle with
 `npm run preview`.
 
+For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
+frontend source. The build installs its locked dependencies and builds it there,
+then stages the output into this desktop checkout.
+
 ## Packaging and signing
 
 Build the platform installer with electron-builder (26.x GA). Each target runs
@@ -320,6 +329,10 @@ no network). The suites exercise the load-bearing signer logic directly:
 - `signer.tx.test.ts` - `signTransaction` produces a type-2 raw tx fully offline
   (proves the `networkId`-offline path so signing needs no provider), binds the
   signature to `chainId`, and refuses a tx whose `from` is not the unlocked account.
+- `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
+  cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
+  verification, locked/mismatched accounts, every resource bound, and trusted
+  domain/message rows with truncation and chain warnings.
 - `signer.session.test.ts` - the unlock lifecycle: correct-password unlock,
   `withSeed` yields exactly the stored seed, wrong-password authentication
   failure, `lock()` teardown, and the autolock timer firing (mock timers).

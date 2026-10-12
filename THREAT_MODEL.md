@@ -121,11 +121,132 @@ something the user did not intend.
   signature.
 - Buys: malformed/oversized inputs are rejected at the boundary; the user sees
   what is being signed in a context the dApp cannot draw over.
-- Limit: typed-data (`qrl_signTypedData`) signing is intentionally NOT wired in
-  this scaffold (`src/signer/index.ts` fails loudly rather than emit a signature
-  over a digest the dApp side would not reproduce). The byte-exact EIP-712-style
-  hasher must be ported from `myqrlwallet-frontend src/utils/signing/typedData.ts`
-  before enabling it. Until then, typed-data requests error out by design.
+
+#### Typed-data signatures
+
+`qrl_signTypedData` uses the web wallet and Connect SDK's QRL-SIGN-TYPED v1/v2
+encoding. A reachable address field (including arrays and the domain's
+`verifyingContract`) selects v2 for the whole payload: 64-byte slots for atomic
+values, matching the QRVM word size. Address-free payloads use v1's 32-byte
+slots. Both schemes use 64-byte SHAKE256 type, struct, array and dynamic-value
+hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
+
+- **What the user sees:** main computes the trusted dialog from the validated
+  request (`src/main/confirmSummary.ts`). It shows the requested account,
+  dApp provenance, full scheme tag, domain name/version/chainId/verifyingContract
+  and salt, primary type, and message values labelled with types and nested
+  paths or array indices. Addresses retain every character in eight-character
+  groups. Strings are quoted. Unicode controls, format characters, private-use
+  and unassigned code points, line/paragraph separators, default-ignorable
+  code points (including tags, variation selectors and Hangul fillers), and
+  braille blank are escaped in domain/message text and dApp names/URLs.
+  Supplementary code points use visible `\u{...}` escapes. Other punctuation
+  supplied by a dApp is preserved. Review uses sequential OS-native
+  `dialog.showMessageBox` pages. Every page's native message header includes
+  `Request N`, assigned by a main-process counter shared by signing and wallet
+  removal. The number increases for each accepted confirmation request, remains
+  the same across its pages, and survives locks and renderer reloads during the
+  main-process lifetime. dApps cannot choose this number. The detail starts with
+  the unverified dApp
+  name/URL (or wallet-renderer provenance), full grouped account, scheme,
+  a `Signing:` row with the primary type and a bounded domain-name preview,
+  and `Page k of n`.
+  Page one also shows the full domain block, primary type, wallet chain ID
+  and all chain warnings. Oversized mandatory metadata rejects
+  before any dialog opens.
+  Each page, including the approval note, has a budget of 30 wrapped lines at
+  64 display columns. Word boundaries, unbroken tokens and blank lines consume
+  that budget; wide ASCII glyphs and non-ASCII code points count as two columns.
+  This leaves room for native dialog controls within roughly 700 logical
+  pixels at common desktop font sizes. Exact height depends on OS font metrics
+  and scaling. Every message row appears once, in order, and stays on one page.
+  All addresses and integers are shown in full. Labels over 80 characters
+  elide the middle of the path, preserve the complete leaf name and array
+  indices, and include a unique row number to distinguish hidden ancestors.
+  A long leaf with many indices can exceed the label target and still counts
+  toward the page budget.
+  String/byte previews use a 64-character budget including an ellipsis and
+  the original character/byte length. Formatting escapes only bounded input
+  prefixes; full metadata is size-checked before escaping. Preview tails still
+  participate in the signature. Rows are generated lazily and preparation
+  stops when an eleventh page would be required. Such requests fail closed
+  with a desktop review-size error before any dialog is shown.
+  Pages before the last offer `Next` and `Cancel`. Only the last offers
+  `Cancel` at index 0 and `Approve & sign` at index 1; a single-page request
+  uses the same order. Cancel is the default and Escape cancels on every page.
+  Cancelling at any point rejects the entire request, and the signer is called
+  only after the last page is approved.
+  Signing and wallet removal allow one open or arming confirmation at a time.
+  Concurrent requests fail visibly with `another confirmation is already open`;
+  there is no queue of waiting confirmations. A shared monotonic clock enforces
+  `ARM_DELAY_MS = 1000`: no confirmation dialog opens sooner than this delay
+  after the request arrived or after the previous dialog closed, whichever
+  happened later. This covers the first page after idle, subsequent pages and
+  later requests. Approval, cancellation, abort and native-dialog errors all
+  start the delay from dialog closure. During each arming interval, a second
+  click has no confirmation page to act on. Native message boxes cannot ignore
+  early input once open, so sustained clicking at a fixed spot is out of scope.
+  Main checks the abort signal again after waiting and immediately before
+  opening each page.
+  Main-frame navigation or reload (`did-start-navigation`, `did-navigate`) and
+  renderer crashes (`render-process-gone`) abort an open dialog or its arming
+  timer and reject through the existing failure path. A stale confirmation
+  cannot open its next page after these events. Subframe and same-document
+  navigation preserve the current request. Lock, autolock and signer exit also
+  abort the open or arming confirmation; continuing requires a fresh request.
+- **What main trusts:** the IPC sender check, strict request schema, and its
+  own pinned network identity. The domain chain ID is compared numerically
+  with the `Wallet network chainId` and a mismatch raises a warning. A domain
+  without a chain ID warns that the signature is not bound to a chain and can
+  be replayed on other chains. The requested domain is preserved in the
+  signature. This path works offline. dApp name, URL and channel remain
+  explicitly unverified renderer-supplied metadata. Main
+  authenticates neither domain ownership nor contract behavior. Renderer
+  display text, precomputed digests and scheme choices are rejected as extra
+  request fields.
+- **Input limits:** the same deterministic limits as the web wallet apply
+  before hashing: 32 struct types, 32 fields per type, 256 declared fields,
+  type-graph depth 12, array-type nesting 12, 256 elements per array, 2048
+  encoded values (including containers), and value depth 24. Identifiers are
+  at most 64 characters; field types at most 128. The field-type cap runs
+  before dependency traversal, and removing array suffixes uses a linear
+  scan. Diagnostics echo at most a 64-character prefix of unbounded input.
+  The typed-data IPC arm also caps aggregate JSON-equivalent size at 256 MiB
+  before semantic validation, counting escaped UTF-8 text and hex expansion
+  without allocating a complete serialization. The allowed 2048 values at
+  16 KiB each need at most 192 MiB with six-byte JSON escapes; declarations,
+  keys and delimiters keep the conservative maximum below 193 MiB. This cap
+  preserves every payload allowed by the semantic limits. Aggregate traversal
+  also bounds raw nesting at 64 levels and node visits at 2851 (the encoded
+  value budget plus type-map metadata), covering valid payloads while bounding
+  work on wide or repeatedly shared malformed trees. Strings and dynamic bytes
+  are at most 16 KiB each, including UTF-8 expansion. Integer strings are
+  at most 80 characters; numbers must be safe integers. Signed and unsigned
+  widths are multiples of eight from 8 to 256 and values must fit that width.
+  Fixed bytes have exact lengths from 1 to 32. Missing, unknown, duplicate,
+  unsafe, cyclic, unreachable and reserved-shadowing declarations fail closed.
+  `QRLDomain` requires `name` and fixes each optional domain field's type.
+- **Signer boundary:** `src/shared/typedData.ts` validates structure and bounds,
+  and the private signer protocol re-runs the schema. Main checks QIP-55
+  address casing before confirmation through the same public checksum helper
+  used by the signer. Uniform-case bodies are accepted; mixed-case bodies must
+  match the checksum. The helper imports only public SHAKE256 hashing and
+  address-shape logic; it also derives public Ledger addresses from public keys.
+  The crypto import lint fence includes package subpaths
+  and allows only `@noble/hashes/sha3.js` in `src/shared/addressCase.ts` outside
+  the signer and test scopes. Key derivation and signing remain isolated. The
+  signer validates and hashes the complete payload and selects its scheme before
+  `signRequest` enters `session.withSeed` to decrypt the seed and sign. Signing
+  requires an unlocked session and `assertSessionSigner` must match the request
+  account. Wallet secret-key buffers are wiped in `finally`. Main's response
+  parser also binds the returned account, request kind and scheme. Production
+  uses hedged ML-DSA-87 signing; deterministic mode is confined to direct test
+  calls and has no IPC field.
+
+These signatures attest to the encoded data. Contract authorization, expiry,
+nonce consumption and replay policies remain the responsibility of the dApp
+verifier. Approval can authorize a malicious request; the dialog cannot infer
+application intent or authenticate a claimed dApp origin.
 
 **dApp-supplied gas limits.** `BuildTransactionRequest.gas` lets a dApp ask for
 a gas limit above the wallet's own estimate, which contract settlement flows
@@ -228,7 +349,12 @@ WALLET_INFO), or spam the wallet with pairing prompts.
 - Lock interaction: while the wallet is locked the ingress buffers the URI and
   surfaces only the unlock window; delivery (which reveals and focuses the
   wallet window) happens after a successful unlock. A protocol launch must
-  never become a lock-screen bypass.
+  never become a lock-screen bypass. Signature and remove-wallet confirmations
+  share one busy slot and the same arming delay from request arrival and between
+  dialog pages. A lock, autolock or signer exit aborts the open or arming
+  confirmation. Renderer
+  navigation, reload or crash also aborts that confirmation. After
+  unlocking, confirmations require fresh requests; aborted requests stay rejected.
 - Liveness invariant the renderer relies on: `REQUEST_SIGNATURE` must always
   settle (approve, reject, error, or signer-exit rejection). The renderer's
   approval card deliberately blocks all dismissal while a signing call is in

@@ -7,8 +7,8 @@
  * (no umbrella "typescript-eslint" package required).
  *
  * The load-bearing block here is the crypto-boundary guard: node:crypto,
- * @node-rs/argon2, and the @theqrl signing libraries may only be imported
- * inside src/signer/**. Everywhere else those imports are an error, so a stray
+ * @noble/hashes, @node-rs/argon2, and the @theqrl signing libraries are fenced
+ * to src/signer/**, with one public address-checksum exception. A stray
  * edit cannot start materialising key material outside the signer
  * utilityProcess. The signer (and the crypto tests) override that ban.
  */
@@ -20,19 +20,45 @@ import globals from 'globals';
 const CRYPTO_ONLY_MODULES = [
   'node:crypto',
   'crypto',
+  '@noble/hashes',
   '@node-rs/argon2',
   '@theqrl/mldsa87',
   '@theqrl/wallet.js',
   '@theqrl/web3',
+  '@theqrl/qrl-cryptography',
 ];
+
+const CRYPTO_IMPORT_MESSAGE =
+  'Cryptographic primitives may only be imported inside src/signer/**. Route key material through the signer utilityProcess.';
 
 const cryptoImportGuard = {
   paths: CRYPTO_ONLY_MODULES.map((name) => ({
     name,
-    message:
-      'Cryptographic primitives may only be imported inside src/signer/**. Route key material through the signer utilityProcess.',
+    message: CRYPTO_IMPORT_MESSAGE,
   })),
+  patterns: [
+    { group: CRYPTO_ONLY_MODULES.map((name) => `${name}/*`), message: CRYPTO_IMPORT_MESSAGE },
+  ],
 };
+
+const cryptoModulePattern = CRYPTO_ONLY_MODULES.map((name) =>
+  name.replaceAll('.', '\\.').replaceAll('/', '\\u002F'),
+).join('|');
+
+function cryptoDynamicImportGuard(allowChecksum = false) {
+  return [
+    ['ImportExpression', 'source.value'],
+    [
+      'ImportExpression > TemplateLiteral.source[expressions.length=0] > TemplateElement',
+      'value.cooked',
+    ],
+  ].map(([node, property]) => ({
+    selector:
+      `${node}[${property}=/^(${cryptoModulePattern})($|\\u002F)/]` +
+      (allowChecksum ? `[${property}!='@noble/hashes/sha3.js']` : ''),
+    message: CRYPTO_IMPORT_MESSAGE,
+  }));
+}
 
 export default [
   {
@@ -96,6 +122,7 @@ export default [
       '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
       // The crypto fence. The signer + test overrides below switch it off.
       'no-restricted-imports': ['error', cryptoImportGuard],
+      'no-restricted-syntax': ['error', ...cryptoDynamicImportGuard()],
       // The renderer must reach the wallet only via window.qrlWallet. Direct
       // ipcRenderer use anywhere (a classic Electron footgun) is banned; the
       // preload is the sole, narrow bridge. Do NOT expose ipcRenderer raw.
@@ -117,6 +144,31 @@ export default [
     },
   },
 
+  // Public address derivation and QIP-55 checks use SHAKE256. Every
+  // other crypto module remains fenced, including other hash entry points.
+  {
+    files: ['src/shared/addressCase.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...cryptoDynamicImportGuard(true)],
+      'no-restricted-imports': [
+        'error',
+        {
+          ...cryptoImportGuard,
+          patterns: [
+            {
+              group: [
+                ...CRYPTO_ONLY_MODULES.map((name) => `${name}/*`),
+                '!@noble/hashes/sha3.js',
+                '@noble/hashes/sha3.js/*',
+              ],
+              message: CRYPTO_IMPORT_MESSAGE,
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Signer process: the ONLY place the crypto modules may be imported.
   // The KDF calibration dev script (scripts/calibrate-kdf.ts) also needs the
   // Argon2 binding directly; it never touches key material (it benchmarks
@@ -125,6 +177,7 @@ export default [
     files: ['src/signer/**/*.ts', 'scripts/calibrate-kdf.ts'],
     rules: {
       'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
     },
   },
 
@@ -165,6 +218,7 @@ export default [
     },
     rules: {
       'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
       // Tests exercise malformed input and mock internals, so assertions and
       // loose typing are legitimate there. The production rules above stay at
       // error for every file outside test/.

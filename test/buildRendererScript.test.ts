@@ -69,9 +69,33 @@ function runScript(scriptPath: string, binDir?: string, extraEnv: NodeJS.Process
   const path = binDir ? `${binDir}:${process.env.PATH ?? ''}` : process.env.PATH;
   return spawnSync('bash', [scriptPath], {
     encoding: 'utf8',
-    env: { ...process.env, ...extraEnv, PATH: path },
+    env: { ...process.env, QRL_FRONTEND_DIR: '', ...extraEnv, PATH: path },
   });
 }
+
+test('renderer build accepts an explicit source snapshot for isolated worktrees', (t) => {
+  const fixture = makeFixture(t);
+  const frontendDir = join(fixture.desktopDir, 'frontend-snapshot');
+  const binDir = join(fixture.root, 'bin');
+  const callLog = join(fixture.root, 'npm-calls.log');
+  mkdirSync(frontendDir, { recursive: true });
+  mkdirSync(binDir);
+  writeFileSync(join(frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+  const result = runScript(fixture.scriptPath, binDir, {
+    QRL_FRONTEND_DIR: frontendDir,
+    NPM_CALL_LOG: callLog,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readFileSync(callLog, 'utf8').trim().split('\n'), [
+    `--prefix ${frontendDir} ci`,
+    `--prefix ${frontendDir} run build`,
+  ]);
+  assert.match(
+    readFileSync(join(fixture.desktopDir, 'out/renderer/index.html'), 'utf8'),
+    /<main>renderer<\/main>/,
+  );
+});
 
 test('renderer build fails when the frontend source is absent', (t) => {
   const fixture = makeFixture(t);
