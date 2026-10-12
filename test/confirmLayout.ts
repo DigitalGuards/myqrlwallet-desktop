@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { DETAIL_LINE_COLUMNS, displayWidth } from '../src/main/confirmSummary';
 
-/** Recover logical labelled rows while retaining every displayed character. */
+/** Remove one main-written direction mark per line and recover logical rows. */
 export function unfoldDetail(detail: string): string {
-  return detail.replace(/\n {4}(?:\| |(?=\S|$))/gu, '');
+  return detail.replace(/^\u200e/gmu, '').replace(/\n {4}(?:\| |(?=\S|$))/gu, '');
 }
 
 export function assertDetailWidth(detail: string): void {
@@ -49,16 +49,31 @@ export function assertTrustedLineStarts(detail: string): void {
     'The encrypted seed will be deleted',
   ];
   let source: 'trusted' | 'dapp' | undefined;
-  for (const line of detail.split('\n')) {
-    if (line === '' || line.startsWith('| ')) {
+  for (const markedLine of detail.split('\n')) {
+    const hasDirection = markedLine.startsWith('\u200e');
+    const line = hasDirection ? markedLine.slice(1) : markedLine;
+    assert.equal(line.includes('\u200e'), false, 'only the main-written line prefix is raw');
+    if (line === '') {
+      assert.equal(hasDirection, false);
+      source = undefined;
+    } else if (line.startsWith('| ')) {
+      assert.equal(hasDirection, true, `message gutter needs a leading LTR mark: ${line}`);
       source = undefined;
     } else if (line.startsWith('    | ')) {
+      assert.equal(hasDirection, true, `continuation needs a leading LTR mark: ${line}`);
       assert.equal(source, 'dapp', `pipe on trusted text: ${line}`);
     } else if (trustedPrefixes.some((prefix) => line.startsWith(prefix))) {
+      assert.equal(hasDirection, false);
       source = 'trusted';
     } else if (dappPrefixes.some((prefix) => line.startsWith(prefix))) {
-      source = 'dapp';
+      const absentValue =
+        /^(?: {2})?URL: +\(not provided\)$|^Domain \w+: \(not provided\)$|^Data: +\(none\)$/u.test(
+          line,
+        );
+      assert.ok(hasDirection || absentValue, `dApp label needs a leading LTR mark: ${line}`);
+      source = hasDirection ? 'dapp' : 'trusted';
     } else if (line.startsWith('    ')) {
+      assert.equal(hasDirection, false);
       assert.equal(source, 'trusted', `plain indent on dApp text: ${line}`);
       assert.equal(line.startsWith('     '), false, `trusted indent exceeds four spaces: ${line}`);
     } else {

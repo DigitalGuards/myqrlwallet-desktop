@@ -349,8 +349,8 @@ test('transaction continuations distinguish computed values and the verified sig
   }
   for (const label of ['To:', 'Data:']) {
     const rows = detail.split('\n');
-    const start = rows.findIndex((line) => line.startsWith(label));
+    const start = rows.findIndex((line) => line.startsWith(`\u200e${label}`));
     assert.ok(start >= 0);
-    assert.ok(rows[start + 1]?.startsWith('    | '), label);
+    assert.ok(rows[start + 1]?.startsWith('\u200e    | '), label);
   }
 });

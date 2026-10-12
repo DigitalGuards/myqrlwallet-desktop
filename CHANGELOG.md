@@ -6,13 +6,26 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ### Security
 
-- Trusted confirmation details wrap in code at 48 display columns. Message
-  bodies keep a `| ` gutter on every line. dApp and renderer text in metadata,
-  typed data, transaction recipients and transaction data continues with
-  `    | `. Trusted notes, labels, verified signer and wallet-removal accounts,
+- Main wraps every trusted confirmation detail line at 48 display columns with
+  a conservative glyph-width model calibrated against the default GTK sans
+  font (DejaVu Sans), so typical fonts do not wrap these lines again. ASCII
+  advances above 0.8 em count as two columns, including lowercase `m` and `w`.
+  Known ultra-wide glyphs in U+2E3A-U+2E3B, U+FDFA-U+FDFD and U+12000-U+1254F
+  use atomic, reversible `\u{...}` escapes.
+- Every main-wrapped line carrying dApp or renderer text starts with a
+  main-written U+200E LEFT-TO-RIGHT MARK followed by its label or gutter, keeping
+  Hebrew and Arabic paragraphs' markers on the left. Supplied U+200E remains
+  escaped. Message bodies use a `| ` gutter; metadata, typed data, transaction
+  recipients and transaction data continue with `    | `.
+  Trusted notes, labels, verified signer and wallet-removal accounts,
   wallet-renderer provenance and main-formatted numeric values continue with
   a plain four-space indent, breaking at word boundaries where possible.
-  The pipe identifies dApp-supplied text and keeps it attached to its source row.
+  The pipe identifies dApp-supplied text on main-wrapped continuations and
+  message body rows.
+- Residual risk: fonts or code points with unusually wide glyphs can still make
+  the toolkit wrap. That continuation shows without a main-written marker and
+  can resemble dialog chrome. The page indicator stays in the native bold label
+  in all cases.
 - Multi-page reviews show their page indicator beside the request number in
   the native bold label. Message and typed-data reviews retain the 30-line and
   10-page limits, counting every wrapped detail line before opening a dialog.

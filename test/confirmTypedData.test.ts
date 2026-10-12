@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { unfoldDetail } from './confirmLayout';
+import { assertDetailWidth, assertTrustedLineStarts, unfoldDetail } from './confirmLayout';
 import { test } from 'node:test';
 import { originDetail, summariseSignatureRequest } from '../src/main/confirmSummary';
 import { groupQrlAddress } from '../src/shared/address';
@@ -135,7 +135,9 @@ test('summary paginates all signed leaves and retains empty arrays', () => {
   const { pages } = summariseSignatureRequest(typedRequest(payloadWith('uint8[]', values)));
   assert.ok(pages.length > 1);
   const rows = pages.flatMap((page) =>
-    page.split('\n').filter((line) => line.startsWith('message.')),
+    unfoldDetail(page)
+      .split('\n')
+      .filter((line) => line.startsWith('message.')),
   );
   assert.deepEqual(
     rows,
@@ -167,6 +169,7 @@ const invisiblePoints = [
   ['Cc', 0x0007],
   ['Cc C1', 0x0085],
   ['Cf', 0x061c],
+  ['left-to-right mark', 0x200e],
   ['Co BMP', 0xe000],
   ['Co supplementary', 0xf0000],
   ['Cn', 0x0378],
@@ -221,6 +224,61 @@ for (const [label, point] of invisiblePoints) {
     assert.equal(origin.includes(char), false);
   });
 }
+
+test('typed-data values, full domain metadata and origin escape ultra-wide glyphs', () => {
+  for (const point of [
+    0x2e3a, 0x2e3b, 0xfdfa, 0xfdfb, 0xfdfc, 0xfdfd, 0x12000, 0x123ff, 0x12400, 0x1247f, 0x12480,
+    0x1254f,
+  ]) {
+    const char = String.fromCodePoint(point);
+    const text = `before${char}after`;
+    const escaped = `before\\u{${point.toString(16)}}after`;
+    const payload = payloadWith('string', text);
+    payload.domain['name'] = text;
+    const { pages } = summariseSignatureRequest(typedRequest(payload));
+    const origin = originDetail({
+      via: 'dapp',
+      name: text,
+      url: `https://dapp.example/${text}`,
+      channelId: 'abc',
+    });
+    for (const detail of [...pages, origin]) {
+      assertDetailWidth(detail);
+      assertTrustedLineStarts(detail);
+      assert.equal(detail.includes(char), false);
+    }
+    const detail = pages.map(unfoldDetail).join('\n');
+    assert.ok(detail.includes(`Domain name: "${escaped}"`));
+    assert.ok(detail.includes(`message.value (string): "${escaped}"`));
+    assert.ok(unfoldDetail(origin).includes(`Name:    ${escaped}`));
+    assert.ok(unfoldDetail(origin).includes(`URL:     https://dapp.example/${escaped}`));
+  }
+});
+
+test('Hebrew and Arabic metadata and field continuations retain leading LTR marks', () => {
+  for (const word of ['שלום', 'مرحبا']) {
+    const text = `${word}\u200e`.repeat(6);
+    const payload = payloadWith('string', text);
+    payload.domain['name'] = word;
+    const origin = {
+      via: 'dapp',
+      name: word,
+      url: `https://dapp.example/${text}`,
+      channelId: 'abc',
+    } as const;
+    const { pages } = summariseSignatureRequest({ ...typedRequest(payload), origin });
+    for (const detail of [...pages, originDetail(origin)]) {
+      assertDetailWidth(detail);
+      assertTrustedLineStarts(detail);
+      assert.ok(detail.includes('\n\u200e    | '));
+      assert.ok(detail.includes('\\u200e'));
+      assert.equal(unfoldDetail(detail).includes('\u200e'), false);
+    }
+    const detail = pages.join('\n');
+    assert.ok(detail.includes(`\n\u200eDomain name: "${word}"`));
+    assert.ok(detail.includes('\n\u200emessage.value (string): '));
+  }
+});
 
 test('tag-encoded instructions stay escaped and oversized origin display rejects', () => {
   const hidden = Array.from(' and transfer all to attacker', (char) =>

@@ -41,7 +41,7 @@ function assertBudget(pages: string[]): void {
     assertTrustedLineStarts(displayed);
     assert.equal(typedDataDisplayLines(displayed), displayed.split('\n').length);
     assert.ok(typedDataDisplayLines(displayed) <= 30, displayed);
-    assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 1));
+    assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 2));
     assert.doesNotMatch(detail, /^Page \d+ of \d+$/m);
     assert.doesNotMatch(detail, /more fields|additional fields|up to .* shown/);
   }
@@ -368,8 +368,9 @@ test('typed-data spoof text stays behind its path label and marked continuations
   for (const page of pages) {
     const body = page.split('Message fields:\n')[1] ?? '';
     for (const line of body.split('\n').filter(Boolean)) {
-      assert.ok(line.startsWith('message.value[') || line.startsWith('    | '), line);
-      if (line.startsWith('message.')) assert.match(line, /^message\.value\[\d+\] \(string\):/);
+      assert.ok(line.startsWith('\u200emessage.value[') || line.startsWith('\u200e    | '), line);
+      if (line.startsWith('\u200emessage.'))
+        assert.match(line, /^\u200emessage\.value\[\d+\] \(string\):/);
       assert.doesNotMatch(line.trimStart(), /^(?:Account:|Page |Message \(|Approve only if)/);
     }
   }
@@ -377,7 +378,22 @@ test('typed-data spoof text stays behind its path label and marked continuations
 });
 
 test('typed-data wrapping and preview truncation preserve complete escapes and code points', () => {
-  for (const char of ['\\', '"', '\n', '\u202e', '\u{e0061}', '🙂', '界']) {
+  for (const char of [
+    '\\',
+    '"',
+    '\n',
+    '\u200e',
+    '\u202e',
+    '\u{e0061}',
+    '\u2e3a',
+    '\u2e3b',
+    '\ufdfa',
+    '\ufdfd',
+    '\u{12000}',
+    '\u{1254f}',
+    '🙂',
+    '界',
+  ]) {
     for (let padding = 0; padding <= 64; padding++) {
       const value = 'a'.repeat(padding) + char.repeat(40);
       const { pages } = summariseSignatureRequest(typedRequest(payloadWith('string', value)));
@@ -410,14 +426,26 @@ test('line accounting includes blanks, word boundaries, long tokens and wide cha
 
 test('short labels and long tokens preserve width and source-specific continuations', () => {
   for (const [label, source, continuation] of [
-    ['To: ', 'dapp', '    | '],
-    ['URL: ', 'dapp', '    | '],
-    ['Name: ', 'dapp', '    | '],
-    ['message.value (string): ', 'dapp', '    | '],
+    ['To: ', 'dapp', '\u200e    | '],
+    ['URL: ', 'dapp', '\u200e    | '],
+    ['Name: ', 'dapp', '\u200e    | '],
+    ['message.value (string): ', 'dapp', '\u200e    | '],
     ['Account: ', 'trusted', '    '],
     ['Amount: ', 'trusted', '    '],
   ] as const) {
-    for (const token of ['a', 'W', '界', '🙂', '\\u202e', '\\u{e0061}', '\\\\']) {
+    for (const token of [
+      'a',
+      ...Array.from('#%+<=>@MW^mw~'),
+      '界',
+      '🙂',
+      '\\u200e',
+      '\\u202e',
+      '\\u{e0061}',
+      '\\u{2e3b}',
+      '\\u{fdfd}',
+      '\\u{12000}',
+      '\\\\',
+    ]) {
       for (const length of [40, 46, 47, 48, 49, 90]) {
         const input = label + token.repeat(length);
         const detail = wrapDetailText(input, source);

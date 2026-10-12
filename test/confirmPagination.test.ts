@@ -69,7 +69,7 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
         assert.deepEqual(lines.slice(-note.length), note);
         const body = lines.slice(heading + 1, -note.length);
         assert.ok(body.length > 0);
-        assert.ok(body.every((line) => line.startsWith('| ')));
+        assert.ok(body.every((line) => line.startsWith('\u200e| ')));
       }
       await Promise.resolve();
       active = false;

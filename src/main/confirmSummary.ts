@@ -127,10 +127,17 @@ function fullTypedText(value: string): string {
   return escaped;
 }
 
+// Printable ASCII advances above 0.8 em in DejaVu Sans 2.37 (hmtx / unitsPerEm).
+// Font-specific glyphs can still exceed this conservative model.
+const WIDE_ASCII = '#%+<=>@MW^mw~';
+// Main fixes each dApp line's paragraph direction; supplied marks are escaped.
+const LEFT_TO_RIGHT_MARK = '\u200e';
+
 export function displayWidth(value: string): number {
   let width = 0;
   for (const char of value) {
-    width += char.charCodeAt(0) > 0x7f || 'MW@%'.includes(char) ? 2 : 1;
+    if (char === LEFT_TO_RIGHT_MARK) continue;
+    width += char.charCodeAt(0) > 0x7f || WIDE_ASCII.includes(char) ? 2 : 1;
   }
   return width;
 }
@@ -147,15 +154,17 @@ function* displayTokens(value: string): Generator<string> {
 
 /**
  * Wrap trusted text with a plain indent. Callers must first wrap rows containing
- * dApp text with source 'dapp', keeping their continuations behind a pipe.
+ * dApp text with source 'dapp', anchoring each line left-to-right and keeping
+ * their continuations behind a pipe.
  * Prefer word boundaries and preserve every character, including boundary spaces.
  * Already wrapped rows fit the width and pass through unchanged during assembly.
  */
 export function wrapDetailText(detail: string, source: 'trusted' | 'dapp' = 'trusted'): string {
-  const continuation = source === 'dapp' ? '    | ' : '    ';
+  const lineStart = source === 'dapp' ? LEFT_TO_RIGHT_MARK : '';
+  const continuation = source === 'dapp' ? `${lineStart}    | ` : '    ';
   const lines: string[] = [];
   for (const original of detail.split('\n')) {
-    let prefix = '';
+    let prefix = lineStart;
     let content = '';
     let used = 0;
     for (const token of displayTokens(original)) {
@@ -185,16 +194,18 @@ export function typedDataDisplayLines(detail: string): number {
   return wrapDetailText(detail).split('\n').length;
 }
 
-/** Keep untrusted text on one row and make invisible direction/control marks visible. */
+/** Escape invisible marks and known ultra-wide glyphs for reversible, bounded rows. */
 function singleLineText(value: string): string {
   return JSON.stringify(value)
     .slice(1, -1)
     .replace(
-      /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800]/gu,
+      /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800\u2e3a-\u2e3b\ufdfa-\ufdfd\u{12000}-\u{1254f}]/gu,
       (char) => {
         const point = char.codePointAt(0);
         if (point === undefined) return char;
-        return point > 0xffff
+        return point > 0xffff ||
+          (point >= 0x2e3a && point <= 0x2e3b) ||
+          (point >= 0xfdfa && point <= 0xfdfd)
           ? `\\u{${point.toString(16)}}`
           : `\\u${point.toString(16).padStart(4, '0')}`;
       },
@@ -207,8 +218,8 @@ function escapeMessageCharacter(char: string): string {
 }
 
 // The gutter separates every untrusted body row from account labels and approval notes.
-const MESSAGE_BODY_GUTTER = '| ';
-const MESSAGE_BODY_COLUMNS = DETAIL_LINE_COLUMNS - MESSAGE_BODY_GUTTER.length;
+const MESSAGE_BODY_GUTTER = `${LEFT_TO_RIGHT_MARK}| `;
+const MESSAGE_BODY_COLUMNS = DETAIL_LINE_COLUMNS - displayWidth(MESSAGE_BODY_GUTTER);
 
 /** Wrap complete escaped code points, reserving two display columns for the gutter. */
 function* messageTextRows(value: string): Generator<string> {

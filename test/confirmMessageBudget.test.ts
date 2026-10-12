@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   DETAIL_LINE_COLUMNS,
+  displayWidth,
   SIGNATURE_APPROVAL_NOTE,
   TYPED_DATA_DISPLAY_LIMITS,
   summariseSignatureRequest,
@@ -33,8 +34,11 @@ function messageRows(pages: string[]): string[] {
 
 function messageContents(pages: string[]): string[] {
   return messageRows(pages).map((line) => {
-    assert.ok(line.startsWith('| '), 'every body row starts with the fixed gutter');
-    return line.slice(2);
+    assert.ok(
+      line.startsWith('\u200e| '),
+      'every body row starts with the main LTR mark and gutter',
+    );
+    return line.slice(3);
   });
 }
 
@@ -73,12 +77,12 @@ function assertBudget(pages: string[]): void {
     assertTrustedLineStarts(displayed);
     assert.ok(typedDataDisplayLines(displayed) <= TYPED_DATA_DISPLAY_LIMITS.lines, displayed);
     assert.equal(typedDataDisplayLines(displayed), displayed.split('\n').length);
-    assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 1));
+    assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 2));
     assert.doesNotMatch(page, /^Page \d+ of \d+$/m);
     assert.ok(unfoldDetail(page).includes(`Account:   ${groupQrlAddress(SIGNER)}`));
   }
   for (const line of messageRows(pages)) {
-    assert.ok(line.startsWith('| '), 'body rows stay visibly separate from dialog chrome');
+    assert.ok(line.startsWith('\u200e| '), 'body rows stay visibly separate from dialog chrome');
     assert.ok(line.trim().length > 0, 'body rows are never visually blank');
     for (const label of [
       'Account:',
@@ -89,7 +93,7 @@ function assertBudget(pages: string[]): void {
     ]) {
       assert.equal(line.startsWith(label), false, `body row cannot impersonate ${label}`);
     }
-    assert.ok(line.length <= DETAIL_LINE_COLUMNS);
+    assert.ok(line.length <= DETAIL_LINE_COLUMNS + 1);
     assert.equal(typedDataDisplayLines(line), 1, 'each message row fits the column budget');
   }
 }
@@ -127,7 +131,7 @@ for (const message of ['', 'Hello, wallet', '  preserve  spaces  ', '(empty mess
     assertBudget(pages);
     assert.equal(pages.length, 1);
     assertTextFidelity(pages, message);
-    assert.deepEqual(messageRows(pages), [`| ${message || '(empty message)'}`]);
+    assert.deepEqual(messageRows(pages), [`\u200e| ${message || '(empty message)'}`]);
     assert.ok(pages[0]?.includes(`Message (text, ${message.length} bytes):`));
     assert.ok(
       unfoldDetail(pages[0] ?? '').includes(
@@ -170,6 +174,7 @@ test('every invisible character category and control byte round-trips through vi
     ...Array.from({ length: 32 }, (_, index) => index),
     ...Array.from({ length: 33 }, (_, index) => 0x7f + index),
     0x061c,
+    0x200e,
     0xe000,
     0xf0000,
     0x0378,
@@ -210,7 +215,7 @@ test('header labels aligned to the new content width retain the gutter', () => {
     const { pages } = summariseSignatureRequest(messageRequest(message));
     assertBudget(pages);
     assertTextFidelity(pages, message);
-    assert.ok(messageRows(pages)[1]?.startsWith(`| ${label.slice(0, 8)}`));
+    assert.ok(messageRows(pages)[1]?.startsWith(`\u200e| ${label.slice(0, 8)}`));
     assert.equal(messageContents(pages).slice(1).join(''), label);
   }
 });
@@ -238,6 +243,77 @@ test('ASCII text wraps at 46 content columns including an exact final row', () =
     assert.equal(rows.length, Math.ceil(length / 46));
     assert.ok(rows.slice(0, -1).every((line) => line.length === 46));
     assert.equal(rows.at(-1)?.length, length % 46 || 46);
+  }
+});
+
+test('ASCII above 0.8 em in DejaVu Sans uses two columns and wraps at 23 glyphs', () => {
+  // Measured across all 95 printable ASCII glyphs using DejaVu Sans 2.37 hmtx.
+  for (const char of '#%+<=>@MW^mw~') {
+    assert.equal(displayWidth(char), 2, char);
+    for (const length of [22, 23, 24, 46, 47]) {
+      const message = char.repeat(length);
+      const { pages } = summariseSignatureRequest(messageRequest(message));
+      assertBudget(pages);
+      assertTextFidelity(pages, message);
+      const rows = messageContents(pages);
+      assert.equal(rows.length, Math.ceil(length / 23));
+      assert.ok(rows.slice(0, -1).every((line) => line.length === 23));
+      assert.equal(rows.at(-1)?.length, length % 23 || 23);
+    }
+  }
+  // These are the widest remaining ASCII glyphs, all below the threshold.
+  for (const char of 'OQ&') assert.equal(displayWidth(char), 1, char);
+  assert.equal(displayWidth('\u200e'), 0);
+});
+
+test('wide ASCII spoof padding keeps forged labels within marked rows', () => {
+  for (const char of '#%+<=>@MW^mw~') {
+    for (const [length, label] of [
+      [34, ' Page 1 of 1'],
+      [30, ' Account: forged'],
+    ] as const) {
+      const message = char.repeat(length) + label;
+      const { pages } = summariseSignatureRequest(messageRequest(message));
+      assertBudget(pages);
+      assertTextFidelity(pages, message);
+      assert.equal(messageContents(pages)[0], char.repeat(23));
+      assert.ok(messageContents(pages).join('').endsWith(label));
+    }
+  }
+});
+
+test('known ultra-wide glyph ranges use atomic braced escapes and retain all signed bytes', () => {
+  const points = [
+    0x2e3a,
+    0x2e3b,
+    0xfdfa,
+    0xfdfb,
+    0xfdfc,
+    0xfdfd,
+    ...Array.from({ length: 0x1254f - 0x12000 + 1 }, (_, index) => 0x12000 + index),
+  ];
+  for (let offset = 0; offset < points.length; offset += 128) {
+    const batch = points.slice(offset, offset + 128);
+    const message = String.fromCodePoint(...batch);
+    const { pages } = summariseSignatureRequest(messageRequest(message));
+    assertBudget(pages);
+    assertTextFidelity(pages, message);
+    assert.equal(
+      messageContents(pages).join(''),
+      batch.map((point) => `\\u{${point.toString(16)}}`).join(''),
+    );
+  }
+});
+
+test('Hebrew and Arabic body rows start with a main-written LTR mark and gutter', () => {
+  for (const word of ['שלום', 'مرحبا']) {
+    const message = `${word} Page 1 of 1 \u200e\\u200e `.repeat(60);
+    const { pages } = summariseSignatureRequest(messageRequest(message));
+    assertBudget(pages);
+    assertTextFidelity(pages, message);
+    assert.ok(pages.length > 1);
+    assert.ok(messageRows(pages).every((line) => line.startsWith('\u200e| ')));
+    assert.equal(messageContents(pages).join('').includes('\u200e'), false);
   }
 });
 
@@ -300,10 +376,19 @@ for (const [char, escaped] of [
   ['\u202e', '\\u202e'],
   ['\u2066', '\\u2066'],
   ['\u200b', '\\u200b'],
+  ['\u200e', '\\u200e'],
   ['\u0085', '\\u0085'],
   ['\u2028', '\\u2028'],
   ['\u2800', '\\u2800'],
   ['\u{e0061}', '\\u{e0061}'],
+  ['\u2e3a', '\\u{2e3a}'],
+  ['\u2e3b', '\\u{2e3b}'],
+  ['\ufdfa', '\\u{fdfa}'],
+  ['\ufdfb', '\\u{fdfb}'],
+  ['\ufdfc', '\\u{fdfc}'],
+  ['\ufdfd', '\\u{fdfd}'],
+  ['\u{12000}', '\\u{12000}'],
+  ['\u{1254f}', '\\u{1254f}'],
 ] as const) {
   test(`message escape ${escaped} stays intact at a line boundary`, () => {
     const prefix = 'a'.repeat(46);
@@ -319,7 +404,7 @@ for (const [char, escaped] of [
 }
 
 test('literal escape syntax and gutter text round-trip alongside escaped code points', () => {
-  const message = '\\u{e0061}\\u0000\\n\\\\| "\u{e0061}\0\n'.repeat(100);
+  const message = '\\u{e0061}\\u0000\\u200e\\u{fdfd}\\n\\\\| "\u{e0061}\u200e\ufdfd\0\n'.repeat(50);
   const { pages } = summariseSignatureRequest(messageRequest(message));
   assertBudget(pages);
   assert.ok(pages.length > 1);
