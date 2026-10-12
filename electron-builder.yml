@@ -18,6 +18,8 @@ files:
   - '!native/**'
   - '!scripts/**'
   - '!test/**'
+  # Local frontend archives are build inputs; only out/renderer ships.
+  - '!out/frontend-source/**'
   - '!release/**'
   - '!railway-wallet-reference/**'
   - '!electron.vite.config.*'
@@ -51,6 +53,7 @@ asarUnpack:
 # --- macOS: sign + notarize + staple, app-bound keychain helper -------------
 mac:
   category: public.app-category.finance
+  minimumSystemVersion: '13.0.0'
   icon: build/icon.png
   target:
     - target: dmg

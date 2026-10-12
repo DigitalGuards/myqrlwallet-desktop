@@ -82,6 +82,8 @@ exports.default = async function afterPack(context) {
   try {
     await flipFuses(electronBinary, {
       version: FuseVersion.V1,
+      // Fail packaging when an Electron upgrade adds an unreviewed fuse.
+      strictlyRequireAllFuses: true,
       // Forbid running the bundled Electron as a plain Node.js process.
       [FuseV1Options.RunAsNode]: false,
       // Ignore NODE_OPTIONS so an attacker cannot inject startup flags.
@@ -94,12 +96,19 @@ exports.default = async function afterPack(context) {
       [FuseV1Options.OnlyLoadAppFromAsar]: true,
       // Encrypt the cookie store at rest (defense-in-depth, no secrets there).
       [FuseV1Options.EnableCookieEncryption]: true,
+      // Use Electron's stock snapshot; this app ships no custom browser snapshot.
+      [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: false,
+      // The renderer uses file://. Disable only with a custom-scheme migration.
+      [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+      // Preserve V8's WebAssembly bounds-checking trap handlers.
+      [FuseV1Options.WasmTrapHandlers]: true,
       // macOS: re-seal the ad-hoc signature so the real signing step is valid.
       resetAdHocDarwinSignature: isMac,
     });
     console.log(
       '[afterPack] fuses set: RunAsNode=off NodeOptions=off NodeCliInspect=off ' +
-        'AsarIntegrity=on OnlyLoadAppFromAsar=on CookieEncryption=on' +
+        'AsarIntegrity=on OnlyLoadAppFromAsar=on CookieEncryption=on ' +
+        'BrowserSnapshot=off FileProtocolExtraPrivileges=on WasmTrapHandlers=on' +
         (isMac ? ' (ad-hoc signature reset)' : ''),
     );
   } catch (err) {
