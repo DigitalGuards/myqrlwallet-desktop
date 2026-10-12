@@ -6,6 +6,10 @@ the decision document (`docs/ARCHITECTURE_RESEARCH.md`): OS app-binding is
 cost-raising and detection-generating, not a guarantee. The Argon2id-derived
 password is the real protection.
 
+Runtime baseline: Electron 44, locked to 44.7.0 (Chromium 152, Node 24.18.1).
+The [upgrade review](docs/ELECTRON_44_UPGRADE.md) covers the Electron 43/44
+changes against these boundaries.
+
 ## Assets
 
 | Asset | Where it lives | Sensitivity |
@@ -606,30 +610,29 @@ to hardware binding (TPM / Secure Enclave, DBSC).
   hardware wallet; hardware-wallet / air-gapped signing is a planned stage for
   all platforms.
 
-### (f) The renderer is served from `file://`, so the file-protocol fuse stays at its permissive default
+### (f) The renderer is served from `file://`, so the file-protocol fuse stays enabled
 
 The packaged renderer loads via `loadFile` (`src/main/index.ts`), and a
 `file`-scheme handler remaps the frontend's root-absolute asset paths and
 attaches the strict CSP header (`installFileProtocolHandler`). Because the app
 legitimately depends on
-`file://`, the `afterPack` hook leaves `GrantFileProtocolExtraPrivileges` at
-Electron's default (enabled): it sets the six security-relevant fuses explicitly
-but does not flip this one. That default grants `file://` pages extra powers
+`file://`, the `afterPack` hook explicitly sets `GrantFileProtocolExtraPrivileges`
+to `true`. All nine Electron 44 fuse values are explicit, and
+`strictlyRequireAllFuses: true` rejects unreviewed fuses in future binaries.
+The enabled file-protocol fuse grants `file://` pages extra powers
 (fetch over `file://`, service-worker registration, broad child-frame access)
 that Electron recommends disabling in favor of a registered custom scheme.
 
-- Why it is accepted for now: this is NOT a regression from the Electron 42 bump
-  (the fuse defaulted enabled on the prior major too), and disabling it while the
-  renderer is still served from `file://` would break asset loading. The
+- Why it is accepted for now: Electron 44 retains the existing `file://` loading
+  architecture and its enabled fuse. Disabling the fuse requires a coordinated
+  custom-scheme migration and renderer validation. The
   load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'
   'wasm-unsafe-eval'` with no inline/eval of JS, navigation lockdown,
   deny-by-default permissions) are
   unaffected and still contain a renderer compromise.
-- Residual risk: an in-origin renderer RCE has the broader `file://` capability
-  surface available rather than a minimal custom-scheme one.
+- Residual risk: an in-origin renderer RCE has the additional `file://`
+  capabilities described above.
 - Hardening follow-up: migrate the renderer to a registered privileged custom
   scheme (`protocol.handle` / `registerSchemesAsPrivileged`), then flip
   `GrantFileProtocolExtraPrivileges: false` in `scripts/afterPack.cjs` (the two
-  must land together). Consider `strictlyRequireAllFuses: true` so a future
-  Electron major that lengthens the fuse wire fails the build loudly instead of
-  silently leaving a new fuse at its default.
+  must land together).

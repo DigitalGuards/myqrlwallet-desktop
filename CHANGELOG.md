@@ -4,6 +4,13 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Upgrade Electron to 44.7.0 (Chromium 152, Node 24.18.1) and target Chromium 152
+  for the native unlock and settings renderers. Keep the Node 22 type floor.
+- Require macOS 13 or later for macOS packages. Electron 44 supports 64-bit
+  platforms; the existing Windows and Linux release targets remain compatible.
+
 ### Security
 
 - Main wraps every trusted confirmation detail line at 48 display columns with
@@ -30,6 +37,11 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 - Multi-page reviews show their page indicator beside the request number in
   the native bold label. Message and typed-data reviews retain the 30-line and
   10-page limits, counting every wrapped detail line before opening a dialog.
+- Set all nine Electron 44 fuses explicitly and fail packaging on unreviewed
+  fuses. Preserve the existing `file://` privileges and WebAssembly trap handlers.
+- Exclude local frontend source archives from packaged application files.
+- Document the Electron 43/44 compatibility review, including clipboard
+  permissions, signer isolation and native confirmation cancellation.
 
 ### Fixed
 
