@@ -8,8 +8,9 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 - Main wraps every trusted confirmation detail line at 48 display columns with
   a conservative glyph-width model calibrated against the default GTK sans
-  font (DejaVu Sans), so typical fonts do not wrap these lines again. ASCII
-  advances above 0.8 em count as two columns, including lowercase `m` and `w`.
+  font (DejaVu Sans). ASCII advances above 0.8 em and `OQGDHNU&` count as two
+  columns, including lowercase `m` and `w`. Non-ASCII advances above 1.27 em
+  count as three columns.
   Known ultra-wide glyphs in U+2E3A-U+2E3B, U+FDFA-U+FDFD and U+12000-U+1254F
   use atomic, reversible `\u{...}` escapes.
 - Every main-wrapped line carrying dApp or renderer text starts with a
@@ -22,10 +23,10 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   a plain four-space indent, breaking at word boundaries where possible.
   The pipe identifies dApp-supplied text on main-wrapped continuations and
   message body rows.
-- Residual risk: fonts or code points with unusually wide glyphs can still make
-  the toolkit wrap. That continuation shows without a main-written marker and
-  can resemble dialog chrome. The page indicator stays in the native bold label
-  in all cases.
+- Residual risk: rows made of unusually wide glyphs can still wrap in some
+  fonts. The wrapped overflow then shows without a main-written marker and
+  can resemble dialog chrome. The native bold page label and approval flow
+  are unaffected.
 - Multi-page reviews show their page indicator beside the request number in
   the native bold label. Message and typed-data reviews retain the 30-line and
   10-page limits, counting every wrapped detail line before opening a dialog.

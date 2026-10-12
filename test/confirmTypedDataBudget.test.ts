@@ -422,6 +422,12 @@ test('line accounting includes blanks, word boundaries, long tokens and wide cha
   assert.equal(typedDataDisplayLines(Array.from({ length: 3 }, () => 'a'.repeat(33)).join(' ')), 3);
   assert.equal(typedDataDisplayLines('界'.repeat(33)), 2);
   assert.equal(typedDataDisplayLines('W'.repeat(33)), 2);
+  assert.equal(typedDataDisplayLines('O'.repeat(24)), 1);
+  assert.equal(typedDataDisplayLines('O'.repeat(25)), 2);
+  for (const char of ['\u2031', '\u{1f634}']) {
+    assert.equal(typedDataDisplayLines(char.repeat(16)), 1);
+    assert.equal(typedDataDisplayLines(char.repeat(17)), 2);
+  }
 });
 
 test('short labels and long tokens preserve width and source-specific continuations', () => {
@@ -435,9 +441,11 @@ test('short labels and long tokens preserve width and source-specific continuati
   ] as const) {
     for (const token of [
       'a',
-      ...Array.from('#%+<=>@MW^mw~'),
+      ...Array.from('#%&+<=>@DGHMNOQUW^mw~'),
       '界',
       '🙂',
+      '\u2031',
+      '\u{1f634}',
       '\\u200e',
       '\\u202e',
       '\\u{e0061}',

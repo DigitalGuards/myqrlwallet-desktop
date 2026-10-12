@@ -246,9 +246,8 @@ test('ASCII text wraps at 46 content columns including an exact final row', () =
   }
 });
 
-test('ASCII above 0.8 em in DejaVu Sans uses two columns and wraps at 23 glyphs', () => {
-  // Measured across all 95 printable ASCII glyphs using DejaVu Sans 2.37 hmtx.
-  for (const char of '#%+<=>@MW^mw~') {
+test('wide and hinting-sensitive ASCII uses two columns and wraps at 23 glyphs', () => {
+  for (const char of '#%&+<=>@DGHMNOQUW^mw~') {
     assert.equal(displayWidth(char), 2, char);
     for (const length of [22, 23, 24, 46, 47]) {
       const message = char.repeat(length);
@@ -261,13 +260,14 @@ test('ASCII above 0.8 em in DejaVu Sans uses two columns and wraps at 23 glyphs'
       assert.equal(rows.at(-1)?.length, length % 23 || 23);
     }
   }
-  // These are the widest remaining ASCII glyphs, all below the threshold.
-  for (const char of 'OQ&') assert.equal(displayWidth(char), 1, char);
+  for (const char of 'ABCEFIJKLPRSTVXYZabcdefghijklnopqrstuvxyz0123456789| ') {
+    assert.equal(displayWidth(char), 1, char);
+  }
   assert.equal(displayWidth('\u200e'), 0);
 });
 
 test('wide ASCII spoof padding keeps forged labels within marked rows', () => {
-  for (const char of '#%+<=>@MW^mw~') {
+  for (const char of '#%&+<=>@DGHMNOQUW^mw~') {
     for (const [length, label] of [
       [34, ' Page 1 of 1'],
       [30, ' Account: forged'],
@@ -279,6 +279,92 @@ test('wide ASCII spoof padding keeps forged labels within marked rows', () => {
       assert.equal(messageContents(pages)[0], char.repeat(23));
       assert.ok(messageContents(pages).join('').endsWith(label));
     }
+  }
+});
+
+test('non-ASCII advances above 1.27 em use three columns and wrap at 15 glyphs', () => {
+  // DejaVuSans.ttf 2.37 cmap/hmtx census, including the two 1.27246 em currency signs.
+  const points = [
+    0x01c4,
+    0x01c5,
+    0x01f1,
+    0x01f2,
+    0x1670,
+    0x1671,
+    0x1672,
+    0x1673,
+    0x1674,
+    0x1675,
+    0x1676,
+    0x1685,
+    0x168a,
+    0x168f,
+    0x1694,
+    0x2030,
+    0x2031,
+    0x20a7,
+    0x20af,
+    0x2152,
+    0x2167,
+    0x22d8,
+    0x22d9,
+    0x2326,
+    0x2328,
+    0x232b,
+    0x27f5,
+    0x27f6,
+    0x27f7,
+    0x27f8,
+    0x27f9,
+    0x27fa,
+    0x27fb,
+    0x27fc,
+    0x27fd,
+    0x27fe,
+    0x27ff,
+    0x2a0c,
+    0xa66c,
+    0xa698,
+    0xa74e,
+    0xfb17,
+    0xfeb2,
+    0xfeb6,
+    0x1030c,
+    0x1f634,
+    ...Array.from({ length: 50 }, (_, index) => 0x1f030 + index),
+  ];
+  assert.equal(new Set(points).size, 96);
+  for (const point of points) {
+    const char = String.fromCodePoint(point);
+    assert.equal(displayWidth(char), 3, `U+${point.toString(16)}`);
+    for (const length of [14, 15, 16, 30, 31]) {
+      const message = char.repeat(length);
+      const { pages } = summariseSignatureRequest(messageRequest(message));
+      assertBudget(pages);
+      assertTextFidelity(pages, message);
+      const rows = messageContents(pages);
+      assert.equal(rows.length, Math.ceil(length / 15));
+      assert.ok(rows.slice(0, -1).every((line) => line === char.repeat(15)));
+      assert.equal(rows.at(-1), char.repeat(length % 15 || 15));
+    }
+  }
+  for (const point of [
+    0x01c3, 0x01c6, 0x01f0, 0x01f3, 0x166f, 0x1677, 0x2032, 0x20a6, 0x20a8, 0x20ae, 0x20b0, 0x2327,
+    0x2329, 0x27f4, 0x2800, 0x1030b, 0x1030d, 0x1f02f, 0x1f062, 0x1f633, 0x1f635,
+  ]) {
+    assert.equal(displayWidth(String.fromCodePoint(point)), 2, `U+${point.toString(16)}`);
+  }
+});
+
+test('mixed width classes fill the content budget and preserve the next complete code point', () => {
+  for (const char of ['\u2031', '\u{1f634}']) {
+    const fullRow = `${char.repeat(14)}Oaa`;
+    const message = fullRow + char;
+    const { pages } = summariseSignatureRequest(messageRequest(message));
+    assertBudget(pages);
+    assertTextFidelity(pages, message);
+    assert.deepEqual(messageContents(pages), [fullRow, char]);
+    assert.equal(displayWidth(messageRows(pages)[0] ?? ''), DETAIL_LINE_COLUMNS);
   }
 });
 

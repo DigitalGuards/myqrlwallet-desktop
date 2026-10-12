@@ -127,21 +127,26 @@ something the user did not intend.
 Main wraps every confirmation detail line, including transaction and
 wallet-removal reviews, at `DETAIL_LINE_COLUMNS = 48`
 (`src/main/confirmSummary.ts`). The conservative glyph-width model is calibrated
-against DejaVu Sans, the default GTK sans font in the review environment, so
-typical fonts do not wrap these lines again. All 95 printable ASCII advances
-were checked against DejaVu Sans 2.37's `hmtx` metrics at 2048 units per em.
+against DejaVu Sans, the default GTK sans font in the review environment.
+All 95 printable ASCII advances were checked against DejaVu Sans 2.37's `hmtx`
+metrics at 2048 units per em.
 The characters above 0.8 em count as two columns: `#`, `%`, `+`, `<`, `=`, `>`,
-`@`, `M`, `W`, `^`, `m`, `w` and `~`. Non-ASCII code points also count as two
-columns, with zero width for main's leading U+200E LEFT-TO-RIGHT MARK.
+`@`, `M`, `W`, `^`, `m`, `w` and `~`. `O`, `Q`, `G`, `D`, `H`, `N`, `U` and `&`
+also count as two columns because hinting can round their advances past a
+single column. Non-ASCII code points count as two columns, with three columns
+for the 96 code points whose DejaVu Sans advance exceeds 1.27 em. The table was
+derived with fontTools from `DejaVuSans.ttf` 2.37's Unicode cmap and `hmtx`
+metrics. U+20A7 and U+20AF meet this cutoff at exactly two digit widths
+(1.27246 em); the other 94 exceed two digit widths. Main's leading U+200E
+LEFT-TO-RIGHT MARK has zero width.
 Known ultra-wide glyphs use atomic visible `\u{...}` escapes: U+2E3A-U+2E3B
 (two- and three-em dashes), U+FDFA-U+FDFD (Arabic ligatures), and
 U+12000-U+1254F (Cuneiform blocks).
 
-Residual risk: fonts or code points with unusually wide glyphs can still make
-the toolkit wrap a line. The toolkit-created continuation then shows without
-a main-written marker and can resemble dialog chrome. Native font metrics and
-scaling vary by platform. The page indicator stays in the native bold label in
-all cases.
+Residual risk: rows made of unusually wide glyphs can still wrap in some fonts.
+The wrapped overflow then shows without a main-written marker and can resemble
+dialog chrome. Native font metrics and scaling vary by platform. The native
+bold page label and approval flow are unaffected.
 
 Trusted text continues with a plain four-space indent and breaks at word
 boundaries where possible. This includes static headings and notes, field
@@ -245,9 +250,10 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   Each page, including the approval note, has a budget of 30 explicit lines at
   `DETAIL_LINE_COLUMNS` (48 display columns). Both continuation styles, word
   boundaries, unbroken tokens and blank lines consume that budget; wide ASCII
-  glyphs and non-ASCII code points count as two columns, except main's zero-width
-  leading U+200E. The budget covers main-wrapped lines; unusually wide fonts or
-  glyphs can add toolkit-created continuations as described above.
+  glyphs and non-ASCII code points use the two- and three-column classes above,
+  except main's zero-width leading U+200E. The budget covers main-wrapped lines;
+  unusually wide fonts or glyphs can add toolkit-created continuations as
+  described above.
   This leaves room for native dialog controls within roughly 700 logical
   pixels at common desktop font sizes. Exact height depends on OS font metrics
   and scaling. Every message row appears once, in order, and stays on one page.

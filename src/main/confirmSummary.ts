@@ -128,16 +128,54 @@ function fullTypedText(value: string): string {
 }
 
 // Printable ASCII advances above 0.8 em in DejaVu Sans 2.37 (hmtx / unitsPerEm).
+// Include OQGDHNU&: hinting can round their advances past a single column.
+const WIDE_ASCII = '#%&+<=>@DGHMNOQUW^mw~';
+// DejaVuSans.ttf 2.37, fontTools getBestCmap(): hmtx advance / unitsPerEm > 1.27.
+// These 27 inclusive ranges contain 96 non-ASCII code points. U+20A7/U+20AF
+// are 1.27246 em (exactly two digit widths), so they also pass this cutoff.
 // Font-specific glyphs can still exceed this conservative model.
-const WIDE_ASCII = '#%+<=>@MW^mw~';
+const THREE_COLUMN_RANGES = [
+  [0x01c4, 0x01c5],
+  [0x01f1, 0x01f2],
+  [0x1670, 0x1676],
+  [0x1685, 0x1685],
+  [0x168a, 0x168a],
+  [0x168f, 0x168f],
+  [0x1694, 0x1694],
+  [0x2030, 0x2031],
+  [0x20a7, 0x20a7],
+  [0x20af, 0x20af],
+  [0x2152, 0x2152],
+  [0x2167, 0x2167],
+  [0x22d8, 0x22d9],
+  [0x2326, 0x2326],
+  [0x2328, 0x2328],
+  [0x232b, 0x232b],
+  [0x27f5, 0x27ff],
+  [0x2a0c, 0x2a0c],
+  [0xa66c, 0xa66c],
+  [0xa698, 0xa698],
+  [0xa74e, 0xa74e],
+  [0xfb17, 0xfb17],
+  [0xfeb2, 0xfeb2],
+  [0xfeb6, 0xfeb6],
+  [0x1030c, 0x1030c],
+  [0x1f030, 0x1f061],
+  [0x1f634, 0x1f634],
+] as const;
 // Main fixes each dApp line's paragraph direction; supplied marks are escaped.
 const LEFT_TO_RIGHT_MARK = '\u200e';
 
 export function displayWidth(value: string): number {
   let width = 0;
   for (const char of value) {
-    if (char === LEFT_TO_RIGHT_MARK) continue;
-    width += char.charCodeAt(0) > 0x7f || WIDE_ASCII.includes(char) ? 2 : 1;
+    const point = char.codePointAt(0);
+    if (point === undefined || char === LEFT_TO_RIGHT_MARK) continue;
+    if (point <= 0x7f) {
+      width += WIDE_ASCII.includes(char) ? 2 : 1;
+    } else {
+      width += THREE_COLUMN_RANGES.some(([start, end]) => point >= start && point <= end) ? 3 : 2;
+    }
   }
   return width;
 }
