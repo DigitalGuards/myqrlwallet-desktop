@@ -52,6 +52,20 @@ Earlier testnet balances do not carry over to v3.
 Version 1.1.1 refreshes the shared renderer for Connect 5 relay pairing and
 explicit transaction chain IDs. Upgrade from 1.1.0 before using connected dApps.
 
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Wallet home](docs/screenshots/home.png) | ![dApp connections](docs/screenshots/dapp-sessions.png) |
+| Wallet home (testnet) | dApps paired over QRL Connect |
+| ![Trusted typed-data confirmation](docs/screenshots/dapp-typeddata.png) | ![Trusted send confirmation](docs/screenshots/send-confirm.png) |
+| A dApp's typed-data request in the trusted confirmation, drawn by the main process outside the renderer | Send confirmation with the full recipient, fee cap and chain ID |
+| ![Send result](docs/screenshots/send-status.png) | ![Unlock window](docs/screenshots/unlock.png) |
+| Send result with the transaction hash and block | Native unlock window |
+
+The confirmation dialogs are OS-native message boxes, shown here as drawn on Linux. Windows draws them in its own style.
+
 ## Prerequisites
 
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
