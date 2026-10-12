@@ -14,7 +14,8 @@ import { RECIPIENTS, reviewRequest, withReviewDomain } from './typedDataReviewFi
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { app, BrowserWindow, dialog, utilityProcess } = await import('electron');
-const { confirmSignature, confirmRemoveWallet } = await import('../src/main/confirm');
+const { abortPendingConfirms, confirmSignature, confirmRemoveWallet } =
+  await import('../src/main/confirm');
 const { SignerBridge } = await import('../src/main/signerBridge');
 
 // The packaged main bundle supplies this CommonJS global.
@@ -87,7 +88,7 @@ function waitForAbort(signal: AbortSignal, response = 1): Promise<MessageBoxRetu
 for (const cause of ['manual lock', 'autolock', 'signer exit'] as const) {
   for (const page of [1, pageCount]) {
     test(
-      `${cause} aborts page ${page} and rejects the signing request`,
+      `${cause} aborts page ${page} and rejects active and queued requests`,
       { timeout: 3000 },
       async (t) => {
         assert.ok(pageCount > 1);
@@ -116,10 +117,14 @@ for (const cause of ['manual lock', 'autolock', 'signer exit'] as const) {
           { message: lockError },
         );
         const signal = await opened;
+        const queued = [
+          assert.rejects(confirmSignature(parent, request), { message: lockError }),
+          assert.rejects(confirmRemoveWallet(parent, SIGNER), { message: lockError }),
+        ];
         if (cause === 'manual lock') await bridge.lock();
         else if (cause === 'autolock') child.emit('message', { type: 'signer:autolock' });
         else child.emit('exit', 9);
-        await rejected;
+        await Promise.all([rejected, ...queued]);
         assert.equal(signal.aborted, true);
         assert.equal(signals.length, page, 'no later page opens');
         assert.equal(new Set(signals).size, 1, 'one signal covers the whole request');
@@ -134,24 +139,41 @@ for (const cause of ['manual lock', 'autolock', 'signer exit'] as const) {
   }
 }
 
-test('locking aborts all pending confirmations, including removal and a racing approval', async (t) => {
+test('locking aborts active removal and queued signatures despite a racing approval', async (t) => {
   const { bridge } = await mockSigner(t);
   const signals: AbortSignal[] = [];
-  t.mock.method(dialog, 'showMessageBox', (_owner: unknown, options?: MessageBoxOptions) => {
-    const signal = options?.signal;
-    assert.ok(signal);
-    signals.push(signal);
-    return waitForAbort(signal, 0);
+  const opened = new Promise<void>((resolve) => {
+    t.mock.method(dialog, 'showMessageBox', (_owner: unknown, options?: MessageBoxOptions) => {
+      const signal = options?.signal;
+      assert.ok(signal);
+      signals.push(signal);
+      resolve();
+      return waitForAbort(signal, 0);
+    });
   });
+  const rejected = [
+    assert.rejects(confirmRemoveWallet(parent, SIGNER), { message: lockError }),
+    assert.rejects(confirmSignature(parent, request), { message: lockError }),
+  ];
+  await opened;
+  assert.equal(signals.length, 1);
+  await bridge.lock();
+  await Promise.all(rejected);
+  assert.ok(signals.every((signal) => signal.aborted));
+  assert.equal(signals.length, 1);
+});
+
+test('aborting before the queue starts rejects every request without opening a dialog', async (t) => {
+  const shown = t.mock.method(dialog, 'showMessageBox');
   const rejected = [
     assert.rejects(confirmSignature(parent, request), { message: lockError }),
     assert.rejects(confirmRemoveWallet(parent, SIGNER), { message: lockError }),
   ];
-  assert.equal(signals.length, 2);
-  await bridge.lock();
+  abortPendingConfirms();
   await Promise.all(rejected);
-  assert.ok(signals.every((signal) => signal.aborted));
-  assert.equal(signals.length, 2);
+  assert.equal(shown.mock.callCount(), 0);
+  shown.mock.mockImplementation(async () => ({ response: 0, checkboxChecked: false }));
+  assert.equal(await confirmRemoveWallet(parent, SIGNER), true);
 });
 
 test('completed dialogs release their signals and a fresh confirmation can proceed', async (t) => {
@@ -160,7 +182,7 @@ test('completed dialogs release their signals and a fresh confirmation can proce
   t.mock.method(dialog, 'showMessageBox', async (_owner: unknown, options?: MessageBoxOptions) => {
     assert.ok(options?.signal);
     signals.push(options.signal);
-    return { response: 0, checkboxChecked: false };
+    return { response: options.buttons?.includes('Next') ? 0 : 1, checkboxChecked: false };
   });
   assert.equal(await confirmSignature(parent, request), true);
   await bridge.lock();

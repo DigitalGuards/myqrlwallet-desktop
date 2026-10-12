@@ -249,6 +249,10 @@ function typedDataPages(
       : ['Requested by: wallet renderer (dApp origin not provided)']),
     row('Account:', groupQrlAddress(req.signer)),
     row('Scheme:', scheme),
+    row(
+      'Request:',
+      `${fullTypedText(payload.primaryType)} / ${typedScalar('string', payload.domain['name'], payload.types)}`,
+    ),
   ];
   const lines: string[] = [];
   for (const [name, type] of [

@@ -143,9 +143,10 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   Supplementary code points use visible `\u{...}` escapes. Other punctuation
   supplied by a dApp is preserved. Review uses sequential OS-native
   `dialog.showMessageBox` pages. Every page starts with the unverified dApp
-  name/URL (or wallet-renderer provenance), full grouped account, scheme and
-  `Page k of n`. Page one also shows the full domain block, primary type,
-  wallet chain ID and all chain warnings. Oversized mandatory metadata rejects
+  name/URL (or wallet-renderer provenance), full grouped account, scheme,
+  primary type with a bounded domain-name preview, and `Page k of n`.
+  Page one also shows the full domain block, primary type, wallet chain ID
+  and all chain warnings. Oversized mandatory metadata rejects
   before any dialog opens.
   Each page, including the approval note, has a budget of 30 wrapped lines at
   64 display columns. Word boundaries, unbroken tokens and blank lines consume
@@ -165,10 +166,10 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   stops when an eleventh page would be required. Such requests fail closed
   with a desktop review-size error before any dialog is shown.
   Pages before the last offer `Next` and `Cancel`. Only the last offers
-  `Approve & sign` and `Cancel`; a single-page request offers approval on its
-  first page. Cancel is the default and Escape cancels on every page. Cancelling
-  at any point rejects the entire request, and the signer is called only after
-  the last page is approved.
+  `Cancel` at index 0 and `Approve & sign` at index 1; a single-page request
+  uses the same order. Cancel is the default and Escape cancels on every page.
+  Cancelling at any point rejects the entire request, and the signer is called
+  only after the last page is approved.
 - **What main trusts:** the IPC sender check, strict request schema, and its
   own pinned network identity. The domain chain ID is compared numerically
   with the `Wallet network chainId` and a mismatch raises a warning. A domain
@@ -324,7 +325,10 @@ WALLET_INFO), or spam the wallet with pairing prompts.
 - Lock interaction: while the wallet is locked the ingress buffers the URI and
   surfaces only the unlock window; delivery (which reveals and focuses the
   wallet window) happens after a successful unlock. A protocol launch must
-  never become a lock-screen bypass.
+  never become a lock-screen bypass. Signature and remove-wallet confirmations
+  share one queue. A lock, autolock or signer exit aborts open confirmation
+  pages and rejects queued requests before they can open a dialog. After
+  unlocking, confirmations require fresh requests; aborted requests stay rejected.
 - Liveness invariant the renderer relies on: `REQUEST_SIGNATURE` must always
   settle (approve, reject, error, or signer-exit rejection). The renderer's
   approval card deliberately blocks all dismissal while a signing call is in

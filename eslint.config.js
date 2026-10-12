@@ -41,6 +41,25 @@ const cryptoImportGuard = {
   ],
 };
 
+const cryptoModulePattern = CRYPTO_ONLY_MODULES.map((name) =>
+  name.replaceAll('.', '\\.').replaceAll('/', '\\u002F'),
+).join('|');
+
+function cryptoDynamicImportGuard(allowChecksum = false) {
+  return [
+    ['ImportExpression', 'source.value'],
+    [
+      'ImportExpression > TemplateLiteral.source[expressions.length=0] > TemplateElement',
+      'value.cooked',
+    ],
+  ].map(([node, property]) => ({
+    selector:
+      `${node}[${property}=/^(${cryptoModulePattern})($|\\u002F)/]` +
+      (allowChecksum ? `[${property}!='@noble/hashes/sha3.js']` : ''),
+    message: CRYPTO_IMPORT_MESSAGE,
+  }));
+}
+
 export default [
   {
     // Build output, vendored reference, deps, and type-only files: never linted.
@@ -103,6 +122,7 @@ export default [
       '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
       // The crypto fence. The signer + test overrides below switch it off.
       'no-restricted-imports': ['error', cryptoImportGuard],
+      'no-restricted-syntax': ['error', ...cryptoDynamicImportGuard()],
       // The renderer must reach the wallet only via window.qrlWallet. Direct
       // ipcRenderer use anywhere (a classic Electron footgun) is banned; the
       // preload is the sole, narrow bridge. Do NOT expose ipcRenderer raw.
@@ -129,13 +149,18 @@ export default [
   {
     files: ['src/shared/addressCase.ts'],
     rules: {
+      'no-restricted-syntax': ['error', ...cryptoDynamicImportGuard(true)],
       'no-restricted-imports': [
         'error',
         {
           ...cryptoImportGuard,
           patterns: [
             {
-              group: [...CRYPTO_ONLY_MODULES.map((name) => `${name}/*`), '!@noble/hashes/sha3.js'],
+              group: [
+                ...CRYPTO_ONLY_MODULES.map((name) => `${name}/*`),
+                '!@noble/hashes/sha3.js',
+                '@noble/hashes/sha3.js/*',
+              ],
               message: CRYPTO_IMPORT_MESSAGE,
             },
           ],
@@ -152,6 +177,7 @@ export default [
     files: ['src/signer/**/*.ts', 'scripts/calibrate-kdf.ts'],
     rules: {
       'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
     },
   },
 
@@ -192,6 +218,7 @@ export default [
     },
     rules: {
       'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
       // Tests exercise malformed input and mock internals, so assertions and
       // loose typing are legitimate there. The production rules above stay at
       // error for every file outside test/.

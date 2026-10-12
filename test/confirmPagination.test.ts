@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test, type TestContext } from 'node:test';
 import type { MessageBoxOptions } from 'electron';
+import type { SignatureRequest } from '../src/shared/schemas';
 import {
   SIGNATURE_APPROVAL_NOTE,
   summariseSignatureRequest,
@@ -13,13 +14,13 @@ import { RECIPIENTS, reviewRequest, withReviewDomain } from './typedDataReviewFi
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
-const { confirmSignature } = await import('../src/main/confirm');
+const { confirmSignature, confirmRemoveWallet } = await import('../src/main/confirm');
 const parent = new BrowserWindow();
 const request = reviewRequest(withReviewDomain(payloadWith('address[]', RECIPIENTS)));
 const context = { connectedChainId: 3151909 };
 const expectedPages = summariseSignatureRequest(request, context).pages;
 
-function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse = 1) {
+function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
   const shown: MessageBoxOptions[] = [];
   let active = false;
   const mock = t.mock.method(
@@ -31,13 +32,17 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse = 1) {
       assert.equal(active, false, 'native dialogs are awaited sequentially');
       active = true;
       shown.push(options);
-      assert.equal(options.defaultId, 1);
-      assert.equal(options.cancelId, 1, 'Escape maps to Cancel');
-      assert.ok(typedDataDisplayLines(options.detail ?? '') <= 30);
+      const approvalId = options.buttons?.indexOf('Approve & sign');
+      const cancelId = options.buttons?.indexOf('Cancel');
+      assert.equal(options.defaultId, cancelId);
+      assert.equal(options.cancelId, cancelId, 'Escape maps to Cancel');
+      if (options.title === 'Confirm typed-data signature')
+        assert.ok(typedDataDisplayLines(options.detail ?? '') <= 30);
       await Promise.resolve();
       active = false;
       return {
-        response: shown.length - 1 === cancelAt ? cancelResponse : 0,
+        response:
+          shown.length - 1 === cancelAt ? (cancelResponse ?? cancelId) : approvalId === 1 ? 1 : 0,
         checkboxChecked: false,
       };
     },
@@ -71,10 +76,10 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
   assert.equal(signed, true);
   assert.equal(shown.length, expectedPages.length);
   for (const [i, options] of shown.entries()) {
-    assert.deepEqual(options.buttons, [
-      i === shown.length - 1 ? 'Approve & sign' : 'Next',
-      'Cancel',
-    ]);
+    assert.deepEqual(
+      options.buttons,
+      i === shown.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+    );
     assert.equal(options.detail, `${expectedPages[i]}\n\n${SIGNATURE_APPROVAL_NOTE}`);
   }
 });
@@ -101,10 +106,20 @@ for (let cancelAt = 0; cancelAt < expectedPages.length; cancelAt++) {
   });
 }
 
-test('an unexpected native response cancels without opening subsequent pages', async (t) => {
-  const { shown } = mockDialogs(t, 0, -1);
+for (const page of [0, expectedPages.length - 1]) {
+  for (const response of [-1, 2]) {
+    test(`unexpected response ${response} on page ${page + 1} cancels`, async (t) => {
+      const { shown } = mockDialogs(t, page, response);
+      assert.equal(await confirmSignature(parent, request, context), false);
+      assert.equal(shown.length, page + 1);
+    });
+  }
+}
+
+test('repeating the Next button index on the final page cancels', async (t) => {
+  const { shown } = mockDialogs(t, expectedPages.length - 1, 0);
   assert.equal(await confirmSignature(parent, request, context), false);
-  assert.equal(shown.length, 1);
+  assert.equal(shown.length, expectedPages.length);
 });
 
 test('a single-page request offers approval immediately', async (t) => {
@@ -114,8 +129,64 @@ test('a single-page request offers approval immediately', async (t) => {
     true,
   );
   assert.equal(shown.length, 1);
-  assert.deepEqual(shown[0]?.buttons, ['Approve & sign', 'Cancel']);
+  assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
   assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
+});
+
+for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
+  test(`concurrent signatures and wallet removal share one queue (cancel at ${cancelAt})`, async (t) => {
+    const { shown } = mockDialogs(t, cancelAt);
+    const message: SignatureRequest = { kind: 'message', signer: SIGNER, messageHex: '0x01' };
+    const transaction: SignatureRequest = {
+      kind: 'transaction',
+      tx: {
+        from: SIGNER,
+        to: SIGNER,
+        value: '0',
+        nonce: 0,
+        gas: '21000',
+        maxFeePerGas: '1',
+        maxPriorityFeePerGas: '1',
+        chainId: 3151909,
+        type: '0x2',
+      },
+    };
+    const firstPageCount = cancelAt === -1 ? expectedPages.length : cancelAt + 1;
+    assert.deepEqual(
+      await Promise.all([
+        confirmSignature(parent, request, context),
+        confirmSignature(parent, request, context),
+        confirmRemoveWallet(parent, SIGNER),
+        confirmSignature(parent, message),
+        confirmSignature(parent, transaction),
+      ]),
+      [cancelAt === -1, true, true, true, true],
+    );
+    const typedPages = [...expectedPages.slice(0, firstPageCount), ...expectedPages];
+    assert.deepEqual(
+      shown.slice(0, typedPages.length).map(({ detail }) => detail),
+      typedPages.map((detail) => `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+    );
+    assert.deepEqual(
+      shown.slice(typedPages.length).map(({ title }) => title),
+      ['Remove wallet from this device?', 'Confirm message signature', 'Confirm transaction'],
+    );
+  });
+}
+
+test('a native dialog failure rejects its request and releases the queue', async (t) => {
+  const { shown, mock } = mockDialogs(t);
+  mock.mock.mockImplementationOnce(async () => {
+    throw new Error('native dialog failed');
+  });
+  const rejected = assert.rejects(
+    confirmSignature(parent, request, context),
+    /native dialog failed/,
+  );
+  const next = confirmRemoveWallet(parent, SIGNER);
+  await rejected;
+  assert.equal(await next, true);
+  assert.equal(shown.length, 1);
 });
 
 test('more than ten pages refuses before opening a dialog or signing', async (t) => {

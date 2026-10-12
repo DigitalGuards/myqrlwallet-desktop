@@ -15,6 +15,7 @@ import {
 } from './confirmSummary';
 
 const pendingConfirms = new Set<AbortController>();
+let confirmationQueue: Promise<void> = Promise.resolve();
 
 /** Close every confirmation when its signing session ends. */
 export function abortPendingConfirms(): void {
@@ -23,22 +24,34 @@ export function abortPendingConfirms(): void {
   }
 }
 
-async function confirmPages(parent: BrowserWindow, pages: MessageBoxOptions[]): Promise<boolean> {
+function confirmPages(
+  parent: BrowserWindow,
+  pages: MessageBoxOptions[],
+  approvalId: number,
+): Promise<boolean> {
   const controller = new AbortController();
   const { signal } = controller;
+  // Register before waiting so a session ending also aborts queued requests.
   pendingConfirms.add(controller);
-  try {
-    for (const options of pages) {
-      signal.throwIfAborted();
-      const { response } = await dialog.showMessageBox(parent, { ...options, signal });
-      // Electron resolves an aborted dialog with cancelId. Surface the lock failure.
-      signal.throwIfAborted();
-      if (response !== 0) return false;
+  const confirmation = confirmationQueue.then(async () => {
+    try {
+      for (const [index, options] of pages.entries()) {
+        signal.throwIfAborted();
+        const { response } = await dialog.showMessageBox(parent, { ...options, signal });
+        // Electron resolves an aborted dialog with cancelId. Surface the lock failure.
+        signal.throwIfAborted();
+        if (response !== (index === pages.length - 1 ? approvalId : 0)) return false;
+      }
+      return true;
+    } finally {
+      pendingConfirms.delete(controller);
     }
-    return true;
-  } finally {
-    pendingConfirms.delete(controller);
-  }
+  });
+  confirmationQueue = confirmation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return confirmation;
 }
 
 /**
@@ -61,14 +74,15 @@ export async function confirmSignature(
     parent,
     pages.map((detail, index) => ({
       type: 'warning',
-      buttons: [index === pages.length - 1 ? 'Approve & sign' : 'Next', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
+      buttons: index === pages.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+      defaultId: index === pages.length - 1 ? 0 : 1,
+      cancelId: index === pages.length - 1 ? 0 : 1,
       title,
       message,
       detail: `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`,
       noLink: true,
     })),
+    1,
   );
 }
 
@@ -83,18 +97,22 @@ export async function confirmRemoveWallet(
   parent: BrowserWindow,
   address: string,
 ): Promise<boolean> {
-  return confirmPages(parent, [
-    {
-      type: 'warning',
-      buttons: ['Remove wallet', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Remove wallet from this device?',
-      message: 'Permanently remove this wallet from this device?',
-      detail:
-        `Account: ${groupQrlAddress(address)}\n\n` +
-        'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
-      noLink: true,
-    },
-  ]);
+  return confirmPages(
+    parent,
+    [
+      {
+        type: 'warning',
+        buttons: ['Remove wallet', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Remove wallet from this device?',
+        message: 'Permanently remove this wallet from this device?',
+        detail:
+          `Account: ${groupQrlAddress(address)}\n\n` +
+          'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+        noLink: true,
+      },
+    ],
+    0,
+  );
 }

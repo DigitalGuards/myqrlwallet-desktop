@@ -50,6 +50,7 @@ function pagesWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909):
       REVIEW_ORIGIN.url,
       `Account:   ${groupQrlAddress(SIGNER)}`,
       'Scheme:    QRL-SIGN-TYPED-',
+      `Request:   ${payload.primaryType} / `,
     ]) {
       assert.ok(page.includes(value), value);
       assert.ok(page.indexOf(value) < page.indexOf('Page '));
@@ -57,6 +58,47 @@ function pagesWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909):
   }
   return pages;
 }
+
+test('every page identifies its primary type and domain for the same dApp and account', () => {
+  const identities = [];
+  for (const [primaryType, name] of [
+    ['Approval', 'Quanta Token'],
+    ['Login', 'Quanta Token'],
+    ['Login', 'Quanta Account'],
+  ]) {
+    assert.ok(primaryType && name);
+    const payload = withReviewDomain(payloadWith('address[]', RECIPIENTS));
+    payload.types[primaryType] = payload.types['Payload'] ?? [];
+    delete payload.types['Payload'];
+    payload.primaryType = primaryType;
+    payload.domain['name'] = name;
+    const pages = pagesWithOrigin(payload);
+    assert.ok(pages.length > 1);
+    const identity = `Request:   ${primaryType} / "${name}"`;
+    assert.ok(pages.every((page) => page.split('\n').includes(identity)));
+    identities.push(identity);
+  }
+  assert.equal(new Set(identities).size, 3);
+});
+
+test('request identity escapes domain controls and bounds long domain previews on every page', () => {
+  for (const name of ['dApp\nLogin\u202e\u0085', 'W'.repeat(65)]) {
+    const payload = payloadWith('address[]', RECIPIENTS);
+    payload.domain['name'] = name;
+    const { pages } = summariseSignatureRequest(typedRequest(payload));
+    assertBudget(pages);
+    assert.ok(pages.length > 1);
+    const expected =
+      name.length === 65
+        ? `Request:   Payload / "${'W'.repeat(45)}…" [65 characters]`
+        : 'Request:   Payload / "dApp\\nLogin\\u202e\\u0085"';
+    for (const page of pages) {
+      const identity = page.split('\n').find((line) => line.startsWith('Request:'));
+      assert.equal(identity, expected);
+      assert.doesNotMatch(page, /[\u202e\u0085]|\nLogin/);
+    }
+  }
+});
 
 for (const { label, payload, paths } of reviewCases) {
   test(`${label} with origin shows every row exactly once in order within ten pages`, () => {
@@ -220,7 +262,7 @@ test('full domain text and salt are retained; oversized mandatory metadata rejec
   assert.ok(first?.includes(`Domain name: "${name}"`));
   assert.ok(first.includes(`Domain version: "${version}"`));
   assert.ok(first.includes(`Domain salt: "${salt}"`));
-  assert.doesNotMatch(first, /…|truncated/);
+  assert.doesNotMatch(first.slice(first.indexOf('Domain name:')), /…|truncated/);
   for (const key of ['name', 'version']) {
     const large = structuredClone(payload);
     large.domain[key] = 'x'.repeat(16 * 1024);
