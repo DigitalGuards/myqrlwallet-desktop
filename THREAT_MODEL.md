@@ -375,7 +375,8 @@ settlement that runs out of gas defers the payout into a credit).
   maxFeePerGas, and repeats the max cost on its own line of the bold message
   (`Send 1 Quanta?` then `Max cost ... Quanta.`), because for a zero-value
   contract call the fee is the whole cost. The explicit line break keeps the
-  toolkit from wrapping the label.
+  toolkit from wrapping the label for amounts up to ten whole digits; values
+  near the 80-digit schema maximum still wrap (trusted numbers, no spoof path).
 - Buys: the fee the user approves is computed from the gas limit that will be
   signed, and an inflated limit is visible and priced before approval. Unused
   gas is refunded; a call that fails out of gas or burns gas can consume the

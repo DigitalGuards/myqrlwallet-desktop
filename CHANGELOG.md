@@ -50,7 +50,8 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   paginating, preserving the 30-line budget and 10-page limit.
 - Transaction confirmations put the max cost on its own line of the bold
   label (`Send 1 Quanta?` then `Max cost ... Quanta.`), so the toolkit no longer
-  wraps it.
+  wraps it for amounts up to ten whole digits; the 80-digit schema maximum
+  still wraps.
 - Message reviews keep JSON quotes literal while escaping backslashes and
   invisible characters, preserving the exact signed bytes. Typed-data previews
   and continuations preserve complete escapes and Unicode code points.
