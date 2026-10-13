@@ -63,10 +63,10 @@ export default defineConfig({
     // Relative base so assets resolve under file:// (loadFile).
     base: './',
     build: {
-      // This output only ever runs in Electron 42's bundled Chromium 148, so pin
+      // This output only ever runs in Electron 44's bundled Chromium 152, so pin
       // the target there: vite 7 changed the default build target (from 'modules'
       // to a broad browser baseline) and the explicit pin avoids that drift.
-      target: 'chrome148',
+      target: 'chrome152',
       // Emit every asset as a file. Vite's default inlines assets under 4 kB as
       // `data:` URLs, and these windows run under `default-src 'self'` with no
       // `data:` source for fonts, so an inlined woff2 subset is blocked at load

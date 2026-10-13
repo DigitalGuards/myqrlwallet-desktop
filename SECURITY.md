@@ -6,6 +6,10 @@ report a vulnerability. The design rationale is in
 [`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md); the honest
 limits of each control are in [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
+The runtime is Electron 44, locked to 44.7.0 (Chromium 152, Node 24.18.1).
+The [upgrade review](docs/ELECTRON_44_UPGRADE.md) records the Electron 43/44
+compatibility checks and the scope of local validation.
+
 ## Renderer-hardening checklist (as built)
 
 The cardinal property is that even a fully compromised renderer yields NO key
@@ -155,6 +159,14 @@ they are covered by the code signature. Intended settings:
 - `EnableEmbeddedAsarIntegrityValidation`: on.
 - `OnlyLoadAppFromAsar`: on.
 - `EnableCookieEncryption`: on.
+- `LoadBrowserProcessSpecificV8Snapshot`: off (stock Electron snapshot).
+- `GrantFileProtocolExtraPrivileges`: on (the renderer uses `file://`; see the
+  accepted limitation in `THREAT_MODEL.md`).
+- `WasmTrapHandlers`: on (preserves V8 WebAssembly bounds-checking behavior).
+
+All nine Electron 44 fuses are explicit. `strictlyRequireAllFuses: true` makes
+packaging fail when a future binary introduces an unreviewed fuse. The installed
+`@electron/fuses` 2.1.3 supports this complete wire.
 
 Verify on a built app with `npm run fuses:read`.
 

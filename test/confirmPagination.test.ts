@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { beforeEach, test, type TestContext } from 'node:test';
 import type { MessageBoxOptions } from 'electron';
-import type { SignatureRequest } from '../src/shared/schemas';
+import { SignatureRequestSchema, type SignatureRequest } from '../src/shared/schemas';
 import {
+  DETAIL_LINE_COLUMNS,
   SIGNATURE_APPROVAL_NOTE,
   summariseSignatureRequest,
   typedDataDisplayLines,
+  wrapDetailText,
 } from '../src/main/confirmSummary';
 import { signWithConfirmation } from '../src/main/signatureRequest';
 import { payloadWith, SIGNER, typedRequest } from './typedDataFixtures';
@@ -18,6 +20,9 @@ import {
 } from './typedDataReviewFixtures';
 import { finishConfirmation, mockConfirmationClock } from './confirmationClock';
 import { DIALOG_CHROME_MESSAGE, messageRequest, QUANTASWAP_MESSAGE } from './messageReviewFixtures';
+
+import { assertDetailWidth, assertTrustedLineStarts, unfoldDetail } from './confirmLayout';
+import { groupQrlAddress } from '../src/shared/address';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -42,6 +47,9 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
       assert.equal(active, false, 'native dialogs are awaited sequentially');
       active = true;
       shown.push(options);
+      assertDetailWidth(options.detail ?? '');
+      assertTrustedLineStarts(options.detail ?? '');
+      assert.doesNotMatch(options.detail ?? '', /^Page \d+ of \d+$/m);
       const approvalId = options.buttons?.indexOf('Approve & sign');
       const cancelId = options.buttons?.indexOf('Cancel');
       assert.equal(options.defaultId, cancelId);
@@ -57,10 +65,11 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
           /^Message \((?:text|hex), \d+ bytes\):$/.test(line),
         );
         assert.ok(heading >= 0);
-        assert.deepEqual(lines.slice(-2), ['', SIGNATURE_APPROVAL_NOTE]);
-        const body = lines.slice(heading + 1, -2);
+        const note = ['', ...wrapDetailText(SIGNATURE_APPROVAL_NOTE).split('\n')];
+        assert.deepEqual(lines.slice(-note.length), note);
+        const body = lines.slice(heading + 1, -note.length);
         assert.ok(body.length > 0);
-        assert.ok(body.every((line) => line.startsWith('| ')));
+        assert.ok(body.every((line) => line.startsWith('\u200e| ')));
       }
       await Promise.resolve();
       active = false;
@@ -103,11 +112,15 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
   assert.equal(signed, true);
   assert.equal(shown.length, expectedPages.length);
   for (const [i, options] of shown.entries()) {
+    assert.equal(options.message.split('\n')[0], `Request 1, page ${i + 1} of ${shown.length}`);
     assert.deepEqual(
       options.buttons,
       i === shown.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
     );
-    assert.equal(options.detail, `${expectedPages[i]}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+    assert.equal(
+      options.detail,
+      wrapDetailText(`${expectedPages[i]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+    );
   }
 });
 
@@ -140,11 +153,15 @@ test('message signing requires every page and offers Approve only on the last pa
   );
   assert.equal(signatures, 1);
   for (const [index, options] of shown.entries()) {
+    assert.equal(options.message.split('\n')[0], `Request 1, page ${index + 1} of ${shown.length}`);
     assert.deepEqual(
       options.buttons,
       index === shown.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
     );
-    assert.equal(options.detail, `${expectedMessagePages[index]}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+    assert.equal(
+      options.detail,
+      wrapDetailText(`${expectedMessagePages[index]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+    );
   }
 });
 
@@ -186,7 +203,7 @@ for (const [label, value] of [
     );
     assert.equal(shown.length, 1);
     assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
-    assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
+    assert.match(shown[0]?.message ?? '', /^Request \d+\n/);
   });
 }
 
@@ -230,7 +247,11 @@ test('exactly ten message pages can be approved and one more byte refuses before
       rejected = bytes;
     }
   }
-  assert.equal(accepted % 62, 0, 'the page cap ends on a complete content row');
+  assert.equal(
+    accepted % (DETAIL_LINE_COLUMNS - 2),
+    0,
+    'the page cap ends on a complete content row',
+  );
   const largest = messageRequest('a'.repeat(accepted));
   assert.equal(summariseSignatureRequest(largest).pages.length, 10);
   const { shown } = mockDialogs(t);
@@ -241,6 +262,96 @@ test('exactly ten message pages can be approved and one more byte refuses before
     /message too long to review in the trusted dialog/,
   );
   assert.equal(shown.length, 10);
+});
+
+test('transaction values and wallet-removal addresses fit the shared detail width', async (t) => {
+  const { shown } = mockDialogs(t);
+  const gas = '9'.repeat(18);
+  const transaction = SignatureRequestSchema.parse({
+    kind: 'transaction',
+    tx: {
+      from: SIGNER,
+      to: SIGNER,
+      value: '9'.repeat(80),
+      nonce: Number.MAX_SAFE_INTEGER,
+      gas,
+      maxFeePerGas: '9'.repeat(80),
+      maxPriorityFeePerGas: '9'.repeat(80),
+      chainId: Number.MAX_SAFE_INTEGER,
+      type: '0x2',
+      data: `0x${'ab'.repeat(100)}`,
+    },
+    origin: {
+      ...REVIEW_ORIGIN,
+      name: 'MW@%'.repeat(16),
+      url: `https://dapp.example/${'界'.repeat(100)}`,
+      channelId: 'a'.repeat(64),
+    },
+  });
+  for (const context of [
+    {},
+    { blockGasLimit: 30_000_000n },
+    { build: { estimatedGas: gas } },
+    { build: { estimatedGas: '21000', requestedGas: gas } },
+    { build: { estimatedGas: gas, requestedGas: '21000' } },
+    { build: { estimatedGas: (BigInt(gas) + 1n).toString(), requestedGas: '21000' } },
+  ]) {
+    assert.equal(await finishConfirmation(t, confirmSignature(parent, transaction, context)), true);
+    const detail = unfoldDetail(shown.at(-1)?.detail ?? '');
+    assert.ok(detail.includes(`To:        ${groupQrlAddress(SIGNER)}`));
+    assert.ok(detail.includes('Name:    MW@%'));
+    assert.match(shown.at(-1)?.message ?? '', /^Request \d+\n/);
+  }
+  assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
+  assert.ok(
+    unfoldDetail(shown.at(-1)?.detail ?? '').includes(`Account: ${groupQrlAddress(SIGNER)}`),
+  );
+  assert.match(shown.at(-1)?.message ?? '', /^Request \d+\n/);
+});
+
+test('spoofed origin metadata stays on labelled rows and marked continuations', async (t) => {
+  const origin = {
+    ...REVIEW_ORIGIN,
+    name: `${' '.repeat(34)}Page 1 of 1`,
+    url: `https://dapp.example/${' '.repeat(12)}Account: forged\u200b`,
+  };
+  const { shown } = mockDialogs(t);
+  for (const request of [
+    messageRequest(DIALOG_CHROME_MESSAGE, origin),
+    SignatureRequestSchema.parse({
+      ...typedRequest(payloadWith('string', DIALOG_CHROME_MESSAGE)),
+      origin,
+    }),
+  ]) {
+    assert.equal(await finishConfirmation(t, confirmSignature(parent, request)), true);
+  }
+  for (const { detail = '' } of shown) {
+    assert.equal(detail.includes('\u200b'), false);
+    assert.doesNotMatch(detail, /^Account: forged|^Page 1 of 1/m);
+    assert.ok(unfoldDetail(detail).includes('Account: forged\\u200b'));
+  }
+});
+
+test('overwide typed-data metadata refuses before opening a dialog or signing', async (t) => {
+  const payload = withReviewDomain(payloadWith());
+  payload.domain['name'] = 'n'.repeat(250);
+  const { shown } = mockDialogs(t);
+  let signatures = 0;
+  await assert.rejects(
+    signWithConfirmation(reviewRequest(payload), {
+      signer: {
+        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: async () => {
+          signatures++;
+          throw new Error('unexpected signing');
+        },
+      },
+      confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+    }),
+    /security details exceed the confirmation display limit/,
+  );
+  assert.equal(shown.length, 0);
+  assert.equal(signatures, 0);
 });
 
 for (let cancelAt = 0; cancelAt < expectedPages.length; cancelAt++) {
@@ -295,7 +406,22 @@ test('a single-page request offers approval on its only page', async (t) => {
   );
   assert.equal(shown.length, 1);
   assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
-  assert.match(shown[0]?.detail ?? '', /Page 1 of 1/);
+  assert.match(shown[0]?.message ?? '', /^Request \d+\n/);
+});
+
+test('message, typed-data and removal dialogs keep short questions in their bold labels', async (t) => {
+  const { shown } = mockDialogs(t);
+  for (const request of [messageRequest('hello'), typedRequest(payloadWith('string', 'hello'))]) {
+    assert.equal(await finishConfirmation(t, confirmSignature(parent, request, context)), true);
+  }
+  assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
+  const questions = shown.map(({ message }) => message.split('\n').slice(1).join('\n'));
+  assert.deepEqual(questions, [
+    'Sign this message with your wallet key?',
+    'Sign this structured data with your wallet key?',
+    'Permanently remove this wallet from this device?',
+  ]);
+  assert.ok(questions.every((question) => question.length <= 48));
 });
 
 for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
@@ -330,7 +456,7 @@ for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
     const typedPages = expectedPages.slice(0, firstPageCount);
     assert.deepEqual(
       shown.map(({ detail }) => detail),
-      typedPages.map((detail) => `${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+      typedPages.map((detail) => wrapDetailText(`${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`)),
     );
   });
 }

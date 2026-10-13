@@ -2,6 +2,60 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.1 - 2026-10-13
+
+### Changed
+
+- Upgrade Electron to 44.7.0 (Chromium 152, Node 24.18.1) and target Chromium 152
+  for the native unlock and settings renderers. Keep the Node 22 type floor.
+- Require macOS 13 or later for macOS packages. Electron 44 supports 64-bit
+  platforms; the existing Windows and Linux release targets remain compatible.
+
+### Security
+
+- Main wraps every trusted confirmation detail line at 48 display columns with
+  a conservative glyph-width model calibrated against the default GTK sans
+  font (DejaVu Sans). ASCII advances above 0.8 em and `OQGDHNU&` count as two
+  columns, including lowercase `m` and `w`. Non-ASCII advances above 1.27 em
+  and every code point above U+FFFF count as three columns, including native
+  six-digit hex fallback boxes when a usable font is missing.
+  Known ultra-wide glyphs in U+2E3A-U+2E3B, U+FDFA-U+FDFD and U+12000-U+1254F
+  use atomic, reversible `\u{...}` escapes.
+- Every main-wrapped line carrying dApp or renderer text starts with a
+  main-written U+200E LEFT-TO-RIGHT MARK followed by its label or gutter, keeping
+  Hebrew and Arabic paragraphs' markers on the left. Supplied U+200E remains
+  escaped. Message bodies use a `| ` gutter; metadata, typed data, transaction
+  recipients and transaction data continue with `    | `.
+  Trusted notes, labels, verified signer and wallet-removal accounts,
+  wallet-renderer provenance and main-formatted numeric values continue with
+  a plain four-space indent, breaking at word boundaries where possible.
+  The pipe identifies dApp-supplied text on main-wrapped continuations and
+  message body rows.
+- Residual risk: rows made of unusually wide glyphs can still wrap in some
+  fonts. The wrapped overflow then shows without a main-written marker and
+  can resemble dialog chrome. The native bold page label and approval flow
+  are unaffected.
+- Multi-page reviews show their page indicator beside the request number in
+  the native bold label. Message and typed-data reviews retain the 30-line and
+  10-page limits, counting every wrapped detail line before opening a dialog.
+- Set all nine Electron 44 fuses explicitly and fail packaging on unreviewed
+  fuses. Preserve the existing `file://` privileges and WebAssembly trap handlers.
+- Exclude local frontend source archives from packaged application files.
+- Document the Electron 43/44 compatibility review, including clipboard
+  permissions, signer isolation and native confirmation cancellation.
+
+### Fixed
+
+- Typed-data section headings stay with their first complete field row when
+  paginating, preserving the 30-line budget and 10-page limit.
+- Transaction confirmations put the max cost on its own line of the bold
+  label (`Send 1 Quanta?` then `Max cost ... Quanta.`), so the toolkit no longer
+  wraps it for amounts up to ten whole digits; the 80-digit schema maximum
+  still wraps.
+- Message reviews keep JSON quotes literal while escaping backslashes and
+  invisible characters, preserving the exact signed bytes. Typed-data previews
+  and continuations preserve complete escapes and Unicode code points.
+
 ## 1.4.0 - 2026-10-12
 
 ### Added

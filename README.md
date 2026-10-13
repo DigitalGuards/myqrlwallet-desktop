@@ -15,7 +15,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 42 (latest stable; bundled Node 24 + Chromium 148) + electron-vite + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged.
+- **Stack:** Electron 44 (locked to 44.7.0; bundled Node 24.18.1 + Chromium 152) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded over `file://`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** every key-touching operation (wallet generation, seed encrypt/decrypt, ML-DSA-87 signing) runs in the isolated signer. The renderer routes those through `window.qrlWallet`; its in-page seed/signing primitives are neutered (throw) under desktop, as defense-in-depth.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -68,9 +68,12 @@ The confirmation dialogs are OS-native message boxes, shown here as drawn on Lin
 
 ## Prerequisites
 
+- Electron 44 supports 64-bit platforms. macOS builds require macOS 13 (Ventura)
+  or later; Windows ia32 and Linux armv7l are unsupported.
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
   `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
-  currently 24; this floor is only for building, testing, and packaging locally.)
+  currently 24.18.1; this floor is only for building, testing, and packaging locally.)
+  `@types/node` stays at `^22` to enforce that development API floor.
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
   sit side by side, both as submodules of the parent workspace. Initialise it
