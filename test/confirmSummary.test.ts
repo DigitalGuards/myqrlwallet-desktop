@@ -14,7 +14,7 @@
  *   - with no build record the dialog says the fee fields were not assembled
  *     by this wallet
  *   - max fee and max cost are computed from the gas limit in the transaction,
- *     and the max cost is repeated in the prominent message line
+ *     and the max cost is repeated on its own line of the prominent message
  *   - the amount, addresses, nonce and chain id still come straight from the
  *     transaction, and dApp provenance stays labelled unverified
  *
@@ -40,7 +40,9 @@ const ADDR2 = 'Q' + 'b'.repeat(128);
 
 const GWEI = 1_000_000_000n;
 
-function txRequest(overrides: { gas?: string; value?: string } = {}): SignatureRequest {
+function txRequest(
+  overrides: { gas?: string; value?: string; maxFeePerGas?: string } = {},
+): SignatureRequest {
   return {
     kind: 'transaction',
     tx: {
@@ -49,7 +51,7 @@ function txRequest(overrides: { gas?: string; value?: string } = {}): SignatureR
       value: overrides.value ?? '1000000000000000000', // 1 Quanta
       nonce: 5,
       gas: overrides.gas ?? '120000',
-      maxFeePerGas: (2n * GWEI).toString(10),
+      maxFeePerGas: overrides.maxFeePerGas ?? (2n * GWEI).toString(10),
       maxPriorityFeePerGas: GWEI.toString(10),
       chainId: 3151909,
       type: '0x2',
@@ -242,13 +244,27 @@ test('the max-fee row names the per-gas caps it was computed from', () => {
   );
 });
 
-test('the prominent message line carries the max cost', () => {
-  const { message } = summariseSignatureRequest(txRequest({ gas: '350000', value: '0' }), {
-    build: dappBuild('120000', '350000'),
-  });
-  // A zero-value contract call: the fee IS the whole cost, so a message that
-  // only said "Send 0 Quanta?" would read as free.
-  assert.equal(message, 'Send 0 Quanta? Max cost 0.0007 Quanta.');
+test('the prominent message carries the max cost on its own line', () => {
+  for (const [request, question, cost] of [
+    [txRequest(), 'Send 1 Quanta?\nMax cost 1.00024 Quanta.', '1.00024 Quanta'],
+    [
+      txRequest({ gas: '25200', maxFeePerGas: '2379536289' }),
+      'Send 1 Quanta?\nMax cost 1.0000599643144828 Quanta.',
+      '1.0000599643144828 Quanta',
+    ],
+    // A zero-value contract call: the fee is the whole cost, so a message that
+    // only said "Send 0 Quanta?" would read as free.
+    [
+      txRequest({ gas: '350000', value: '0' }),
+      'Send 0 Quanta?\nMax cost 0.0007 Quanta.',
+      '0.0007 Quanta',
+    ],
+  ] as const) {
+    const { message, pages } = summariseSignatureRequest(request);
+    assert.equal(message, question);
+    assert.equal(detailRow(pages.map(unfoldDetail).join('\n'), 'Max cost:'), cost);
+    for (const page of pages) assertDetailWidth(page);
+  }
 });
 
 test('max cost of a zero-value contract call is the fee alone', () => {

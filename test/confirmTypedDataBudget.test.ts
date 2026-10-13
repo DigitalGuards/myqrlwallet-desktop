@@ -44,6 +44,16 @@ function assertBudget(pages: string[]): void {
     assert.ok(displayed.length <= 30 * (DETAIL_LINE_COLUMNS + 2));
     assert.doesNotMatch(detail, /^Page \d+ of \d+$/m);
     assert.doesNotMatch(detail, /more fields|additional fields|up to .* shown/);
+    const rows = unfoldDetail(detail).split('\n');
+    const heading = rows.indexOf('Message fields:');
+    assert.equal(
+      heading >= 0,
+      rows.some((line) => line.startsWith('message.')),
+    );
+    if (heading >= 0) {
+      assert.ok(rows[heading + 1]?.startsWith('message.'), 'a heading stays with its first row');
+      assert.equal(rows.filter((line) => line === 'Message fields:').length, 1);
+    }
   }
 }
 
@@ -64,7 +74,8 @@ function pagesWithOrigin(payload: TypedDataPayload, connectedChainId = 3151909):
       `Signing:   ${payload.primaryType} / `,
     ]) {
       assert.ok(page.includes(value), value);
-      assert.ok(page.indexOf(value) < page.indexOf('Message fields:'));
+      const heading = page.indexOf('Message fields:');
+      if (heading >= 0) assert.ok(page.indexOf(value) < heading);
     }
   }
   return pages;
@@ -172,7 +183,8 @@ test('all 12 addresses remain complete and grouped, with chain warnings on page 
     if (connectedChainId === 1) {
       const warning = 'WARNING: domain chainId differs from the wallet network.';
       assert.ok(first.includes(warning));
-      assert.ok(first.indexOf(warning) < first.indexOf('Message fields'));
+      const heading = first.indexOf('Message fields:');
+      if (heading >= 0) assert.ok(first.indexOf(warning) < heading);
     }
   }
 });
@@ -311,6 +323,7 @@ test('large page-one metadata moves complete message rows to subsequent pages', 
   const pages = pagesWithOrigin(payload, 1);
   assert.ok(unfoldDetail(pages[0] ?? '').includes(`Domain name: "${'n'.repeat(80)}"`));
   assert.equal(messageRows(pages.slice(0, 1)).length, 0);
+  assert.doesNotMatch(pages[0] ?? '', /Message fields:/);
   assert.deepEqual(
     messageRows(pages),
     [REVIEW_CONTRACT, SIGNER].map(
@@ -322,6 +335,37 @@ test('large page-one metadata moves complete message rows to subsequent pages', 
     () => summariseSignatureRequest(reviewRequest(payload), { connectedChainId: 1 }),
     /security details exceed the confirmation display limit/,
   );
+});
+
+test('the heading and complete first row share a page at the exact line budget', () => {
+  for (const length of [40, 41]) {
+    const value = 'a'.repeat(length);
+    const payload = withReviewDomain(payloadWith('string', value));
+    payload.domain['name'] = 'n'.repeat(40);
+    const pages = pagesWithOrigin(payload, 1);
+    const first = pages[0];
+    assert.ok(first);
+    assert.equal(pages.length, length === 40 ? 1 : 2);
+    assert.equal(first.includes('Message fields:'), length === 40);
+    assert.equal(
+      typedDataDisplayLines(`${first}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+      length === 40 ? 30 : 27,
+    );
+    assert.deepEqual(messageRows(pages), [`message.value (string): "${value}"`]);
+  }
+});
+
+test('mandatory metadata can fill page one while the heading moves with its first row', () => {
+  const payload = withReviewDomain(payloadWith());
+  payload.domain['name'] = 'n'.repeat(90);
+  const pages = pagesWithOrigin(payload, 1);
+  const [first, second] = pages;
+  assert.ok(first && second);
+  assert.equal(pages.length, 2);
+  assert.equal(typedDataDisplayLines(`${first}\n\n${SIGNATURE_APPROVAL_NOTE}`), 30);
+  assert.doesNotMatch(first, /Message fields:/);
+  assert.match(second, /Message fields:\n\u200emessage\.value \(uint8\): 1/);
+  assert.deepEqual(messageRows(pages), ['message.value (uint8): 1']);
 });
 
 test('maximum valid control text escapes bounded prefixes and stops at the page limit', (t) => {
@@ -424,7 +468,7 @@ test('line accounting includes blanks, word boundaries, long tokens and wide cha
   assert.equal(typedDataDisplayLines('W'.repeat(33)), 2);
   assert.equal(typedDataDisplayLines('O'.repeat(24)), 1);
   assert.equal(typedDataDisplayLines('O'.repeat(25)), 2);
-  for (const char of ['\u2031', '\u{1f634}']) {
+  for (const char of ['\u2031', '\u{1f634}', '\u{1f512}', '\u{10000}', '\u{20000}']) {
     assert.equal(typedDataDisplayLines(char.repeat(16)), 1);
     assert.equal(typedDataDisplayLines(char.repeat(17)), 2);
   }

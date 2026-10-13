@@ -190,7 +190,8 @@ test('a dApp gas limit survives build, display and signing byte for byte', async
   assert.equal(tx.maxPriorityFeePerGas, '3750000000');
   assert.equal(displayedMaxFee, '0.0013125000049 Quanta');
   assert.equal(maxFee, 1_312_500_004_900_000n, 'displayed fee equals gas limit x fee cap');
-  assert.equal(message, 'Send 0 Quanta? Max cost 0.0013125000049 Quanta.');
+  assert.equal(message, 'Send 0 Quanta?\nMax cost 0.0013125000049 Quanta.');
+  assert.equal(detailRow(detail, 'Max cost:'), '0.0013125000049 Quanta');
 
   // 3. The raw transaction the signer produced carries exactly those numbers.
   const signed = await signTransaction(hexSeed, tx, EXPECTED_CHAIN_ID);

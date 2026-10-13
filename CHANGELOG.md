@@ -17,7 +17,8 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   a conservative glyph-width model calibrated against the default GTK sans
   font (DejaVu Sans). ASCII advances above 0.8 em and `OQGDHNU&` count as two
   columns, including lowercase `m` and `w`. Non-ASCII advances above 1.27 em
-  count as three columns.
+  and every code point above U+FFFF count as three columns, including native
+  six-digit hex fallback boxes when a usable font is missing.
   Known ultra-wide glyphs in U+2E3A-U+2E3B, U+FDFA-U+FDFD and U+12000-U+1254F
   use atomic, reversible `\u{...}` escapes.
 - Every main-wrapped line carrying dApp or renderer text starts with a
@@ -45,6 +46,12 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ### Fixed
 
+- Typed-data section headings stay with their first complete field row when
+  paginating, preserving the 30-line budget and 10-page limit.
+- Transaction confirmations put the max cost on its own line of the bold
+  label (`Send 1 Quanta?` then `Max cost ... Quanta.`), so the toolkit no longer
+  wraps it for amounts up to ten whole digits; the 80-digit schema maximum
+  still wraps.
 - Message reviews keep JSON quotes literal while escaping backslashes and
   invisible characters, preserving the exact signed bytes. Typed-data previews
   and continuations preserve complete escapes and Unicode code points.
