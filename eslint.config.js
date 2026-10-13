@@ -193,6 +193,14 @@ export default [
     },
   },
 
+  // ES module scripts run in Node.js.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+
   // CommonJS build hooks (afterPack, notarize, pgp-sign): classic require/module.
   {
     files: ['scripts/**/*.cjs'],
