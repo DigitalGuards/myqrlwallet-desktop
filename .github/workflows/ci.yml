@@ -46,6 +46,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check lint ratchet
+        run: npm run lint:ratchet
+
       - name: Type-check
         run: npm run typecheck
 
