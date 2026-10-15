@@ -14,6 +14,7 @@
  */
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { isRecord } from '../src/shared/guards';
 
 process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
@@ -41,9 +42,12 @@ const realFetch = globalThis.fetch;
 beforeEach(() => {
   calls = [];
   identityOverride = undefined;
-  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = ((input: string | URL | Request, init?: { body?: unknown }) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const { method } = JSON.parse(String(init?.body)) as { method: string };
+    const request: unknown = JSON.parse(String(init?.body));
+    assert.ok(isRecord(request));
+    const { method } = request;
+    assert.ok(typeof method === 'string');
     const override = identityOverride?.(url, method);
     if (override) return Promise.resolve(override);
     if (method === 'qrl_getBlockByNumber') {

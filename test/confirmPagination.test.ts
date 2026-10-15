@@ -91,11 +91,11 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
     t,
     signWithConfirmation(request, {
       signer: {
-        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-        sign: async () => {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: () => {
           assert.equal(shown.length, expectedPages.length);
           signed = true;
-          return {
+          return Promise.resolve({
             kind: 'typedData',
             signer: SIGNER,
             signature: '0x02',
@@ -103,7 +103,7 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
             descriptor: '0x010000',
             digest: '0x00',
             schemeVersion: 'QRL-SIGN-TYPED-v2',
-          };
+          });
         },
       },
       confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -132,12 +132,12 @@ test('message signing requires every page and offers Approve only on the last pa
     t,
     signWithConfirmation(message, {
       signer: {
-        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-        sign: async (req) => {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: (req) => {
           assert.deepEqual(req, message);
           assert.equal(shown.length, expectedMessagePages.length);
           signatures++;
-          return {
+          return Promise.resolve({
             kind: 'message',
             signer: SIGNER,
             signature: '0x02',
@@ -145,7 +145,7 @@ test('message signing requires every page and offers Approve only on the last pa
             descriptor: '0x010000',
             digest: '0x00',
             schemeVersion: 'QRL-SIGN-MSG-v1',
-          };
+          });
         },
       },
       confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -174,10 +174,11 @@ for (let cancelAt = 0; cancelAt < expectedMessagePages.length; cancelAt++) {
       assert.rejects(
         signWithConfirmation(message, {
           signer: {
-            status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-            sign: async () => {
+            status: () =>
+              Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+            sign: () => {
               signatures++;
-              throw new Error('unexpected signing');
+              return Promise.reject(new Error('unexpected signing'));
             },
           },
           confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -203,7 +204,7 @@ for (const [label, value] of [
     );
     assert.equal(shown.length, 1);
     assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
-    assert.match(shown[0]?.message ?? '', /^Request \d+\n/);
+    assert.match(shown[0].message, /^Request \d+\n/);
   });
 }
 
@@ -218,10 +219,10 @@ for (const [label, value] of [
     await assert.rejects(
       signWithConfirmation(messageRequest(value), {
         signer: {
-          status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-          sign: async () => {
+          status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+          sign: () => {
             signatures++;
-            throw new Error('unexpected signing');
+            return Promise.reject(new Error('unexpected signing'));
           },
         },
         confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -340,10 +341,10 @@ test('overwide typed-data metadata refuses before opening a dialog or signing', 
   await assert.rejects(
     signWithConfirmation(reviewRequest(payload), {
       signer: {
-        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-        sign: async () => {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: () => {
           signatures++;
-          throw new Error('unexpected signing');
+          return Promise.reject(new Error('unexpected signing'));
         },
       },
       confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -363,10 +364,11 @@ for (let cancelAt = 0; cancelAt < expectedPages.length; cancelAt++) {
       assert.rejects(
         signWithConfirmation(request, {
           signer: {
-            status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-            sign: async () => {
+            status: () =>
+              Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+            sign: () => {
               signatures++;
-              throw new Error('unexpected signing');
+              return Promise.reject(new Error('unexpected signing'));
             },
           },
           confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -406,7 +408,7 @@ test('a single-page request offers approval on its only page', async (t) => {
   );
   assert.equal(shown.length, 1);
   assert.deepEqual(shown[0]?.buttons, ['Cancel', 'Approve & sign']);
-  assert.match(shown[0]?.message ?? '', /^Request \d+\n/);
+  assert.match(shown[0].message, /^Request \d+\n/);
 });
 
 test('message, typed-data and removal dialogs keep short questions in their bold labels', async (t) => {
@@ -463,8 +465,8 @@ for (const cancelAt of [-1, 0, expectedPages.length - 1]) {
 
 test('a native dialog failure rejects its request and releases the busy slot', async (t) => {
   const { shown, mock } = mockDialogs(t);
-  mock.mock.mockImplementationOnce(async () => {
-    throw new Error('native dialog failed');
+  mock.mock.mockImplementationOnce(() => {
+    return Promise.reject(new Error('native dialog failed'));
   });
   const rejected = assert.rejects(
     confirmSignature(parent, request, context),
@@ -487,10 +489,10 @@ test('more than ten pages refuses before opening a dialog or signing', async (t)
   await assert.rejects(
     signWithConfirmation(oversized, {
       signer: {
-        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-        sign: async () => {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: () => {
           signatures++;
-          throw new Error('unexpected signing');
+          return Promise.reject(new Error('unexpected signing'));
         },
       },
       confirm: (req, ctx) => confirmSignature(parent, req, ctx),

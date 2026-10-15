@@ -179,7 +179,7 @@ test('all 12 addresses remain complete and grouped, with chain warnings on page 
     );
     const first = unfoldDetail(pages[0] ?? '');
     assert.ok(first);
-    assert.ok(first?.includes(`Domain verifyingContract: ${groupQrlAddress(REVIEW_CONTRACT)}`));
+    assert.ok(first.includes(`Domain verifyingContract: ${groupQrlAddress(REVIEW_CONTRACT)}`));
     if (connectedChainId === 1) {
       const warning = 'WARNING: domain chainId differs from the wallet network.';
       assert.ok(first.includes(warning));
@@ -302,7 +302,7 @@ test('full domain text and salt are retained; oversized mandatory metadata rejec
   assertBudget(pages);
   const first = unfoldDetail(pages[0] ?? '');
   assert.ok(first);
-  assert.ok(first?.includes(`Domain name: "${name}"`));
+  assert.ok(first.includes(`Domain name: "${name}"`));
   assert.ok(first.includes(`Domain version: "${version}"`));
   assert.ok(first.includes(`Domain salt: "${salt}"`));
   assert.doesNotMatch(first.slice(first.indexOf('Domain name:')), /…|truncated/);

@@ -10,19 +10,22 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { isArray } from '../src/shared/guards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(here, '../src/main/config.ts');
 const rendererScript = path.join(here, '../scripts/build-renderer.sh');
 
-function connectSrc(): string[] {
+function connectSrc(): unknown[] {
   const script = `import('${configPath.replace(/\\/g, '/')}').then((c) => { process.stdout.write(JSON.stringify(c.connectSrcOrigins())); });`;
   const out = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module'], {
     input: script,
     env: { ...process.env, QRL_FRONTEND_ORIGINS: undefined },
     encoding: 'utf8',
   });
-  return JSON.parse(out) as string[];
+  const origins: unknown = JSON.parse(out);
+  assert.ok(isArray(origins));
+  return origins;
 }
 
 function rendererDefault(name: string): string {

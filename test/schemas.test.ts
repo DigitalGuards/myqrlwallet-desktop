@@ -64,7 +64,7 @@ test('GetBalanceRequest accepts a valid Q-address and rejects junk + extra keys'
 test('BuildTransactionRequest defaults feeLevel, bounds data, and rejects bad levels', () => {
   const ok = BuildTransactionRequestSchema.safeParse({ from: ADDR, to: ADDR2, value: '10' });
   assert.equal(ok.success, true);
-  assert.equal(ok.success && ok.data.feeLevel, 'medium', 'feeLevel defaults to medium');
+  assert.equal(ok.data.feeLevel, 'medium', 'feeLevel defaults to medium');
 
   assert.equal(
     BuildTransactionRequestSchema.safeParse({
@@ -246,7 +246,7 @@ test('Password + provisioning schemas bound their inputs', () => {
 
   const create = CreateWalletRequestSchema.safeParse({ password: 'pw' });
   assert.equal(create.success, true);
-  assert.equal(create.success && create.data.useKeychain, false, 'useKeychain defaults to false');
+  assert.equal(create.data.useKeychain, false, 'useKeychain defaults to false');
 });
 
 test('ImportWalletRequest takes exactly one of mnemonic or hexSeed', () => {
@@ -387,7 +387,7 @@ test('BuildTransactionRequest accepts only a canonical positive dApp gas limit',
     value: '10',
   });
   assert.equal(absent.success, true);
-  assert.equal(absent.success && absent.data.gas, undefined, 'gas stays optional');
+  assert.equal(absent.data.gas, undefined, 'gas stays optional');
 
   // .strict() means an OLDER main rejects the whole request when a newer
   // renderer adds an unknown field. That is exactly why the bridge advertises
