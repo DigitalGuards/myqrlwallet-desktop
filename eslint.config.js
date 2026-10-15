@@ -336,68 +336,8 @@ export const lintRatchet = [
   { files: ['src/main/seedFile.ts'], rules: { 'no-console': 'off' } },
   { files: ['src/main/unlockWindow.ts'], rules: { 'no-console': 'off' } },
   {
-    files: ['test/config.explorer.test.ts'],
-    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
-  },
-  {
-    files: ['test/config.rpc.test.ts'],
-    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
-  },
-  {
-    files: ['test/confirmPagination.test.ts'],
-    rules: {
-      '@typescript-eslint/no-unnecessary-condition': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
-  },
-  {
-    files: ['test/confirmTypedDataBudget.test.ts'],
-    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
-  },
-  {
-    files: ['test/confirmationClock.ts'],
-    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
-  },
-  {
-    files: ['test/confirmationGate.test.ts'],
-    rules: { '@typescript-eslint/require-await': 'off' },
-  },
-  {
-    files: ['test/gasPassthrough.e2e.test.ts'],
-    rules: { '@typescript-eslint/no-base-to-string': 'off' },
-  },
-  {
-    files: ['test/ipc.signature.test.ts'],
-    rules: {
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
-  },
-  {
     files: ['test/ledgerFixtures.ts'],
     rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
-  },
-  {
-    files: ['test/protocolGuards.test.ts'],
-    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
-  },
-  {
-    files: ['test/rpc.broadcast.test.ts'],
-    rules: {
-      '@typescript-eslint/consistent-type-assertions': 'off',
-      '@typescript-eslint/no-base-to-string': 'off',
-    },
-  },
-  {
-    files: ['test/rpc.gas.test.ts'],
-    rules: {
-      '@typescript-eslint/consistent-type-assertions': 'off',
-      '@typescript-eslint/no-base-to-string': 'off',
-    },
-  },
-  {
-    files: ['test/schemas.test.ts'],
-    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
   },
   {
     files: ['test/security.permissions.test.ts'],
@@ -405,10 +345,6 @@ export const lintRatchet = [
       '@typescript-eslint/consistent-type-assertions': 'off',
       'no-restricted-syntax': 'off',
     },
-  },
-  {
-    files: ['test/settingsFile.test.ts'],
-    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
   },
 ];
 // END LINT RATCHET

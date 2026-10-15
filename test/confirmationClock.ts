@@ -27,18 +27,18 @@ export async function advanceConfirmations(t: TestContext, milliseconds: number)
 
 /** Drive the bounded page sequence for tests concerned with review content. */
 export async function finishConfirmation<T>(t: TestContext, promise: Promise<T>): Promise<T> {
-  let settled = false;
+  const completion = { settled: false };
   void promise.then(
     () => {
-      settled = true;
+      completion.settled = true;
     },
     () => {
-      settled = true;
+      completion.settled = true;
     },
   );
   for (let step = 0; step < 20; step++) {
     await flushConfirmations();
-    if (settled) return promise;
+    if (completion.settled) return promise;
     t.mock.timers.tick(1000);
   }
   assert.fail('confirmation did not settle within twenty arming intervals');

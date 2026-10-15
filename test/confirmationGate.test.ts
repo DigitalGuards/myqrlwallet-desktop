@@ -179,10 +179,10 @@ test('a double-click on Next cannot skip a page or reach approval', async (t) =>
   const rejected = assert.rejects(
     signWithConfirmation(typed, {
       signer: {
-        status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-        sign: async () => {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign: () => {
           signed = true;
-          throw new Error('unexpected signing');
+          return Promise.reject(new Error('unexpected signing'));
         },
       },
       confirm: (req, ctx) => confirmSignature(parent, req, ctx),
@@ -230,13 +230,13 @@ for (const firstRequest of [message, typed]) {
 test('every page has a main-assigned request number and consecutive pages are at least 1000 ms apart', async (t) => {
   const parent = new BrowserWindow();
   const shown: { message: string; detail: string | undefined; at: number }[] = [];
-  t.mock.method(dialog, 'showMessageBox', async (_owner: unknown, options?: MessageBoxOptions) => {
+  t.mock.method(dialog, 'showMessageBox', (_owner: unknown, options?: MessageBoxOptions) => {
     assert.ok(options);
     shown.push({ message: options.message, detail: options.detail, at: Date.now() });
-    return {
+    return Promise.resolve({
       response: options.buttons?.includes('Approve & sign') ? 1 : 0,
       checkboxChecked: false,
-    };
+    });
   });
   for (let requestNumber = 1; requestNumber <= 2; requestNumber++) {
     assert.equal(await finishConfirmation(t, confirmSignature(parent, typed, context)), true);
@@ -282,10 +282,11 @@ for (const event of rendererEvents) {
       const rejected = assert.rejects(
         signWithConfirmation(typed, {
           signer: {
-            status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-            sign: async () => {
+            status: () =>
+              Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+            sign: () => {
               signed = true;
-              throw new Error('unexpected signing');
+              return Promise.reject(new Error('unexpected signing'));
             },
           },
           confirm: (req, ctx) => confirmSignature(parent, req, ctx),

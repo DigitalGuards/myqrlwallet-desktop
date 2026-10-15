@@ -15,6 +15,7 @@
  */
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { isArray, isRecord } from '../src/shared/guards';
 
 process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
@@ -61,8 +62,11 @@ beforeEach(() => {
   latestBlockError = undefined;
   tipResponse = { result: '0x9502f900' }; // 2.5 gwei
   gasPriceAvailable = true;
-  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
-    const { method, params } = JSON.parse(String(init?.body)) as RecordedCall;
+  globalThis.fetch = ((_input: string | URL | Request, init?: { body?: unknown }) => {
+    const request: unknown = JSON.parse(String(init?.body));
+    assert.ok(isRecord(request));
+    const { method, params } = request;
+    assert.ok(typeof method === 'string' && isArray(params));
     // The genesis read is the endpoint-identity probe every call makes; the
     // 'latest' read carries the base fee and the block gas limit, so record
     // that one.
@@ -163,7 +167,8 @@ test('buildTransaction canonicalizes bare-hex calldata to 0x form (schema admits
   assert.equal(tx.data, '0xad4c2381', 'built tx carries the 0x form');
   const estimate = calls.find((c) => c.method === 'qrl_estimateGas');
   assert.ok(estimate, 'estimate dispatched');
-  const [callParams] = estimate.params as [{ data?: string }];
+  const [callParams] = estimate.params;
+  assert.ok(isRecord(callParams));
   assert.equal(callParams.data, '0xad4c2381', 'estimate payload carries the 0x form');
 });
 
