@@ -17,7 +17,7 @@
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --no-inline-config --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --max-warnings 0",
     "lint:ratchet": "node scripts/lint-ratchet.mjs --check",
     "lint:ratchet:update": "node scripts/lint-ratchet.mjs",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"scripts/**/*.{cjs,mjs}\"",
