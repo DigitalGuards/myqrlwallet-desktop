@@ -65,7 +65,9 @@ async function makeFixture(): Promise<Fixture> {
 
 test('unlock opens a session and withSeed yields the stored hex seed', async () => {
   const { encrypted, hexSeed, address } = await makeFixture();
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
 
   assert.equal(session.unlocked, false, 'starts locked');
   await session.unlock(encrypted, 60_000, { password: PASSWORD }, 0);
@@ -78,7 +80,9 @@ test('unlock opens a session and withSeed yields the stored hex seed', async () 
 
 test('unlock with a wrong password fails authentication, not silently', async () => {
   const { encrypted } = await makeFixture();
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
   await assert.rejects(
     () => session.unlock(encrypted, 60_000, { password: 'wrong-password' }, 0),
     AeadAuthError,
@@ -96,7 +100,9 @@ test('unlock rejects address metadata that does not match the encrypted seed', a
         ? `Q${'b'.repeat(128)}`
         : `Q${'a'.repeat(128)}`,
   };
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
 
   await assert.rejects(
     () => session.unlock(tampered, 60_000, { password: PASSWORD }, 0),
@@ -107,7 +113,9 @@ test('unlock rejects address metadata that does not match the encrypted seed', a
 
 test('unlock enforces the native uppercase-Q plus 128-hex address shape', async () => {
   const { encrypted } = await makeFixture();
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
 
   for (const address of [
     encrypted.address.toLowerCase(),
@@ -125,7 +133,9 @@ test('unlock enforces the native uppercase-Q plus 128-hex address shape', async 
 
 test('lock() drops the session and withSeed throws when locked', async () => {
   const { encrypted } = await makeFixture();
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
   await session.unlock(encrypted, 60_000, { password: PASSWORD }, 0);
 
   session.lock();
@@ -156,7 +166,9 @@ test('unlock via a pre-derived KEK (keychain / Touch-ID path) opens a session', 
   // by decrypting, exactly like the password path.
   const { encrypted, hexSeed, address } = await makeFixture();
   const kek = await deriveKek(PASSWORD, Buffer.from(encrypted.salt, 'hex'), FAST_KDF);
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks session state directly.
+  });
 
   await session.unlock(encrypted, 60_000, { kek }, 0);
   assert.equal(session.unlocked, true);

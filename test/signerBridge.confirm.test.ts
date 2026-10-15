@@ -181,17 +181,19 @@ test('aborting before the first page opens rejects it and concurrent requests ar
   abortPendingConfirms();
   await Promise.all(rejected);
   assert.equal(shown.mock.callCount(), 0);
-  shown.mock.mockImplementation(async () => ({ response: 0, checkboxChecked: false }));
+  shown.mock.mockImplementation(() => Promise.resolve({ response: 0, checkboxChecked: false }));
   assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
 });
 
 test('completed dialogs release their signals and a fresh confirmation can proceed', async (t) => {
   const { bridge } = await mockSigner(t);
   const signals: AbortSignal[] = [];
-  t.mock.method(dialog, 'showMessageBox', async (_owner: unknown, options?: MessageBoxOptions) => {
-    assert.ok(options?.signal);
-    signals.push(options.signal);
-    return { response: options.buttons?.includes('Next') ? 0 : 1, checkboxChecked: false };
+  t.mock.method(dialog, 'showMessageBox', (_owner: unknown, options?: MessageBoxOptions) => {
+    return new Promise<MessageBoxReturnValue>((resolve) => {
+      assert.ok(options?.signal);
+      signals.push(options.signal);
+      resolve({ response: options.buttons?.includes('Next') ? 0 : 1, checkboxChecked: false });
+    });
   });
   assert.equal(await finishConfirmation(t, confirmSignature(parent, request)), true);
   await bridge.lock();
@@ -203,10 +205,9 @@ test('completed dialogs release their signals and a fresh confirmation can proce
 for (const cause of ['manual lock', 'autolock', 'signer exit'] as const) {
   test(`${cause} aborts the arming delay before the next page`, async (t) => {
     const { bridge, child, children } = await mockSigner(t);
-    const shown = t.mock.method(dialog, 'showMessageBox', async () => ({
-      response: 0,
-      checkboxChecked: false,
-    }));
+    const shown = t.mock.method(dialog, 'showMessageBox', () =>
+      Promise.resolve({ response: 0, checkboxChecked: false }),
+    );
     const rejected = assert.rejects(
       signWithConfirmation(request, {
         signer: bridge,

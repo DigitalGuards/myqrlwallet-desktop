@@ -21,7 +21,7 @@ import { payloadWith, SIGNER } from './typedDataFixtures';
 function rejects(payload: unknown, reason: RegExp): void {
   const request = { kind: 'typedData', payload, signer: SIGNER };
   const parsed = TypedDataPayloadSchema.safeParse(payload);
-  assert.equal(parsed.success, false);
+  assert.equal<unknown>(parsed.success, false);
   if (!parsed.success) assert.match(parsed.error.issues[0]?.message ?? '', reason);
   assert.equal(SignatureRequestSchema.safeParse(request).success, false);
   assert.equal(
@@ -156,7 +156,7 @@ test('all type declarations are capped before traversal and diagnostics bound ec
   rejects(domain, /^field type too long$/);
   const longName = 'a'.repeat(100000) + 'private-tail';
   const parsed = TypedDataPayloadSchema.safeParse({ ...payloadWith(), primaryType: longName });
-  assert.equal(parsed.success, false);
+  assert.equal<unknown>(parsed.success, false);
   if (!parsed.success)
     assert.equal(parsed.error.issues[0]?.message, `invalid primary type: ${'a'.repeat(64)}...`);
   assert.throws(() => parseFieldType('x'.repeat(100) + 'private-tail', {}), {
@@ -172,7 +172,7 @@ test('aggregate IPC cap rejects oversized trees before semantic validation', () 
     Array.from({ length: count }, () => leaf),
   );
   const parsed = SignatureRequestSchema.safeParse({ kind: 'typedData', payload, signer: SIGNER });
-  assert.equal(parsed.success, false);
+  assert.equal<unknown>(parsed.success, false);
   if (!parsed.success)
     assert.equal(parsed.error.issues[0]?.message, 'typed data exceeds aggregate IPC size limit');
 });
@@ -185,7 +185,7 @@ test('aggregate traversal bounds deep, wide and repeatedly shared malformed inpu
   for (let i = 0; i < 32; i++) shared = [shared, shared];
   for (const value of [wide, deep, shared]) {
     const parsed = TypedDataPayloadSchema.safeParse(payloadWith('uint8', value));
-    assert.equal(parsed.success, false);
+    assert.equal<unknown>(parsed.success, false);
     if (!parsed.success)
       assert.equal(parsed.error.issues[0]?.message, 'typed data exceeds aggregate IPC size limit');
   }
