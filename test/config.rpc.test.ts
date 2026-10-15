@@ -12,22 +12,22 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { isRecord } from '../src/shared/guards';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(here, '../src/main/config.ts');
 
 /** Import config.ts in a fresh tsx child with the given env and print JSON. */
-function resolveConfig(env: Record<string, string | undefined>): {
-  primary: string;
-  secondary: string | null;
-} {
+function resolveConfig(env: Record<string, string | undefined>): Record<string, unknown> {
   const script = `import('${configPath.replace(/\\/g, '/')}').then((c) => { process.stdout.write(JSON.stringify({ primary: c.RPC_URL, secondary: c.RPC_URL_SECONDARY ?? null })); });`;
   const out = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module'], {
     input: script,
     env: { ...process.env, ...env },
     encoding: 'utf8',
   });
-  return JSON.parse(out) as { primary: string; secondary: string | null };
+  const config: unknown = JSON.parse(out);
+  assert.ok(isRecord(config));
+  return config;
 }
 
 test('unset secondary uses the dev proxy default (prod is the primary since 0.3.3)', () => {

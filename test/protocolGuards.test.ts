@@ -72,7 +72,7 @@ test('parseSignerRequest accepts each request type and rejects bad ids', () => {
 test('parseSignerRequest omits absent optional fields', () => {
   const req = parseSignerRequest({ type: 'signer:import', id: 2, password: 'pw', hexSeed: 'ab' });
   assert.deepEqual(req, { type: 'signer:import', id: 2, password: 'pw', hexSeed: 'ab' });
-  assert.equal(req !== null && 'mnemonic' in req, false);
+  assert.equal('mnemonic' in req, false);
   assert.equal(
     parseSignerRequest({ type: 'signer:import', id: 2, password: 'pw', hexSeed: 7 }),
     null,
