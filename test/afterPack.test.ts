@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { FuseState, FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
+import { isRecord } from '../src/shared/guards';
 
 interface AfterPackModule {
   default: (context: {
@@ -24,7 +25,15 @@ interface AfterPackModule {
 }
 
 const require = createRequire(import.meta.url);
-const afterPack: AfterPackModule = require('../scripts/afterPack.cjs');
+const afterPack: unknown = require('../scripts/afterPack.cjs');
+function isAfterPackModule(value: unknown): value is AfterPackModule {
+  return (
+    isRecord(value) &&
+    typeof value['default'] === 'function' &&
+    typeof value['resolveElectronBinary'] === 'function'
+  );
+}
+assert.ok(isAfterPackModule(afterPack));
 const { resolveElectronBinary } = afterPack;
 
 test('afterPack resolves the Linux executable name independently from the product name', () => {

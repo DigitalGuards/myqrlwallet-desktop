@@ -26,7 +26,7 @@ async function rejects(promise: Promise<unknown>, check: Partial<LedgerError>): 
   await assert.rejects(promise, (error: unknown) => {
     assert.ok(error instanceof LedgerError, `expected LedgerError, got ${String(error)}`);
     for (const [key, value] of Object.entries(check)) {
-      assert.equal(error[key as keyof LedgerError], value, `LedgerError.${key}`);
+      assert.equal(Reflect.get(error, key), value, `LedgerError.${key}`);
     }
     return true;
   });
@@ -38,11 +38,13 @@ function scripted(responses: string[]): LedgerTransport & { sent: string[] } {
   const sent: string[] = [];
   return {
     sent,
-    async exchange(apdu: Uint8Array): Promise<Uint8Array> {
-      sent.push(toHex(apdu));
-      const next = responses[i++];
-      assert.ok(next !== undefined, 'scripted transport ran out of responses');
-      return fromHex(next);
+    exchange(apdu: Uint8Array): Promise<Uint8Array> {
+      return new Promise((resolve) => {
+        sent.push(toHex(apdu));
+        const next = responses[i++];
+        assert.ok(next !== undefined, 'scripted transport ran out of responses');
+        resolve(fromHex(next));
+      });
     },
   };
 }
@@ -111,9 +113,9 @@ test('the live fixtures sign from the address their public key hashes to', () =>
   for (const name of ['theqrl-nanosp-sign-live.json', 'pr7-nanosp-sign-live.json']) {
     const fixture = loadFixture(name);
     const from = fixture.from;
-    assert.equal(typeof from, 'string');
+    assert.ok(typeof from === 'string');
     const derived = qrlAddressFromPublicKey(fromHex(expectedString(fixture, 'publicKey')));
-    assert.equal(derived, `Q${(from as string).slice(1).toLowerCase()}`);
+    assert.equal(derived, `Q${from.slice(1).toLowerCase()}`);
   }
 });
 
@@ -290,8 +292,8 @@ test('a short signature chunk is refused', async () => {
 
 test('transport failures surface as transport errors', async () => {
   const failing: LedgerTransport = {
-    async exchange(): Promise<Uint8Array> {
-      throw new Error('device unplugged');
+    exchange(): Promise<Uint8Array> {
+      return Promise.reject(new Error('device unplugged'));
     },
   };
   await rejects(new QrlLedger(failing).getVersion(), { code: 'transport' });
@@ -323,7 +325,7 @@ test('clients that share a transport run their jobs one at a time', async () => 
   };
   const first = new QrlLedger(slow);
   const second = new QrlLedger(slow);
-  const results = await Promise.all([
+  const results: Awaited<ReturnType<QrlLedger['getAccount']>>[] = await Promise.all([
     first.getAccount(PATH),
     second.getAccount(PATH),
     first.getAccount(PATH),

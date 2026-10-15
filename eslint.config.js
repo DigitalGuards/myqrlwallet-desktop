@@ -336,40 +336,8 @@ export const lintRatchet = [
   { files: ['src/main/seedFile.ts'], rules: { 'no-console': 'off' } },
   { files: ['src/main/unlockWindow.ts'], rules: { 'no-console': 'off' } },
   {
-    files: ['test/afterPack.test.ts'],
-    rules: { '@typescript-eslint/no-unsafe-assignment': 'off' },
-  },
-  {
-    files: ['test/buildRecords.test.ts'],
-    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
-  },
-  {
-    files: ['test/ledger.client.test.ts'],
-    rules: {
-      '@typescript-eslint/consistent-type-assertions': 'off',
-      '@typescript-eslint/no-unnecessary-condition': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
-  },
-  {
-    files: ['test/ledger.preimage.test.ts'],
-    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
-  },
-  {
-    files: ['test/ledger.speculos.test.ts'],
-    rules: {
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/no-unnecessary-condition': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
-  },
-  {
     files: ['test/ledgerFixtures.ts'],
-    rules: {
-      '@typescript-eslint/consistent-type-assertions': 'off',
-      '@typescript-eslint/no-non-null-assertion': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
+    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
   },
   {
     files: ['test/security.permissions.test.ts'],
@@ -377,29 +345,6 @@ export const lintRatchet = [
       '@typescript-eslint/consistent-type-assertions': 'off',
       'no-restricted-syntax': 'off',
     },
-  },
-  {
-    files: ['test/signer.autolock.test.ts'],
-    rules: { '@typescript-eslint/no-empty-function': 'off' },
-  },
-  {
-    files: ['test/signer.session.test.ts'],
-    rules: { '@typescript-eslint/no-empty-function': 'off' },
-  },
-  {
-    files: ['test/signer.typedData.test.ts'],
-    rules: {
-      '@typescript-eslint/no-empty-function': 'off',
-      '@typescript-eslint/no-unnecessary-condition': 'off',
-    },
-  },
-  {
-    files: ['test/signerBridge.confirm.test.ts'],
-    rules: { '@typescript-eslint/require-await': 'off' },
-  },
-  {
-    files: ['test/typedData.limits.test.ts'],
-    rules: { '@typescript-eslint/no-unnecessary-condition': 'off' },
   },
 ];
 // END LINT RATCHET

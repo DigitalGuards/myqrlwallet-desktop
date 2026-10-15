@@ -7,10 +7,12 @@ import { toHex } from '../src/ledger/bytes';
 interface FetchCall { url: string; init: RequestInit | undefined }
 
 function fakeFetch(reply: () => Response, calls: FetchCall[] = []): typeof fetch {
-  return (async (input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(input), init });
-    return reply();
-  });
+  return (input: unknown, init?: RequestInit) => {
+    return new Promise((resolve) => {
+      calls.push({ url: String(input), init });
+      resolve(reply());
+    });
+  };
 }
 
 const isTransportError = (error: unknown): boolean =>
@@ -53,8 +55,8 @@ test('posts the APDU as hex to /apdu and returns the response bytes', async () =
   });
   const response = await transport.exchange(Uint8Array.from([0xe0, 0x03, 0, 0, 0]));
   assert.equal(toHex(response), '0202029000');
-  assert.equal(calls[0]?.url, 'http://127.0.0.1:5000/apdu');
-  assert.equal(calls[0]?.init?.method, 'POST');
+  assert.equal<unknown>(calls[0]?.url, 'http://127.0.0.1:5000/apdu');
+  assert.equal<unknown>(calls[0]?.init?.method, 'POST');
   assert.equal(calls[0]?.init?.body, JSON.stringify({ data: 'e003000000' }));
 });
 
@@ -80,9 +82,7 @@ test('HTTP errors, bad replies, and network failures are transport errors', asyn
   const down = createSpeculosTransport({
     baseUrl: 'http://127.0.0.1:5000',
     isPackaged: false,
-    fetch: (async () => {
-      throw new TypeError('fetch failed');
-    }),
+    fetch: () => Promise.reject(new TypeError('fetch failed')),
   });
   await assert.rejects(down.exchange(Uint8Array.from([0xe0, 0x03, 0, 0, 0])), isTransportError);
 });

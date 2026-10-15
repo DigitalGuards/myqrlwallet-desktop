@@ -62,7 +62,9 @@ test('the SET_AUTOLOCK wire constant and request shape are as specified', () => 
 
 test('setAutolock while locked is a no-op success (no session to re-arm)', async () => {
   await makeFixture(); // exercise the fixture path; the session stays locked
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test checks the locked state directly.
+  });
   assert.equal(session.unlocked, false);
   assert.doesNotThrow(() => session.setAutolock(60_000, 0));
   assert.equal(session.unlocked, false, 'still locked; nothing was armed');

@@ -104,8 +104,12 @@ test('the store is bounded, dropping the oldest builds first', () => {
   many.forEach((t, i) => {
     rememberBuild(t, { estimatedGas: String(100000 + i) });
   });
-  assert.equal(recallBuild(many[0]!), undefined, 'the oldest build was evicted');
-  assert.deepEqual(recallBuild(many[39]!), { estimatedGas: '100039' }, 'the newest is held');
+  const oldest = many[0];
+  assert.ok(oldest);
+  assert.equal(recallBuild(oldest), undefined, 'the oldest build was evicted');
+  const newest = many[39];
+  assert.ok(newest);
+  assert.deepEqual(recallBuild(newest), { estimatedGas: '100039' }, 'the newest is held');
 });
 
 test('a rebuild of the same transaction replaces its record', () => {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { LedgerError, inspectPreimage } from '../src/ledger';
 import { concatBytes, fromHex, toHex } from '../src/ledger/bytes';
+import { isRecord } from '../src/shared/guards';
 import { expectedString, loadFixture } from './ledgerFixtures';
 
 // Minimal RLP encoder for building preimage variants.
@@ -58,15 +59,32 @@ function preimage(
   return concatBytes(Uint8Array.from([type]), list(items));
 }
 
+function isBigIntInput(value: unknown): value is string | number | bigint | boolean {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint' ||
+    typeof value === 'boolean'
+  );
+}
+
 const live = loadFixture('theqrl-nanosp-sign-live.json');
-const liveFields = live.fields as Record<string, string>;
+const liveFields = live.fields;
+assert.ok(isRecord(liveFields));
+assert.ok(isBigIntInput(live.chainId));
+assert.ok(liveFields.nonce == null || isBigIntInput(liveFields.nonce));
+assert.ok(liveFields.tip == null || isBigIntInput(liveFields.tip));
+assert.ok(liveFields.maxFee == null || isBigIntInput(liveFields.maxFee));
+assert.ok(liveFields.gas == null || isBigIntInput(liveFields.gas));
+assert.ok(typeof live.to === 'string');
+assert.ok(liveFields.value == null || isBigIntInput(liveFields.value));
 const BASE: Fields = {
-  chainId: BigInt(live.chainId as string),
+  chainId: BigInt(live.chainId),
   nonce: BigInt(liveFields.nonce ?? '0'),
   tip: BigInt(liveFields.tip ?? '0'),
   feeCap: BigInt(liveFields.maxFee ?? '0'),
   gas: BigInt(liveFields.gas ?? '0'),
-  to: fromHex((live.to as string).slice(1)),
+  to: fromHex(live.to.slice(1)),
   value: BigInt(liveFields.value ?? '0'),
   data: new Uint8Array(0),
 };
