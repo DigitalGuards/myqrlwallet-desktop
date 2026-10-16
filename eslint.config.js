@@ -322,31 +322,19 @@ export const baseConfig = [
       ],
     },
   },
+  {
+    files: ['test/helpers/malformed.ts'],
+    rules: {
+      // Malformed test fixtures use this single assertion boundary.
+      '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'as' }],
+    },
+  },
 ];
 
 // Existing lint debt, including tests. Entries may only be removed.
 // Regenerate with npm run lint:ratchet:update after fixing a file/rule pair.
 // BEGIN LINT RATCHET
-export const lintRatchet = [
-  {
-    files: ['src/main/ipc.ts'],
-    rules: { '@typescript-eslint/consistent-type-imports': 'off', 'no-console': 'off' },
-  },
-  { files: ['src/main/rpc.ts'], rules: { 'no-console': 'off' } },
-  { files: ['src/main/seedFile.ts'], rules: { 'no-console': 'off' } },
-  { files: ['src/main/unlockWindow.ts'], rules: { 'no-console': 'off' } },
-  {
-    files: ['test/ledgerFixtures.ts'],
-    rules: { '@typescript-eslint/consistent-type-assertions': 'off' },
-  },
-  {
-    files: ['test/security.permissions.test.ts'],
-    rules: {
-      '@typescript-eslint/consistent-type-assertions': 'off',
-      'no-restricted-syntax': 'off',
-    },
-  },
-];
+export const lintRatchet = [];
 // END LINT RATCHET
 
 export default [...baseConfig, ...lintRatchet];

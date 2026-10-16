@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 
 import { fromHex, toHex } from '../src/ledger/bytes';
 import type { LedgerTransport } from '../src/ledger/transport';
+import { isArray, isRecord } from '../src/shared/guards';
 
 export interface RecordedExchange {
   label: string;
@@ -23,9 +24,32 @@ export interface LedgerFixture {
   [key: string]: unknown;
 }
 
+function isRecordedExchange(value: unknown): value is RecordedExchange {
+  return (
+    isRecord(value) &&
+    typeof value['label'] === 'string' &&
+    typeof value['apdu'] === 'string' &&
+    typeof value['response'] === 'string'
+  );
+}
+
+function isLedgerFixture(value: unknown): value is LedgerFixture {
+  return (
+    isRecord(value) &&
+    typeof value['flow'] === 'string' &&
+    typeof value['model'] === 'string' &&
+    (!('path' in value) || typeof value['path'] === 'string') &&
+    (!('expected' in value) || isRecord(value['expected'])) &&
+    isArray(value['exchanges']) &&
+    value['exchanges'].every(isRecordedExchange)
+  );
+}
+
 export function loadFixture(name: string): LedgerFixture {
   const url = new URL(`./fixtures/ledger/${name}`, import.meta.url);
-  return JSON.parse(readFileSync(url, 'utf8')) as LedgerFixture;
+  const parsed: unknown = JSON.parse(readFileSync(url, 'utf8'));
+  if (!isLedgerFixture(parsed)) throw new Error('invalid Ledger fixture');
+  return parsed;
 }
 
 export function expectedString(fixture: LedgerFixture, key: string): string {

@@ -13,6 +13,7 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
   export const app = {
     getPath() { throw new Error('Unexpected app path'); }
   };
+  export default { BrowserWindow, dialog, utilityProcess, app };
 `)}`;
 
 export function resolve(specifier, context, nextResolve) {

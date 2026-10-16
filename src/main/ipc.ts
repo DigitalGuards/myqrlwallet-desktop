@@ -16,7 +16,8 @@
  * drops the session and raises the native unlock window for the new account.
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { z } from 'zod';
+import type { z } from 'zod';
+import { logConsole } from './log';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import { signWithConfirmation } from './signatureRequest';
 import * as rpc from './rpc';
@@ -229,7 +230,7 @@ export function registerIpcHandlers(deps: Deps): void {
         // failure only means Touch ID stays unavailable until the next try.
         await keyVault
           .store(encrypted.address, result.kekHex)
-          .catch((err: unknown) => console.error('unlock: keychain provisioning failed', err));
+          .catch((err: unknown) => logConsole.error('unlock: keychain provisioning failed', err));
         delete result.kekHex;
       }
     } else {
@@ -283,7 +284,7 @@ export function registerIpcHandlers(deps: Deps): void {
         confirm: (address) => confirmRemoveWallet(requireWindow(), address),
         emitLockState,
         showUnlock,
-        warn: (message) => console.error(message),
+        warn: (message) => logConsole.error(message),
       },
       req?.address,
     );
