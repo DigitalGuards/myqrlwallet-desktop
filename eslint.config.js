@@ -146,6 +146,12 @@ export const baseConfig = [
           'ts-expect-error': true,
         },
       ],
+      // TypeScript applies @ts-nocheck in any letter case and after extra
+      // slashes, while ban-ts-comment matches only the lower-case form.
+      'no-warning-comments': [
+        'error',
+        { terms: ['@ts-nocheck'], location: 'start', decoration: ['/'] },
+      ],
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
       // Narrowed wire records are read with bracket access (isRecord guards).
       '@typescript-eslint/dot-notation': ['error', { allowIndexSignaturePropertyAccess: true }],
