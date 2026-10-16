@@ -48,32 +48,24 @@ if (baseRef !== undefined) {
   }
 }
 
+// Match `npm run lint`: same cwd, patterns and per-file config discovery.
+// With bulk suppressions disabled, a finding muted by a file at any location
+// or under any name still fails unless its file/rule pair is already allowed.
+// The base-ref comparison keeps those allowances shrink-only.
+const lint = new ESLint({ cwd: root, applySuppressions: false });
+const { pairs: lintPairs } = collectFindings(await lint.lintFiles(['.']));
+
+// Independently measure existing debt with the ratchet allowances removed.
 const eslint = new ESLint({
   cwd: root,
+  applySuppressions: false,
   // Follow the config's inline policy, including the base's bounded regex
   // suppression. A base-enforced rule must never become a file-wide exemption.
   overrideConfigFile: true,
   overrideConfig: baseConfig,
 });
-const results = await eslint.lintFiles(strictFiles);
-const current = new Map();
-let reports = 0;
-for (const result of results) {
-  const file = path.relative(root, result.filePath).split(path.sep).join('/');
-  for (const message of result.messages) {
-    if (message.fatal || !message.ruleId) {
-      throw new Error(`${file}:${message.line}: ${message.message}`);
-    }
-    if (!current.has(file)) current.set(file, new Set());
-    current.get(file).add(message.ruleId);
-    reports += 1;
-  }
-}
-
-const pairs = new Set(
-  [...current].flatMap(([file, rules]) => [...rules].map((rule) => `${file}: ${rule}`)),
-);
-const added = [...pairs].filter((pair) => !previous.has(pair)).sort();
+const { current, reports, pairs } = collectFindings(await eslint.lintFiles(strictFiles));
+const added = [...new Set([...pairs, ...lintPairs])].filter((pair) => !previous.has(pair)).sort();
 const stale = [...previous].filter((pair) => !pairs.has(pair)).sort();
 if (added.length) {
   console.error(`lint-ratchet: fix ${added.length} new file/rule pairs:\n${added.join('\n')}`);
@@ -109,6 +101,26 @@ if (!check && oldBlock !== block) {
 console.log(
   `lint-ratchet: OK (${pairs.size} pairs, ${current.size} files, ${reports} reports${check ? '' : `, ${stale.length} pairs removed`})`,
 );
+
+function collectFindings(results) {
+  const current = new Map();
+  let reports = 0;
+  for (const result of results) {
+    const file = path.relative(root, result.filePath).split(path.sep).join('/');
+    for (const message of result.messages) {
+      if (message.fatal || !message.ruleId) {
+        throw new Error(`${file}:${message.line}: ${message.message}`);
+      }
+      if (!current.has(file)) current.set(file, new Set());
+      current.get(file).add(message.ruleId);
+      reports += 1;
+    }
+  }
+  const pairs = new Set(
+    [...current].flatMap(([file, rules]) => [...rules].map((rule) => `${file}: ${rule}`)),
+  );
+  return { current, reports, pairs };
+}
 
 function blockBounds(text, allowMissing = false) {
   const from = text.indexOf(start);
