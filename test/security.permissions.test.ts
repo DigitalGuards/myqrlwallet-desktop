@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import type { Session } from 'electron';
 
 import { installPermissionHandlers } from '../src/main/permissions';
+import { malformed } from './helpers/malformed';
 
 type RequestHandler = (
   webContents: unknown,
@@ -29,7 +30,7 @@ function captureHandlers(): {
   let request: RequestHandler | undefined;
   let check: CheckHandler | undefined;
   let device: DeviceHandler | undefined;
-  const session = {
+  const session = malformed<Session>({
     setPermissionRequestHandler(fn: RequestHandler) {
       request = fn;
     },
@@ -39,7 +40,7 @@ function captureHandlers(): {
     setDevicePermissionHandler(fn: DeviceHandler) {
       device = fn;
     },
-  } as unknown as Session;
+  });
   return {
     session,
     request: () => {

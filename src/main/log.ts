@@ -14,17 +14,30 @@
  */
 import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
+import electron from 'electron';
 
 const MAX_BYTES = 1024 * 1024; // rotate to .1 past 1MB; one spare generation
 
 let resolvedPath: string | null | undefined;
 
+/** Forward console events with their original level, arguments and destination. */
+export const logConsole = {
+  log(...args: unknown[]): void {
+    console.log(...args);
+  },
+  warn(...args: unknown[]): void {
+    console.warn(...args);
+  },
+  error(...args: unknown[]): void {
+    console.error(...args);
+  },
+};
+
 /** The directory main.log lives in (userData/logs). Used by the settings
  * window's "Open logs folder" action; kept here so the path never drifts
  * from where logMain actually writes. */
 export function logsDir(): string {
-  return path.join(app.getPath('userData'), 'logs');
+  return path.join(electron.app.getPath('userData'), 'logs');
 }
 
 function logFilePath(): string | null {

@@ -7,7 +7,6 @@ import path from 'node:path';
 import { after, beforeEach, test, type TestContext } from 'node:test';
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import { summariseSignatureRequest } from '../src/main/confirmSummary';
-import { signWithConfirmation } from '../src/main/signatureRequest';
 import { parseSignerRequest } from '../src/shared/protocolGuards';
 import type { SignerRequest } from '../src/shared/protocol';
 import { payloadWith, SIGNER } from './typedDataFixtures';
@@ -20,6 +19,7 @@ import {
 } from './confirmationClock';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
+const { signWithConfirmation } = await import('../src/main/signatureRequest');
 const { app, BrowserWindow, dialog, utilityProcess } = await import('electron');
 const { abortPendingConfirms, confirmSignature, confirmRemoveWallet } =
   await import('../src/main/confirm');

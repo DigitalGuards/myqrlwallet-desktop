@@ -12,6 +12,7 @@
  */
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { logConsole } from './log';
 import {
   getBiometricUnlockEnabled,
   getEffectiveAutolockMs,
@@ -286,7 +287,7 @@ export function showUnlockWindow(deps: UnlockDeps): void {
   const recover = (reason: string): void => {
     clearWatchdog();
     if (unlocked) return; // a successful unlock already tore this window down
-    console.error(
+    logConsole.error(
       `[unlock] window failed to present (${reason}); quitting to avoid an invisible lock-out`,
     );
     app.quit();
