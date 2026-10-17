@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out desktop source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          if [ ! -d node_modules/electron/dist ]; then
+            node node_modules/electron/install.js
+          fi
+
+      - name: Audit production dependencies
+        run: node scripts/audit-gate.mjs
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check lint ratchet
+        env:
+          LINT_RATCHET_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: npm run lint:ratchet -- --base-ref "$LINT_RATCHET_BASE"
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Check out frontend source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: DigitalGuards/myqrlwallet-frontend
+          ref: dev
+          path: out/frontend-source
+          persist-credentials: false
+
+      - name: Build desktop and renderer
+        run: QRL_FRONTEND_DIR="${{ github.workspace }}/out/frontend-source" npm run build

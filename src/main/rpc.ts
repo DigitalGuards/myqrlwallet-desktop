@@ -10,6 +10,7 @@
  * No secrets pass through this module.
  */
 import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH, RPC_URL, RPC_URL_SECONDARY } from './config';
+import { logConsole } from './log';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
 import { rememberBuild } from './buildRecords';
 import { isRecord } from '../shared/guards';
@@ -162,7 +163,7 @@ async function getGasPrice(): Promise<bigint> {
   try {
     return hexToBigInt(await rpcReadQuantity('qrl_gasPrice', []));
   } catch {
-    console.warn('fees: qrl_gasPrice unavailable, using the 1 gwei default');
+    logConsole.warn('fees: qrl_gasPrice unavailable, using the 1 gwei default');
     return 1_000_000_000n; // 1 gwei fallback, matches the web wallet default
   }
 }
@@ -235,7 +236,7 @@ async function quoteFees(level: FeeLevel, latestBlock: Promise<LatestBlock>): Pr
     }
     return marketFees(hexToBigInt(tip), hexToBigInt(baseFee), level);
   } catch (err) {
-    console.warn(
+    logConsole.warn(
       `fees: fee-market quote unavailable, using gasPrice tiers (${err instanceof Error ? err.message : 'unknown error'})`,
     );
     return applyFeeLevel(await getGasPrice(), level);

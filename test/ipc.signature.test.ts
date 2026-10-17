@@ -28,11 +28,11 @@ for (const kind of ['message', 'typedData'] as const) {
     const steps: string[] = [];
     const result = await signWithConfirmation(request, {
       signer: {
-        status: async () => {
+        status: () => {
           steps.push('status');
-          return { unlocked: true, address: vector.signer, unlockExpiresAt: null };
+          return Promise.resolve({ unlocked: true, address: vector.signer, unlockExpiresAt: null });
         },
-        sign: async (received, chainId) => {
+        sign: (received, chainId) => {
           steps.push('sign');
           assert.equal(received, request);
           assert.equal(chainId, EXPECTED_CHAIN_ID);
@@ -44,14 +44,14 @@ for (const kind of ['message', 'typedData'] as const) {
           });
           assert.ok(wire?.type === 'signer:sign');
           assert.equal(wire.chainId, EXPECTED_CHAIN_ID);
-          return expected;
+          return Promise.resolve(expected);
         },
       },
-      confirm: async (received, context) => {
+      confirm: (received, context) => {
         steps.push('confirm');
         assert.equal(received, request);
         assert.deepEqual(context, { connectedChainId: EXPECTED_CHAIN_ID });
-        return true;
+        return Promise.resolve(true);
       },
     });
     assert.equal(result, expected);
@@ -72,19 +72,20 @@ test('IPC signing handoff preserves account binding and rejection before signing
     await assert.rejects(
       signWithConfirmation(request, {
         signer: {
-          status: async () => ({
-            unlocked: true,
-            address: mismatch ? `Q${'b'.repeat(128)}` : SIGNER,
-            unlockExpiresAt: null,
-          }),
-          sign: async () => {
+          status: () =>
+            Promise.resolve({
+              unlocked: true,
+              address: mismatch ? `Q${'b'.repeat(128)}` : SIGNER,
+              unlockExpiresAt: null,
+            }),
+          sign: () => {
             signatures++;
-            throw new Error('unexpected signing');
+            return Promise.reject(new Error('unexpected signing'));
           },
         },
-        confirm: async () => {
+        confirm: () => {
           confirmations++;
-          return false;
+          return Promise.resolve(false);
         },
       }),
       mismatch ? /account mismatch/ : /user rejected signature/,
@@ -96,7 +97,7 @@ test('IPC signing handoff preserves account binding and rejection before signing
 
 test('IPC transaction handoff retains node identity, gas ceiling and build provenance', async (t) => {
   const calls: string[] = [];
-  t.mock.method(globalThis, 'fetch', async (_input: unknown, init?: RequestInit) => {
+  t.mock.method(globalThis, 'fetch', (_input: unknown, init?: { body?: unknown }) => {
     const body: unknown = JSON.parse(String(init?.body));
     assert.ok(isRecord(body) && typeof body['method'] === 'string');
     calls.push(body['method']);
@@ -104,7 +105,7 @@ test('IPC transaction handoff retains node identity, gas ceiling and build prove
       body['method'] === 'qrl_chainId'
         ? `0x${EXPECTED_CHAIN_ID.toString(16)}`
         : { hash: EXPECTED_GENESIS_HASH, gasLimit: '0x1c9c380' };
-    return Response.json({ jsonrpc: '2.0', id: body['id'], result });
+    return Promise.resolve(Response.json({ jsonrpc: '2.0', id: body['id'], result }));
   });
   t.after(clearBuildRecords);
   const request = SignatureRequestSchema.parse({
@@ -128,19 +129,24 @@ test('IPC transaction handoff retains node identity, gas ceiling and build prove
   let signatures = 0;
   const deps: Parameters<typeof signWithConfirmation>[1] = {
     signer: {
-      status: async () => ({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
-      sign: async (received, chainId) => {
+      status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+      sign: (received, chainId) => {
         assert.equal(received, request);
         assert.equal(chainId, EXPECTED_CHAIN_ID);
         signatures++;
-        return { kind: 'transaction', signer: SIGNER, signature: '0x02', rawTransaction: '0x02' };
+        return Promise.resolve({
+          kind: 'transaction',
+          signer: SIGNER,
+          signature: '0x02',
+          rawTransaction: '0x02',
+        });
       },
     },
-    confirm: async (received, context) => {
+    confirm: (received, context) => {
       assert.equal(received, request);
       assert.deepEqual(context, { build, blockGasLimit: 30_000_000n });
       confirmations++;
-      return true;
+      return Promise.resolve(true);
     },
   };
   await signWithConfirmation(request, deps);

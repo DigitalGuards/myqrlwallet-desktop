@@ -172,7 +172,9 @@ test('malformed payload fails before seed derivation', () => {
 test('production signRequest rejects malformed payloads before session seed access', async (t) => {
   const vector = canonical.schemeSigningVectors[0];
   assert.ok(vector);
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test exercises signing with an explicitly controlled session.
+  });
   t.mock.getter(session, 'unlocked', () => true);
   t.mock.getter(session, 'address', () => vector.signer);
   const seedAccess = t.mock.method(session, 'withSeed', () => {
@@ -212,7 +214,9 @@ test('production signRequest prepares its digest and scheme before the seed call
   assert.ok(vector);
   const payload = payloadWith('uint8', 1);
   const original = structuredClone(payload);
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test exercises signing with an explicitly controlled session.
+  });
   t.mock.getter(session, 'unlocked', () => true);
   t.mock.getter(session, 'address', () => vector.signer);
   const seedAccess = t.mock.method(session, 'withSeed', <T>(fn: (seed: string) => T): T => {
@@ -228,7 +232,7 @@ test('production signRequest prepares its digest and scheme before the seed call
     Date.now(),
   );
   assert.equal(seedAccess.mock.callCount(), 1);
-  assert.equal(result.kind, 'typedData');
+  assert.equal<unknown>(result.kind, 'typedData');
   assert.ok(result.kind === 'typedData');
   assert.equal(result.schemeVersion, SCHEME.TAG_TYPED);
   assert.equal(result.digest, hex(computeTypedDataDigest(original)));
@@ -238,7 +242,9 @@ test('production signRequest prepares its digest and scheme before the seed call
 test('validated request -> trusted summary -> session signer -> SDK-style verification', async () => {
   const vector = canonical.schemeSigningVectors[0];
   assert.ok(vector);
-  const session = new SignerSession(() => {});
+  const session = new SignerSession(() => {
+    // This test exercises signing with an explicitly controlled session.
+  });
   const request = typedRequest(vector.payload, vector.signer);
   await assert.rejects(signRequest(session, request, EXPECTED_CHAIN_ID, Date.now()), /locked/);
   const kek = Buffer.alloc(32, 7);

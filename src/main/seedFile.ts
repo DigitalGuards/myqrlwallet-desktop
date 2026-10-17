@@ -21,6 +21,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import { logConsole } from './log';
 import { errorCode, isRecord } from '../shared/guards';
 import type { EncryptedSeed } from '../shared/protocol';
 import { isEncryptedSeed } from '../shared/protocolGuards';
@@ -204,7 +205,7 @@ export async function writeSeed(enc: EncryptedSeed): Promise<void> {
   if (existsUnreadable) {
     const quarantine = `${p}.corrupt-${Date.now()}`;
     await fs.rename(p, quarantine);
-    console.error(`writeSeed: quarantined unreadable seed file to ${quarantine}`);
+    logConsole.error(`writeSeed: quarantined unreadable seed file to ${quarantine}`);
   }
   await atomicWrite(p, JSON.stringify(enc, null, 2));
 }
@@ -240,7 +241,7 @@ export async function migrateLegacySeed(): Promise<void> {
     await setActiveAddress(legacy.address);
   }
   await fs.rm(legacySeedPath(), { force: true });
-  console.log(`migrateLegacySeed: migrated ${legacy.address} to the multi-wallet store`);
+  logConsole.log(`migrateLegacySeed: migrated ${legacy.address} to the multi-wallet store`);
 }
 
 async function hasActivePointer(): Promise<boolean> {

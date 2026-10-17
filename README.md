@@ -375,10 +375,11 @@ acceptance scenarios in `CLAUDE.md` section 6.
 
 ## Validation gates
 
-Per the workspace `CLAUDE.md`, run and report these before proposing a
-merge/push/release. They are the minimum gate for this repo:
+CI runs on pushes and pull requests targeting `dev` or `main`, using Node 22 to install locked dependencies, ensure the Electron binary is present, audit production dependencies, check formatting, lint, type-check, run tests, and build the shell with the public frontend's `dev` renderer.
+The audit gate blocks high or critical production advisories unless `audit-allowlist.json` supplies a matching, reasoned, unexpired exception.
 
 ```bash
+node scripts/audit-gate.mjs  # npm audit --omit=dev, expiring exceptions
 npm run format:check   # prettier --check (CI fails on formatting drift)
 npm run lint           # eslint, --max-warnings 0
 npm run typecheck      # tsc --noEmit, strict

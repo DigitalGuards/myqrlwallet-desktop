@@ -30,6 +30,7 @@ import {
   writeSettingsFile,
 } from '../src/main/settingsFile';
 import { DEFAULT_AUTOLOCK_MS } from '../src/shared/constants';
+import { isRecord } from '../src/shared/guards';
 
 async function tmpSettingsPath(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'qrl-settings-'));
@@ -86,7 +87,8 @@ test('stored autolockMs is clamped into bounds on read and write', async () => {
   // A programmatic update clamps before persisting.
   const updated = await updateSettingsFile(file, { autolockMs: 1 });
   assert.equal(updated.autolockMs, AUTOLOCK_MIN_MS);
-  const onDisk = JSON.parse(await readFile(file, 'utf8')) as { autolockMs: number };
+  const onDisk: unknown = JSON.parse(await readFile(file, 'utf8'));
+  assert.ok(isRecord(onDisk));
   assert.equal(onDisk.autolockMs, AUTOLOCK_MIN_MS, 'the clamped value must be what hits disk');
 });
 

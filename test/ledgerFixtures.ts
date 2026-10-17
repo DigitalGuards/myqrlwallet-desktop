@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 
 import { fromHex, toHex } from '../src/ledger/bytes';
 import type { LedgerTransport } from '../src/ledger/transport';
+import { isArray, isRecord } from '../src/shared/guards';
 
 export interface RecordedExchange {
   label: string;
@@ -23,20 +24,43 @@ export interface LedgerFixture {
   [key: string]: unknown;
 }
 
+function isRecordedExchange(value: unknown): value is RecordedExchange {
+  return (
+    isRecord(value) &&
+    typeof value['label'] === 'string' &&
+    typeof value['apdu'] === 'string' &&
+    typeof value['response'] === 'string'
+  );
+}
+
+function isLedgerFixture(value: unknown): value is LedgerFixture {
+  return (
+    isRecord(value) &&
+    typeof value['flow'] === 'string' &&
+    typeof value['model'] === 'string' &&
+    (!('path' in value) || typeof value['path'] === 'string') &&
+    (!('expected' in value) || isRecord(value['expected'])) &&
+    isArray(value['exchanges']) &&
+    value['exchanges'].every(isRecordedExchange)
+  );
+}
+
 export function loadFixture(name: string): LedgerFixture {
   const url = new URL(`./fixtures/ledger/${name}`, import.meta.url);
-  return JSON.parse(readFileSync(url, 'utf8')) as LedgerFixture;
+  const parsed: unknown = JSON.parse(readFileSync(url, 'utf8'));
+  if (!isLedgerFixture(parsed)) throw new Error('invalid Ledger fixture');
+  return parsed;
 }
 
 export function expectedString(fixture: LedgerFixture, key: string): string {
   const value = fixture.expected?.[key];
-  assert.equal(typeof value, 'string', `fixture expected.${key}`);
-  return value as string;
+  assert.ok(typeof value === 'string', `fixture expected.${key}`);
+  return value;
 }
 
 export function fixturePath(fixture: LedgerFixture): string {
-  assert.equal(typeof fixture.path, 'string', 'fixture path');
-  return fixture.path!;
+  assert.ok(typeof fixture.path === 'string', 'fixture path');
+  return fixture.path;
 }
 
 /**
@@ -78,12 +102,14 @@ export class ReplayTransport implements LedgerTransport {
     this.exchanges = exchanges;
   }
 
-  async exchange(apdu: Uint8Array): Promise<Uint8Array> {
-    const next = this.exchanges[this.index];
-    assert.ok(next, `unexpected extra APDU ${toHex(apdu)}`);
-    assert.equal(toHex(apdu), next.apdu, `APDU ${this.index} (${next.label})`);
-    this.index += 1;
-    return fromHex(next.response);
+  exchange(apdu: Uint8Array): Promise<Uint8Array> {
+    return new Promise((resolve) => {
+      const next = this.exchanges[this.index];
+      assert.ok(next, `unexpected extra APDU ${toHex(apdu)}`);
+      assert.equal(toHex(apdu), next.apdu, `APDU ${this.index} (${next.label})`);
+      this.index += 1;
+      resolve(fromHex(next.response));
+    });
   }
 
   assertDone(): void {

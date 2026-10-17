@@ -38,7 +38,7 @@ const SUGGESTED_TIP_HEX = '0x9502f900';
 
 beforeEach(() => {
   clearBuildRecords();
-  globalThis.fetch = (_input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = (_input: string | URL | Request, init?: { body?: unknown }) => {
     const request: unknown = JSON.parse(String(init?.body));
     assert.ok(isRecord(request));
     const method = request['method'];
