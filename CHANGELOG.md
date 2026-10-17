@@ -2,6 +2,23 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.2 - 2026-10-17
+
+### Security
+
+- Upgrade Electron to 44.7.2, which carries 28 Chromium security backports.
+- The renderer is rebuilt from the current web wallet, which now passes the
+  full strict type-aware lint rule set with no exceptions, and includes its
+  fee labelling, testnet value and error-message fixes.
+
+### Changed
+
+- Strict type-aware lint for the desktop sources and tests, with a ratchet that
+  CI only lets shrink. The ratchet is empty: every finding was fixed.
+- CI runs the quality gates on every pull request and rejects lint findings
+  hidden by bulk-suppression files or by a `@ts-nocheck` directive in any
+  letter case.
+
 ## 1.4.1 - 2026-10-13
 
 ### Changed
