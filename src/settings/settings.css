@@ -341,3 +341,20 @@ button,
 select {
   font: inherit;
 }
+/* Translated controls and labels may span several lines. */
+.settings-row {
+  flex-wrap: wrap;
+}
+.settings-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-button {
+  max-width: 100%;
+  white-space: normal;
+}
+.settings-error-detail {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -6,10 +6,14 @@
  * plaintext key material; it brokers IPC, draws the trusted confirmation modal,
  * proxies RPC, and owns the encrypted seed file on disk.
  */
+import { applyLanguage, onLanguageChanged, t } from './language';
+import { resolveLanguage } from '../shared/language';
+import { installApplicationMenu } from './applicationMenu';
+import { confirmationGate } from './confirmationGate';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, dialog, Menu, net, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, net, protocol, session } from 'electron';
 import { windowIcon } from './appIcon';
 import { APP_ID, connectSrcOrigins } from './config';
 import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
@@ -202,53 +206,6 @@ app.on('open-url', (event, url) => {
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 
 /**
- * Application menu. Replaces the previous drop-the-default-menu setup with a
- * minimal template that preserves the standard roles and adds the one custom
- * entry: Settings (CmdOrCtrl+,), which opens the native settings panel inside
- * the wallet window. showSettingsView itself refuses while locked (focuses the
- * unlock window instead), so the menu item is safe to leave enabled. On
- * Windows/Linux the menu bar stays hidden (autoHideMenuBar) but the
- * accelerator still works.
- */
-function installApplicationMenu(settingsDeps: SettingsDeps): void {
-  const settingsItem: Electron.MenuItemConstructorOptions = {
-    label: 'Settings...',
-    accelerator: 'CmdOrCtrl+,',
-    click: () => showSettingsView(settingsDeps),
-  };
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        {
-          label: app.name,
-          submenu: [
-            { role: 'about' },
-            { type: 'separator' },
-            settingsItem,
-            { type: 'separator' },
-            { role: 'services' },
-            { type: 'separator' },
-            { role: 'hide' },
-            { role: 'hideOthers' },
-            { role: 'unhide' },
-            { type: 'separator' },
-            { role: 'quit' },
-          ],
-        },
-        { role: 'editMenu' },
-        { role: 'windowMenu' },
-      ]),
-    );
-  } else {
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate([
-        { label: 'File', submenu: [settingsItem, { type: 'separator' }, { role: 'quit' }] },
-      ]),
-    );
-  }
-}
-
-/**
  * The file-protocol handler does two jobs:
  *
  * 1. Asset remapping. The reused frontend references some assets by
@@ -382,6 +339,7 @@ function createWindow(startLocked = false): void {
 app
   .whenReady()
   .then(async () => {
+    applyLanguage(resolveLanguage(app.getPreferredSystemLanguages(), app.getLocale()));
     logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
@@ -451,7 +409,11 @@ app
       showUnlock: () => showUnlockWindow(unlockDeps),
     };
     registerSettingsIpc(settingsDeps);
-    installApplicationMenu(settingsDeps);
+    installApplicationMenu(() => showSettingsView(settingsDeps));
+    onLanguageChanged(() => {
+      confirmationGate.abort(new Error(t('error.languageConfirm')));
+      installApplicationMenu(() => showSettingsView(settingsDeps));
+    });
     // A qrlconnect:// URI that arrived while locked was buffered (deliver()
     // refuses to reveal the hidden wallet window); flush it now that the
     // wallet window is visible again.
@@ -485,11 +447,10 @@ app
     if (!lockedAtStartup && (await shouldShowLegacyDataNotice())) {
       await dialog.showMessageBox({
         type: 'info',
-        title: 'QRL v3 accounts',
-        message: 'This release uses new 64-byte addresses and separate v3 wallet storage.',
-        detail:
-          'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances do not carry over to v3.',
-        buttons: ['Continue'],
+        title: t('legacy.title'),
+        message: t('legacy.message'),
+        detail: t('legacy.detail'),
+        buttons: [t('common.continue')],
       });
       // Best-effort: failing to record the acknowledgement only means the
       // notice appears again next launch, which must never block startup.
@@ -531,10 +492,7 @@ app
     // stack names non-secret code paths only.
     const detail = err instanceof Error && err.stack ? err.stack : message;
     logMain(`[boot] startup FAILED: ${detail}`);
-    dialog.showErrorBox(
-      'MyQRLWallet failed to start',
-      `${message}\n\nThe app cannot continue and will close. If this keeps happening, reinstall MyQRLWallet.`,
-    );
+    dialog.showErrorBox(t('error.startTitle'), `${message}\n\n${t('error.startHelp')}`);
     app.exit(1);
   });
 

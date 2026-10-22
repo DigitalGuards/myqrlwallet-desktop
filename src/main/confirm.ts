@@ -5,22 +5,17 @@
  * "what is being signed". The user authorises the exact summary main computed
  * from the validated request, and only then does main ask the signer to sign.
  */
+import { getLanguage, t } from './language';
+import { translator } from '../shared/i18n';
 import type { BrowserWindow } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
-import {
-  type ConfirmContext,
-  SIGNATURE_APPROVAL_NOTE,
-  summariseSignatureRequest,
-  wrapDetailText,
-} from './confirmSummary';
+import { type ConfirmContext, summariseSignatureRequest, wrapDetailText } from './confirmSummary';
 import { confirmationGate } from './confirmationGate';
 
 /** Abort the open or arming confirmation when its signing session ends. */
 export function abortPendingConfirms(): void {
-  confirmationGate.abort(
-    new Error('Wallet locked during confirmation. Please unlock and try again.'),
-  );
+  confirmationGate.abort(new Error(t('error.lockedConfirm')));
 }
 
 /**
@@ -38,20 +33,26 @@ export async function confirmSignature(
   req: SignatureRequest,
   context: ConfirmContext = {},
 ): Promise<boolean> {
-  const { title, message, pages } = summariseSignatureRequest(req, context);
+  const language = getLanguage();
+  const t = translator(language);
+  const { title, message, pages } = summariseSignatureRequest(req, context, language);
   return confirmationGate.show(
     parent,
     pages.map((detail, index) => ({
       type: 'warning',
-      buttons: index === pages.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+      buttons:
+        index === pages.length - 1
+          ? [t('common.cancel'), t('confirm.approve')]
+          : [t('common.next'), t('common.cancel')],
       defaultId: index === pages.length - 1 ? 0 : 1,
       cancelId: index === pages.length - 1 ? 0 : 1,
       title,
       message,
-      detail: wrapDetailText(`${detail}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+      detail: wrapDetailText(`${detail}\n\n${t('confirm.approvalNote')}`),
       noLink: true,
     })),
     1,
+    language,
   );
 }
 
@@ -71,18 +72,18 @@ export async function confirmRemoveWallet(
     [
       {
         type: 'warning',
-        buttons: ['Remove wallet', 'Cancel'],
+        buttons: [t('remove.button'), t('common.cancel')],
         defaultId: 1,
         cancelId: 1,
-        title: 'Remove wallet from this device?',
-        message: 'Permanently remove this wallet from this device?',
+        title: t('remove.title'),
+        message: t('remove.question'),
         detail: wrapDetailText(
-          `Account: ${groupQrlAddress(address)}\n\n` +
-            'The encrypted seed will be deleted from this device. You can restore the wallet only with your recovery phrase. This cannot be undone.',
+          `${t('confirm.account')} ${groupQrlAddress(address)}\n\n` + t('remove.warning'),
         ),
         noLink: true,
       },
     ],
     0,
+    getLanguage(),
   );
 }

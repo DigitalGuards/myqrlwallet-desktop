@@ -30,6 +30,7 @@
  * flow as the renderer path (src/main/walletRemoval.ts), now parented to the
  * wallet window because the panel has no window of its own.
  */
+import { getLanguage, onLanguageChanged } from './language';
 import path from 'node:path';
 import {
   app,
@@ -118,6 +119,16 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
     settingsView !== null &&
     !settingsView.webContents.isDestroyed() &&
     event.sender === settingsView.webContents;
+
+  onLanguageChanged((language) => {
+    if (settingsView && !settingsView.webContents.isDestroyed()) {
+      settingsView.webContents.send(EVENTS.LANGUAGE_CHANGED, language);
+    }
+  });
+  ipcMain.handle('settings:getLanguage', (event) => {
+    if (!fromSettingsView(event)) throw new Error('unauthorized');
+    return getLanguage();
+  });
 
   ipcMain.handle('settings:get', async (event) => {
     if (!fromSettingsView(event)) throw new Error('unauthorized');
@@ -211,7 +222,7 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
       case 'reregister-protocol': {
         const ok = deps.reregisterProtocol();
         logMain(`[settings] qrlconnect re-registration: ${ok ? 'ok' : 'FAILED'}`);
-        return ok ? { ok: true } : { ok: false, error: 'Registration was refused by the OS.' };
+        return ok ? { ok: true } : { ok: false, errorKey: 'settings.registrationRefused' };
       }
       case 'open-logs': {
         const dir = logsDir();

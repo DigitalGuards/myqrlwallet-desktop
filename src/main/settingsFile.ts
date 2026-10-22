@@ -6,8 +6,8 @@
  * to defaults, never throws at startup).
  *
  * File: userData/settings.json. Versioned zod-strict envelope
- * `{ v: 1, autolockMs?, biometricUnlock?, legacyNoticeAckV1? }`. NO SECRETS, EVER: same-user
- * malware can read this file; the worst it learns is a timeout preference.
+ * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1? }`. NO SECRETS, EVER: same-user
+ * malware can read this file; it learns only non-secret preferences.
  *
  * Autolock resolution order (getEffectiveAutolockMs):
  *   env QRL_AUTOLOCK_MS (explicit operator override, pre-existing behavior)
@@ -22,6 +22,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { LanguageSchema } from '../shared/schemas';
+import type { Language } from '../shared/language';
 import { DEFAULT_AUTOLOCK_MS } from '../shared/constants';
 
 /** Bounds for a STORED autolock timeout. The env override is not clamped
@@ -33,6 +35,7 @@ export const AUTOLOCK_MAX_MS = 3_600_000;
  * corrupt (self-heals to defaults) rather than silently carrying junk. */
 const StoredSettingsSchema = z.strictObject({
   v: z.literal(1),
+  language: LanguageSchema.optional(),
   autolockMs: z.number().int().optional(),
   biometricUnlock: z.boolean().optional(),
   /** The one-time v3 storage notice has been shown and dismissed. */
@@ -41,8 +44,9 @@ const StoredSettingsSchema = z.strictObject({
 
 export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
 
-/** The renderer-of-the-settings-window facing patch shape (both optional). */
+/** Main-owned settings store patch. Native security settings use a separate IPC schema. */
 export interface SettingsPatch {
+  language?: Language | undefined;
   autolockMs?: number | undefined;
   biometricUnlock?: boolean | undefined;
   legacyNoticeAckV1?: boolean | undefined;
@@ -58,6 +62,7 @@ export function clampAutolockMs(ms: number): number {
 /** Normalise a parsed envelope: clamp the stored autolock into bounds. */
 function normalise(s: StoredSettings): StoredSettings {
   const out: StoredSettings = { v: 1 };
+  if (s.language !== undefined) out.language = s.language;
   if (s.autolockMs !== undefined) out.autolockMs = clampAutolockMs(s.autolockMs);
   if (s.biometricUnlock !== undefined) out.biometricUnlock = s.biometricUnlock;
   if (s.legacyNoticeAckV1 !== undefined) out.legacyNoticeAckV1 = s.legacyNoticeAckV1;
@@ -144,18 +149,35 @@ export async function writeSettingsFile(filePath: string, next: StoredSettings):
 
 /** Read-merge-write a partial update; returns the stored result. Undefined
  * patch fields leave the existing values untouched. */
-export async function updateSettingsFile(
-  filePath: string,
-  patch: SettingsPatch,
-): Promise<StoredSettings> {
+async function mergeSettingsFile(filePath: string, patch: SettingsPatch): Promise<StoredSettings> {
   const current = await readSettingsFile(filePath);
   const next: StoredSettings = { ...current };
+  if (patch.language !== undefined) next.language = patch.language;
   if (patch.autolockMs !== undefined) next.autolockMs = patch.autolockMs;
   if (patch.biometricUnlock !== undefined) next.biometricUnlock = patch.biometricUnlock;
   if (patch.legacyNoticeAckV1 !== undefined) next.legacyNoticeAckV1 = patch.legacyNoticeAckV1;
-  const validated = normalise(next);
+  const validated = normalise(StoredSettingsSchema.parse(next));
   await atomicWrite(filePath, JSON.stringify(validated, null, 2));
   return validated;
+}
+
+// Each file has its own write queue; failed writes leave later updates usable.
+const updates = new Map<string, Promise<StoredSettings>>();
+export function updateSettingsFile(
+  filePath: string,
+  patch: SettingsPatch,
+): Promise<StoredSettings> {
+  const previous = updates.get(filePath) ?? Promise.resolve(SETTINGS_DEFAULTS);
+  const result = previous
+    .catch(() => SETTINGS_DEFAULTS)
+    .then(() => mergeSettingsFile(filePath, patch));
+  updates.set(filePath, result);
+  void result
+    .finally(() => {
+      if (updates.get(filePath) === result) updates.delete(filePath);
+    })
+    .catch(() => undefined);
+  return result;
 }
 
 // ---- app-bound wrappers (Electron main process only) ------------------------
