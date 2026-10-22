@@ -10,6 +10,9 @@
  * zod 4 matches the version used by myqrlwallet-frontend.
  */
 import { z } from 'zod';
+import { LANGUAGES } from './language';
+
+export const LanguageSchema = z.enum(LANGUAGES);
 import { MLDSA87, SCHEME } from './constants';
 import { QRL_ADDRESS_PATTERN } from './address';
 import { assertValidQrlAddressCase } from './addressCase';

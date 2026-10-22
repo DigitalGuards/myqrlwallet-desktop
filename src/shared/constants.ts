@@ -14,6 +14,7 @@
  * arbitrary channel.
  */
 export const IPC = {
+  SET_LANGUAGE: 'wallet:setLanguage',
   /** Returns the on-chain balance for an address (read-only, no unlock). */
   GET_BALANCE: 'wallet:getBalance',
   /** Assembles an unsigned transaction (nonce/gas/chainId filled from RPC). */
@@ -67,6 +68,7 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 
 /** Renderer-facing event channels (main -> renderer, one-way). */
 export const EVENTS = {
+  LANGUAGE_CHANGED: 'wallet:languageChanged',
   /** Emitted with a boolean `locked` whenever the signer session changes. */
   LOCK_STATE_CHANGED: 'wallet:lockStateChanged',
   /** Emitted with a raw qrlconnect:// URI string that arrived via the OS

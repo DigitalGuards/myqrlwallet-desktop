@@ -10,6 +10,7 @@
  * dismissing the unlock window while still locked quits the app rather than
  * revealing the wallet behind it.
  */
+import { getLanguage, onLanguageChanged, t } from './language';
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { logConsole } from './log';
@@ -135,6 +136,17 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
   const fromUnlockWindow = (event: IpcMainInvokeEvent): boolean =>
     unlockWin !== null && !unlockWin.isDestroyed() && event.sender === unlockWin.webContents;
 
+  onLanguageChanged((language) => {
+    if (unlockWin && !unlockWin.isDestroyed()) {
+      unlockWin.setTitle(t('unlock.title'));
+      unlockWin.webContents.send(EVENTS.LANGUAGE_CHANGED, language);
+    }
+  });
+  ipcMain.handle('unlock:getLanguage', (event) => {
+    if (!fromUnlockWindow(event)) throw new Error('unauthorized');
+    return getLanguage();
+  });
+
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
     const [seeds, active, biometricEnabled] = await Promise.all([
@@ -160,10 +172,10 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const body: Record<string, unknown> = isRecord(arg) ? arg : {};
     const { password, address } = body;
     if (typeof password !== 'string' || password.length === 0 || password.length > 1024) {
-      return { ok: false, error: 'Enter your password.' };
+      return { ok: false, errorKey: 'unlock.enterPassword' };
     }
     const encrypted = await resolveTarget(address);
-    if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
+    if (!encrypted) return { ok: false, errorKey: 'unlock.noWallet' };
     try {
       // Re-provision the OS-vault KEK when the user EXPLICITLY enabled
       // biometric quick unlock in settings and none is stored (mirrors the
@@ -196,7 +208,7 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
       return { ok: true };
     } catch {
       // Never surface crypto detail: a failed decrypt reads as a wrong password.
-      return { ok: false, error: 'Incorrect password. Please try again.' };
+      return { ok: false, errorKey: 'unlock.incorrect' };
     }
   });
 
@@ -205,21 +217,21 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     const body: Record<string, unknown> = isRecord(arg) ? arg : {};
     const { address } = body;
     const encrypted = await resolveTarget(address);
-    if (!encrypted) return { ok: false, error: 'No wallet to unlock.' };
+    if (!encrypted) return { ok: false, errorKey: 'unlock.noWallet' };
     // The settings preference is authoritative even if the toggle-off sweep
     // failed to delete a stored KEK.
     if (!(await getBiometricUnlockEnabled())) {
-      return { ok: false, error: 'Biometric unlock is disabled in Settings.' };
+      return { ok: false, errorKey: 'unlock.biometricDisabled' };
     }
     const kekHex = await deps.keyVault.retrieve(encrypted.address);
-    if (!kekHex) return { ok: false, error: 'Biometric unlock is unavailable. Use your password.' };
+    if (!kekHex) return { ok: false, errorKey: 'unlock.biometricUnavailable' };
     try {
       await deps.signer.unlock({ encrypted, autolockMs: await getEffectiveAutolockMs(), kekHex });
       await setActiveAddress(encrypted.address);
       finishUnlock(deps);
       return { ok: true };
     } catch {
-      return { ok: false, error: 'Biometric unlock failed. Use your password.' };
+      return { ok: false, errorKey: 'unlock.biometricPassword' };
     }
   });
 }
@@ -267,7 +279,7 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     show: false,
     backgroundColor: '#080c16',
     ...windowIcon,
-    title: 'Unlock MyQRLWallet',
+    title: t('unlock.title'),
     autoHideMenuBar: true,
     webPreferences: hardenedWebPreferences(preload),
   });

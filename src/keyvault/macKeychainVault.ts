@@ -25,6 +25,7 @@
  *   delete <service> <account>           -> "ok"
  * Exit code 0 on success; non-zero with a short message on stderr otherwise.
  */
+import { t } from '../main/language';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import type { KeyVault } from './index';
@@ -83,7 +84,7 @@ export class MacKeychainVault implements KeyVault {
 
   async retrieve(account: string): Promise<string | null> {
     try {
-      const out = await this.run(['get', SERVICE, account, 'Unlock your QRL wallet']);
+      const out = await this.run(['get', SERVICE, account, t('unlock.keychainReason')]);
       return out || null;
     } catch {
       // user cancelled the biometric prompt, or item absent

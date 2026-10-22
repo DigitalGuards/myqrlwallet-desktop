@@ -11,6 +11,7 @@
  * `buildTransaction`, `requestSignature` and `unlock`; the remainder are the
  * minimal lifecycle calls a working wallet needs (provision, status, lock).
  */
+import type { Language } from './language';
 import type {
   BalanceResult,
   BuildTransactionRequest,
@@ -102,10 +103,11 @@ export interface QrlWalletApi {
 
   // ---- desktop settings -----------------------------------------------------
   /** Ask main to show/focus the native desktop settings panel. Fire-and-ask:
-   * no data crosses in either direction (main-owned settings are never
-   * readable or writable from the renderer) and the request is rejected while
+   * no data crosses in either direction (security settings remain native-owned) and the request is rejected while
    * the wallet is locked. */
   openDesktopSettings(): Promise<void>;
+  /** Select one bundled native catalog; persists and applies immediately. */
+  setLanguage(language: Language): Promise<void>;
 
   // ---- events -------------------------------------------------------------
   /** Subscribe to lock-state changes (e.g. autolock). Returns an unsubscribe. */

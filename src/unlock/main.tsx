@@ -1,3 +1,5 @@
+import { useNativeLanguage, type NativeLanguageBridge } from '../shared/useNativeLanguage';
+import type { MessageKey } from '../shared/i18n';
 import { StrictMode, useEffect, useState, type SyntheticEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 // Self-hosted variable fonts, the same faces the wallet renderer uses
@@ -14,7 +16,7 @@ import { formatQrlAddressFingerprint } from '../shared/address';
 
 interface UnlockResult {
   ok: boolean;
-  error?: string;
+  errorKey?: MessageKey;
 }
 
 interface UnlockWalletInfo {
@@ -22,7 +24,7 @@ interface UnlockWalletInfo {
   keychainBacked: boolean;
 }
 
-interface UnlockBridge {
+interface UnlockBridge extends NativeLanguageBridge {
   getInfo(): Promise<{ wallets: UnlockWalletInfo[]; active: string | null }>;
   submit(password: string, address?: string): Promise<UnlockResult>;
   biometric(address?: string): Promise<UnlockResult>;
@@ -34,17 +36,13 @@ declare global {
   }
 }
 
-function accountLabel(address: string | null): string {
-  if (!address) return 'your wallet';
-  return formatQrlAddressFingerprint(address);
-}
-
 function UnlockApp() {
+  const { t } = useNativeLanguage(window.unlockBridge, 'unlock.title');
   const [wallets, setWallets] = useState<UnlockWalletInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
 
   const selectedWallet = wallets.find((w) => w.address === selected) ?? null;
@@ -75,13 +73,13 @@ function UnlockApp() {
     try {
       const result = await window.unlockBridge.submit(password, selected ?? undefined);
       if (!result.ok) {
-        setError(result.error ?? 'Incorrect password. Please try again.');
+        setError(result.errorKey ?? 'unlock.incorrect');
         setPassword('');
         setBusy(false);
       }
       // On success, main closes this window; keep the spinner up until it does.
     } catch {
-      setError('Unlock failed. Please try again.');
+      setError('unlock.failed');
       setBusy(false);
     }
   }
@@ -93,11 +91,11 @@ function UnlockApp() {
     try {
       const result = await window.unlockBridge.biometric(selected ?? undefined);
       if (!result.ok) {
-        setError(result.error ?? 'Biometric unlock failed.');
+        setError(result.errorKey ?? 'unlock.biometricFailed');
         setBusy(false);
       }
     } catch {
-      setError('Biometric unlock failed.');
+      setError('unlock.biometricFailed');
       setBusy(false);
     }
   }
@@ -110,7 +108,7 @@ function UnlockApp() {
         {wallets.length > 1 ? (
           <select
             className="unlock-account-select"
-            aria-label="Account to unlock"
+            aria-label={t('unlock.account')}
             title={selected ?? undefined}
             value={selected ?? ''}
             disabled={busy}
@@ -121,7 +119,7 @@ function UnlockApp() {
           >
             {wallets.map((w) => (
               <option key={w.address} value={w.address}>
-                {accountLabel(w.address)}
+                {formatQrlAddressFingerprint(w.address)}
               </option>
             ))}
           </select>
@@ -132,8 +130,8 @@ function UnlockApp() {
               autoFocus
               className="unlock-input"
               type={show ? 'text' : 'password'}
-              placeholder="Enter password"
-              aria-label="Enter password"
+              placeholder={t('unlock.password')}
+              aria-label={t('unlock.password')}
               value={password}
               disabled={busy}
               onChange={(event) => {
@@ -147,12 +145,12 @@ function UnlockApp() {
               tabIndex={-1}
               onClick={() => setShow((value) => !value)}
             >
-              {show ? 'Hide' : 'Show'}
+              {t(show ? 'unlock.hide' : 'unlock.show')}
             </button>
           </div>
-          {error && <p className="unlock-error">{error}</p>}
+          {error && <p className="unlock-error">{t(error)}</p>}
           <button className="unlock-button" type="submit" disabled={busy || password.length === 0}>
-            {busy ? 'Unlocking...' : 'Unlock'}
+            {t(busy ? 'unlock.busy' : 'unlock.submit')}
           </button>
           {keychain && (
             <button
@@ -161,11 +159,11 @@ function UnlockApp() {
               disabled={busy}
               onClick={() => void biometric()}
             >
-              Unlock with Touch ID
+              {t('unlock.touchId')}
             </button>
           )}
         </form>
-        <p className="unlock-hint">Forgot password? Re-import your recovery phrase.</p>
+        <p className="unlock-hint">{t('unlock.recovery')}</p>
       </main>
     </div>
   );

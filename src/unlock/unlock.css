@@ -125,15 +125,21 @@ body {
 
 .unlock-input-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .unlock-input {
   width: 100%;
-  padding: 12px 64px 12px 14px;
+  min-width: 0;
+  padding: 12px 14px;
   font-size: 15px;
   color: var(--fg);
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
   outline: none;
   transition:
@@ -141,7 +147,7 @@ body {
     box-shadow 140ms;
 }
 
-.unlock-input:focus {
+.unlock-input-wrap:focus-within {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-ring);
 }
@@ -151,10 +157,8 @@ body {
 }
 
 .unlock-eye {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex-shrink: 0;
+  margin-right: 6px;
   background: none;
   border: 0;
   color: var(--muted-fg);

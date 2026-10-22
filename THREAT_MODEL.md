@@ -41,6 +41,40 @@ network/dApp -> renderer -> [contextBridge] -> preload -> [IPC] -> main -> [pare
 - The signer is reachable only from main, over `parentPort`. The renderer has no
   handle to it.
 
+### Native language selection
+
+`window.qrlWallet.setLanguage(language)` is the renderer's sole native language
+control. `IPC.SET_LANGUAGE` uses the same `isTrustedSender` top-frame gate and
+zod argument validation as other wallet IPC calls. The schema accepts exactly
+`en`, `de`, `es`, `ru`, and `zh-CN`. A renderer can only select one of five static
+catalogs bundled with the application. It cannot inject label text, catalog
+paths, placeholders, code, markup or translation URLs.
+
+Desktop-owned unlock and settings windows, custom menu items, and wallet-owned
+error and startup notices use these static catalogs. Platform menu roles,
+including About and Quit, retain their OS-provided behavior and localization.
+Trusted transaction, message, typed-data and Remove wallet confirmations remain
+English in every language for now. Their code, page boundaries, acceptance
+limits and approval behavior are unchanged. Confirmation translation is deferred
+to a separate change after the page-visibility fix.
+
+Before the renderer reports on each launch, main resolves the OS preferred
+languages (or OS locale), with English as the fallback. Accepted choices are
+persisted as the optional `language` field of `userData/settings.json`. Store
+updates are serialized so concurrent language and security-setting writes
+preserve each other's fields. The wallet renderer gains no access to auto-lock,
+biometric preferences or other settings through this method.
+
+The isolated unlock and settings surfaces receive only a validated language
+code through their narrow read/subscription bridges; each renders its own
+bundled catalog. A live change updates those surfaces and custom menu items
+without a reload. Open and arming trusted confirmations stay in English and
+continue under the existing lifecycle and abort checks.
+
+Translation interpolation uses one replacement pass, so data containing
+placeholder syntax remains data. External error details retain their original
+text. Quanta, QRL, QRL 2.0 and MyQRLWallet remain unchanged.
+
 ## Attacker model and what each control buys (and its limits)
 
 ### A. Same-user malware / infostealer (no code injection)
@@ -489,12 +523,14 @@ had, and none of it depends on being a window:
 - **Settings is main-owned** (`src/main/settingsView.ts`, its pure decision
   helpers in `src/main/settingsViewPolicy.ts`, and `src/settings/`): its own
   web contents with the same `hardenedWebPreferences`, its own preload exposing
-  only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`), a
+  only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`, plus
+  `getLanguage`/`onLanguageChanged`), a
   no-network meta CSP, and every IPC handler gated by a live-sender check
   (`fromSettingsView`: the event sender must BE this view's web contents) plus
   a zod-strict argument parse. The wallet renderer is a different web contents
   underneath: it cannot draw into the panel, script it, read its DOM, or
-  read/write any setting. Its only capability is asking main to show the panel
+  read/write its security settings. It can select a bundled language through
+  the separate validated method above and ask main to show the panel
   (`IPC.OPEN_DESKTOP_SETTINGS`, sender-gated, no data in either direction).
   Keyboard focus moves into the panel when it opens and returns to the wallet
   renderer when it closes; tab traversal does not cross web contents, so it
@@ -527,10 +563,12 @@ had, and none of it depends on being a window:
   trusted to clean up after a removal it did not perform.
 - **Settings store holds no secrets** (`src/main/settingsFile.ts`,
   `userData/settings.json`): a versioned, zod-strict envelope
-  (`autolockMs`, `biometricUnlock`) written atomically at mode `0600` like the
+  (`autolockMs`, `biometricUnlock`, `language`, `legacyNoticeAckV1`) written
+  atomically at mode `0600` like the
   seed store, self-healing on corruption (any unparsable content degrades to
   defaults; startup never throws). Same-user malware reading it learns only a
-  timeout preference. Autolock resolves env `QRL_AUTOLOCK_MS` > store >
+  timeout, language and feature preferences. Autolock resolves env
+  `QRL_AUTOLOCK_MS` > store >
   default; a live change re-arms the open signer session via the private
   `signer:setAutolock` message, which is never exposed on the renderer bridge.
   Disabling biometric unlock deletes every wallet's stored KEK from the OS

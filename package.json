@@ -32,7 +32,8 @@
     "dist:linux": "npm run build && electron-builder --linux --x64",
     "rebuild:native": "electron-builder install-app-deps",
     "fuses:read": "electron-fuses read --app",
-    "predist:win": "node scripts/ensure-win-napi.cjs"
+    "predist:win": "node scripts/ensure-win-napi.cjs",
+    "test:e2e:i18n": "node --import tsx scripts/e2e-i18n.mjs"
   },
   "overrides": {
     "@theqrl/mldsa87": "$@theqrl/mldsa87",

@@ -17,6 +17,7 @@ import type { QrlWalletApi } from '../shared/bridge';
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
+  setLanguage: (language) => ipcRenderer.invoke(IPC.SET_LANGUAGE, language),
   // A COMPATIBILITY HINT. It tells a renderer which optional request fields
   // this shell's schemas understand, so a newer renderer can omit a field an
   // older shell would reject. The security control stays the schema: every
