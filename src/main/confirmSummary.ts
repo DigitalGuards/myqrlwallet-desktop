@@ -12,7 +12,7 @@
  * record is the only wallet-computed input here; when one is missing, the
  * summary says so plainly.
  */
-import { translator } from '../shared/i18n';
+import { translator, type MessageKey, type Values } from '../shared/i18n';
 import type { Language } from '../shared/language';
 type Translator = ReturnType<typeof translator>;
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
@@ -28,6 +28,7 @@ import {
 } from '../shared/typedData';
 
 const DECIMALS = 18n;
+const english = translator('en');
 
 /** Conservative width shared by every trusted confirmation detail line. */
 export const DETAIL_LINE_COLUMNS = 48;
@@ -126,14 +127,49 @@ export const TYPED_DATA_DISPLAY_LIMITS = {
   labelChars: 80,
 } as const;
 
-export const SIGNATURE_APPROVAL_NOTE = translator('en')('confirm.approvalNote');
+export const SIGNATURE_APPROVAL_NOTE = english('confirm.approvalNote');
+
+/** Only display-budget failures can retry with the English page boundaries. */
+class ReviewLimitError extends Error {
+  constructor(
+    readonly key: MessageKey,
+    t: Translator,
+    readonly values: Values = {},
+  ) {
+    super(t(key, values));
+  }
+}
+
+/** English decides acceptance. Localized labels may consume additional pages. */
+function translatedPages(
+  render: (text: Translator, layout?: Translator) => string[],
+  t: Translator,
+): string[] {
+  let baseline: string[];
+  try {
+    baseline = render(english);
+  } catch (error) {
+    if (error instanceof ReviewLimitError)
+      throw new Error(t(error.key, error.values), { cause: error });
+    throw error;
+  }
+  if (t === english) return baseline;
+  try {
+    return render(t);
+  } catch (error) {
+    if (!(error instanceof ReviewLimitError)) throw error;
+    // Keep every translated row and use the same row-to-page assignment as English.
+    // These pages may be taller than the preferred localized display budget.
+    return render(t, english);
+  }
+}
 
 /** Full metadata must fit on page one. Bound escaping before measuring it. */
 function fullTypedText(value: string, t: Translator): string {
   const maxChars = TYPED_DATA_DISPLAY_LIMITS.lines * DETAIL_LINE_COLUMNS;
-  if (value.length > maxChars) throw new Error(t('error.metadata'));
+  if (value.length > maxChars) throw new ReviewLimitError('error.metadata', t);
   const escaped = singleLineText(value.slice(0, maxChars));
-  if (escaped.length > maxChars) throw new Error(t('error.metadata'));
+  if (escaped.length > maxChars) throw new ReviewLimitError('error.metadata', t);
   return escaped;
 }
 
@@ -302,6 +338,7 @@ function* messageHexRows(hex: string): Generator<string> {
 function messagePages(
   req: Extract<SignatureRequest, { kind: 'message' }>,
   t: Translator,
+  layout: Translator = t,
 ): string[] {
   const hex = req.messageHex.startsWith('0x') ? req.messageHex.slice(2) : req.messageHex;
   let text: string | undefined;
@@ -313,40 +350,44 @@ function messagePages(
   } catch {
     // Invalid UTF-8 receives complete hexadecimal review.
   }
-  const heading = t(text === undefined ? 'confirm.messageHex' : 'confirm.messageText', {
-    bytes: hex.length / 2,
-  });
-  const header = [
-    row(t('confirm.account'), groupQrlAddress(req.signer)),
-    req.origin ? originDetail(req.origin, t) : t('confirm.renderer'),
+  const headerFor = (labels: Translator): string[] => [
+    row(labels('confirm.account'), groupQrlAddress(req.signer)),
+    req.origin ? originDetail(req.origin, labels) : labels('confirm.renderer'),
+    labels(text === undefined ? 'confirm.messageHex' : 'confirm.messageText', {
+      bytes: hex.length / 2,
+    }),
   ];
+  const header = headerFor(t);
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
-  const tooLong = t('error.messageLong', { pages: maxPages });
-  const base = [...header, heading].join('\n');
-  const baseLines = typedDataDisplayLines(`${base}\n\n${t('confirm.approvalNote')}`);
-  if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(tooLong);
+  const tooLong = () => new ReviewLimitError('error.messageLong', t, { pages: maxPages });
+  const base = headerFor(layout).join('\n');
+  const baseLines = typedDataDisplayLines(`${base}\n\n${layout('confirm.approvalNote')}`);
+  if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw tooLong();
   let body: string[] = [];
   const bodies = [body];
   let used = baseLines;
-  const rows = text === undefined ? messageHexRows(hex) : messageTextRows(text, t);
+  const rows = text === undefined ? messageHexRows(hex) : messageTextRows(text, layout);
+  const translated = text === undefined ? messageHexRows(hex) : messageTextRows(text, t);
   // Stop at the page cap while preparing the full review, before opening a dialog.
   for (const line of rows) {
     const cost = typedDataDisplayLines(line);
     if (used + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
       if (bodies.length >= maxPages || baseLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
-        throw new Error(tooLong);
+        throw tooLong();
       }
       body = [];
       bodies.push(body);
       used = baseLines;
     }
-    body.push(line);
+    const rendered = translated.next();
+    if (rendered.done) throw new Error('missing translated message row');
+    body.push(rendered.value);
     used += cost;
   }
-  return bodies.map((bodyLines) => wrapDetailText([...header, heading, ...bodyLines].join('\n')));
+  return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));
 }
 
-function displayTypedText(value: string, length: string): string {
+function displayTypedText(value: string, length: string, translatedLength: string): string {
   // Escape only a bounded input prefix, even for maximum-size control text.
   const limit = TYPED_DATA_DISPLAY_LIMITS.valueChars;
   let input = '';
@@ -362,7 +403,7 @@ function displayTypedText(value: string, length: string): string {
     if (prefix.length + token.length + suffix.length > limit) break;
     prefix += token;
   }
-  return prefix + suffix;
+  return prefix + `…" [${translatedLength}]`;
 }
 
 function* typedMessageRows(payload: TypedDataPayload, t: Translator): Generator<string> {
@@ -419,21 +460,20 @@ function typedScalar(
   if ((parsed.kind === 'bytes' || parsed.kind === 'bytesN') && value.length <= 66) {
     return `"${value}"`;
   }
-  const length =
-    parsed.kind === 'bytes' || parsed.kind === 'bytesN'
-      ? t('confirm.bytes', { count: (value.length - 2) / 2 })
-      : t('confirm.characters', { count: value.length });
-  return displayTypedText(value, length);
+  const bytes = parsed.kind === 'bytes' || parsed.kind === 'bytesN';
+  const key = bytes ? 'confirm.bytes' : 'confirm.characters';
+  const values = { count: bytes ? (value.length - 2) / 2 : value.length };
+  // The fixed English suffix budget selects source characters before translation.
+  return displayTypedText(value, english(key, values), t(key, values));
 }
 
-function typedDataPages(
+function typedDataHeader(
   req: Extract<SignatureRequest, { kind: 'typedData' }>,
-  connectedChainId: number | undefined,
   t: Translator,
 ): string[] {
   const { payload } = req;
   const scheme = typedDataSchemeVersion(payload);
-  const header = [
+  return [
     ...(req.origin
       ? [
           t('confirm.origin'),
@@ -459,6 +499,13 @@ function typedDataPages(
       'dapp',
     ),
   ];
+}
+
+function typedDataMetadata(
+  payload: TypedDataPayload,
+  connectedChainId: number | undefined,
+  t: Translator,
+): string[] {
   const lines: string[] = [];
   for (const [name, type] of [
     ['name', 'string'],
@@ -491,25 +538,40 @@ function typedDataPages(
     lines.push(t('confirm.chainUnbound'));
   }
   lines.push(wrapDetailText(`${t('confirm.primaryType')} ${payload.primaryType}`, 'dapp'));
+  return lines;
+}
+
+function typedDataPages(
+  req: Extract<SignatureRequest, { kind: 'typedData' }>,
+  connectedChainId: number | undefined,
+  t: Translator,
+  layout: Translator = t,
+): string[] {
+  const { payload } = req;
+  const header = typedDataHeader(req, t);
+  const lines = typedDataMetadata(payload, connectedChainId, t);
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
   // Metadata is mandatory on page one; later pages repeat the compact header.
-  const base = header.join('\n');
-  const baseLines = typedDataDisplayLines(`${base}\n\n${t('confirm.approvalNote')}`);
+  const base = typedDataHeader(req, layout).join('\n');
+  const baseLines = typedDataDisplayLines(`${base}\n\n${layout('confirm.approvalNote')}`);
   const heading = t('confirm.fields');
-  const headingLines = typedDataDisplayLines(heading);
+  const headingLines = typedDataDisplayLines(layout('confirm.fields'));
   const continuationLines = baseLines + headingLines;
-  let used = baseLines + typedDataDisplayLines(lines.join('\n'));
-  if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(t('error.metadata'));
+  let used =
+    baseLines +
+    typedDataDisplayLines(typedDataMetadata(payload, connectedChainId, layout).join('\n'));
+  if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new ReviewLimitError('error.metadata', t);
   const bodies = [lines];
   let body = lines;
   let needsHeading = true;
   // Consume rows lazily so a request over the page limit stops formatting as
   // soon as it is known to be too large. No dialog is shown during preparation.
-  for (const field of typedMessageRows(payload, t)) {
+  const translated = typedMessageRows(payload, t);
+  for (const field of typedMessageRows(payload, layout)) {
     const cost = typedDataDisplayLines(field);
     if (used + cost + (needsHeading ? headingLines : 0) > TYPED_DATA_DISPLAY_LIMITS.lines) {
       if (bodies.length >= maxPages || continuationLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
-        throw new Error(t('error.typedLong', { pages: maxPages }));
+        throw new ReviewLimitError('error.typedLong', t, { pages: maxPages });
       }
       body = [];
       bodies.push(body);
@@ -522,7 +584,9 @@ function typedDataPages(
       used += headingLines;
       needsHeading = false;
     }
-    body.push(field);
+    const rendered = translated.next();
+    if (rendered.done) throw new Error('missing translated typed-data row');
+    body.push(rendered.value);
     used += cost;
   }
   return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));
@@ -536,32 +600,6 @@ function typedDataPages(
  */
 const UNATTRIBUTED_GAS_BLOCK_SHARE = 10n;
 
-/** Keep complete labelled rows together, including their source-marked continuations. */
-function transactionPages(detail: string, t: Translator): string[] {
-  const capacity =
-    TYPED_DATA_DISPLAY_LIMITS.lines - typedDataDisplayLines(`\n${t('confirm.approvalNote')}`);
-  const groups: string[][] = [];
-  for (const line of wrapDetailText(detail).split('\n')) {
-    const previous = groups.at(-1);
-    if (previous && /^(?: {4}|\u200e {4}\| )/u.test(line)) previous.push(line);
-    else groups.push([line]);
-  }
-  const pages: string[] = [];
-  let current: string[] = [];
-  for (const group of groups) {
-    if (group.length > capacity) throw new Error(t('error.transactionLong'));
-    if (current.length + group.length > capacity) {
-      pages.push(current.join('\n'));
-      current = [];
-    }
-    current.push(...group);
-  }
-  if (current.length) pages.push(current.join('\n'));
-  if (pages.length > TYPED_DATA_DISPLAY_LIMITS.pages) throw new Error(t('error.transactionLong'));
-  return pages;
-}
-
-/** The wording that explains what an over-large gas limit can actually cost. */
 /** The gas-limit row plus any provenance or warning lines that belong with it. */
 function gasLines(
   gas: string,
@@ -633,7 +671,7 @@ export function summariseSignatureRequest(
   context: ConfirmContext = {},
   language: Language = 'en',
 ): ConfirmSummary {
-  const t = translator(language);
+  const t = language === 'en' ? english : translator(language);
   const { build, blockGasLimit } = context;
   switch (req.kind) {
     case 'transaction': {
@@ -669,7 +707,7 @@ export function summariseSignatureRequest(
         title: t('confirm.transactionTitle'),
         // Two explicit lines keep the max cost prominent without a toolkit wrap.
         message: t('confirm.send', { amount: formatQuanta(tx.value), cost: formatQuanta(maxCost) }),
-        pages: transactionPages(detail + originDetail(req.origin, t), t),
+        pages: [wrapDetailText(detail + originDetail(req.origin, t))],
       };
     }
     case 'message':
@@ -678,13 +716,16 @@ export function summariseSignatureRequest(
         message: t('confirm.messageQuestion'),
         // req.signer is trustworthy to display: main verified it against the
         // unlocked session before this modal, and the signer re-enforces it.
-        pages: messagePages(req, t),
+        pages: translatedPages((labels, layout) => messagePages(req, labels, layout), t),
       };
     case 'typedData':
       return {
         title: t('confirm.typedTitle'),
         message: t('confirm.typedQuestion'),
-        pages: typedDataPages(req, context.connectedChainId, t),
+        pages: translatedPages(
+          (labels, layout) => typedDataPages(req, context.connectedChainId, labels, layout),
+          t,
+        ),
       };
   }
 }

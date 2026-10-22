@@ -1,7 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'error.transactionLong': '交易详细信息超出可信确认对话框的显示限制。',
   'unlock.keychainReason': '解锁你的 QRL 钱包',
   'common.cancel': '取消',
   'common.next': '下一步',
@@ -132,26 +131,6 @@ const catalog = {
     '原有钱包文件将保留。导入恢复短语或扩展种子以创建对应的 v3 账户。若要恢复早期备份，请打开 Desktop v1.0.0 并使用其钱包导出功能。早期测试网余额不会转入 v3。',
   'menu.settings': '设置...',
   'menu.file': '文件',
-  'menu.about': '关于 MyQRLWallet',
-  'menu.services': '服务',
-  'menu.hide': '隐藏 MyQRLWallet',
-  'menu.hideOthers': '隐藏其他',
-  'menu.unhide': '全部显示',
-  'menu.quit': '退出 MyQRLWallet',
-  'menu.edit': '编辑',
-  'menu.undo': '撤销',
-  'menu.redo': '重做',
-  'menu.cut': '剪切',
-  'menu.copy': '复制',
-  'menu.paste': '粘贴',
-  'menu.selectAll': '全选',
-  'menu.window': '窗口',
-  'menu.minimize': '最小化',
-  'menu.zoom': '缩放',
-  'menu.close': '关闭',
-  'menu.front': '全部置于前端',
-  'about.version': '版本 {{version}}',
-  'about.description': '采用隔离签名器的后量子 QRL 桌面钱包。',
 } satisfies Record<keyof typeof en, string>;
 
 export default catalog;

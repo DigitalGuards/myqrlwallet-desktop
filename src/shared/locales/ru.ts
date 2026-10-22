@@ -1,8 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'error.transactionLong':
-    'Сведения о транзакции превышают лимит отображения доверенного подтверждения.',
   'unlock.keychainReason': 'Разблокируйте кошелёк QRL',
   'common.cancel': 'Отмена',
   'common.next': 'Далее',
@@ -146,26 +144,6 @@ const catalog = {
     'Прежние файлы кошельков сохранены. Импортируйте фразу восстановления или расширенный сид, чтобы создать аккаунт v3. Для восстановления прежней резервной копии откройте Desktop v1.0.0 и воспользуйтесь экспортом кошелька. Прежние балансы тестовой сети не переносятся в v3.',
   'menu.settings': 'Настройки...',
   'menu.file': 'Файл',
-  'menu.about': 'О MyQRLWallet',
-  'menu.services': 'Службы',
-  'menu.hide': 'Скрыть MyQRLWallet',
-  'menu.hideOthers': 'Скрыть остальные',
-  'menu.unhide': 'Показать все',
-  'menu.quit': 'Выйти из MyQRLWallet',
-  'menu.edit': 'Правка',
-  'menu.undo': 'Отменить',
-  'menu.redo': 'Повторить',
-  'menu.cut': 'Вырезать',
-  'menu.copy': 'Копировать',
-  'menu.paste': 'Вставить',
-  'menu.selectAll': 'Выбрать всё',
-  'menu.window': 'Окно',
-  'menu.minimize': 'Свернуть',
-  'menu.zoom': 'Масштаб',
-  'menu.close': 'Закрыть',
-  'menu.front': 'Все окна на передний план',
-  'about.version': 'Версия {{version}}',
-  'about.description': 'Постквантовый настольный кошелёк QRL с изолированным модулем подписи.',
 } satisfies Record<keyof typeof en, string>;
 
 export default catalog;

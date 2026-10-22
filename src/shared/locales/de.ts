@@ -1,8 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'error.transactionLong':
-    'Transaktionsdetails überschreiten das Anzeigelimit der vertrauenswürdigen Bestätigung.',
   'unlock.keychainReason': 'QRL-Wallet entsperren',
   'common.cancel': 'Abbrechen',
   'common.next': 'Weiter',
@@ -148,26 +146,6 @@ const catalog = {
     'Vorhandene Wallet-Dateien bleiben erhalten. Wiederherstellungsphrase oder erweiterten Seed importieren, um das v3-Konto zu erstellen. Zur Wiederherstellung einer älteren Sicherung Desktop v1.0.0 öffnen und den Wallet-Export verwenden. Frühere Testnetz-Guthaben werden nicht auf v3 übertragen.',
   'menu.settings': 'Einstellungen...',
   'menu.file': 'Datei',
-  'menu.about': 'Über MyQRLWallet',
-  'menu.services': 'Dienste',
-  'menu.hide': 'MyQRLWallet ausblenden',
-  'menu.hideOthers': 'Andere ausblenden',
-  'menu.unhide': 'Alle einblenden',
-  'menu.quit': 'MyQRLWallet beenden',
-  'menu.edit': 'Bearbeiten',
-  'menu.undo': 'Rückgängig',
-  'menu.redo': 'Wiederholen',
-  'menu.cut': 'Ausschneiden',
-  'menu.copy': 'Kopieren',
-  'menu.paste': 'Einfügen',
-  'menu.selectAll': 'Alles auswählen',
-  'menu.window': 'Fenster',
-  'menu.minimize': 'Minimieren',
-  'menu.zoom': 'Zoomen',
-  'menu.close': 'Schließen',
-  'menu.front': 'Alle nach vorne',
-  'about.version': 'Version {{version}}',
-  'about.description': 'Postquanten-QRL-Desktop-Wallet mit isoliertem Signer.',
 } satisfies Record<keyof typeof en, string>;
 
 export default catalog;

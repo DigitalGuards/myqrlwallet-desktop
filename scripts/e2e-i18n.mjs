@@ -325,7 +325,12 @@ for (const language of ['de', 'zh-CN']) {
       ),
     );
     assert.ok(menus.includes(t('menu.settings')));
-    assert.ok(menus.includes(t('menu.about')));
+    const roles = await app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu().items.flatMap(
+        (item) => item.submenu?.items.map((child) => child.role || child.type) ?? [],
+      ),
+    );
+    assert.deepEqual(roles, ['normal', 'separator', 'quit']);
     result.checks.push('language change aborts open review and refreshes menus');
     result.result = 'PASS';
   } catch (error) {

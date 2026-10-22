@@ -3,7 +3,7 @@ import { DETAIL_LINE_COLUMNS, displayWidth } from '../src/main/confirmSummary';
 
 /** Remove one main-written direction mark per line and recover logical rows. */
 export function unfoldDetail(detail: string): string {
-  return detail.replace(/^\u200e/gmu, '').replace(/\n {4}(?:\| |(?=\S|$))/gu, '');
+  return detail.replace(/^\u200e/gmu, '').replace(/\n {4}(?:\| )?/gu, '');
 }
 
 export function assertDetailWidth(detail: string): void {

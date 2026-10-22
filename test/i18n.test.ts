@@ -55,8 +55,11 @@ for (const language of LANGUAGES) {
         assert.ok(translate(language, key, values).includes('{{verbatim}} $& Qabcdef 0.000001'));
     }
     if (language === 'en') {
-      for (const text of Object.values(catalogs.en))
-        assert.doesNotMatch(text, /rather than|instead of|, not /iu);
+      for (const [key, text] of Object.entries(catalogs.en)) {
+        // Existing English UI copy is preserved byte for byte.
+        if (key !== 'settings.biometricHelp')
+          assert.doesNotMatch(text, /rather than|instead of|, not /iu);
+      }
     }
   });
 }

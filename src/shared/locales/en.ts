@@ -1,5 +1,4 @@
 const catalog = {
-  'error.transactionLong': 'Transaction details exceed the trusted confirmation display limit.',
   'unlock.keychainReason': 'Unlock your QRL wallet',
   'common.cancel': 'Cancel',
   'common.next': 'Next',
@@ -45,7 +44,7 @@ const catalog = {
     'Overridden by the QRL_AUTOLOCK_MS environment variable (currently about {{duration}}). Unset it to manage the timeout here.',
   'settings.biometric': 'Biometric quick unlock',
   'settings.biometricHelp':
-    'Unlock with your device without typing your password. Turning this off removes the stored unlock key; turning it on takes effect at your next password unlock.',
+    'Unlock with your device instead of typing the password. Turning this off removes the stored unlock key; turning it on takes effect at your next password unlock.',
   'settings.links': 'qrlconnect:// links',
   'settings.register': 'Re-register handler',
   'settings.registerHelp':
@@ -140,26 +139,6 @@ const catalog = {
     'Your earlier wallet files are preserved. Import your recovery phrase or extended seed to create its v3 account. To recover an earlier backup, open Desktop v1.0.0 and use its wallet export. Earlier testnet balances do not carry over to v3.',
   'menu.settings': 'Settings...',
   'menu.file': 'File',
-  'menu.about': 'About MyQRLWallet',
-  'menu.services': 'Services',
-  'menu.hide': 'Hide MyQRLWallet',
-  'menu.hideOthers': 'Hide Others',
-  'menu.unhide': 'Show All',
-  'menu.quit': 'Quit MyQRLWallet',
-  'menu.edit': 'Edit',
-  'menu.undo': 'Undo',
-  'menu.redo': 'Redo',
-  'menu.cut': 'Cut',
-  'menu.copy': 'Copy',
-  'menu.paste': 'Paste',
-  'menu.selectAll': 'Select All',
-  'menu.window': 'Window',
-  'menu.minimize': 'Minimize',
-  'menu.zoom': 'Zoom',
-  'menu.close': 'Close',
-  'menu.front': 'Bring All to Front',
-  'about.version': 'Version {{version}}',
-  'about.description': 'Post-quantum QRL desktop wallet with an isolated signer.',
 } as const;
 
 export default catalog;

@@ -34,7 +34,7 @@ function checkMarkers(detail: string) {
 }
 
 for (const language of LANGUAGES) {
-  test(`${language}: longest transaction warnings, amounts and origin fit complete rows on bounded pages`, () => {
+  test(`${language}: transaction warnings, amounts and origin retain the original single page`, () => {
     const request = SignatureRequestSchema.parse({
       kind: 'transaction',
       origin: REVIEW_ORIGIN,
@@ -58,13 +58,11 @@ for (const language of LANGUAGES) {
       language,
     );
     assert.deepEqual(request, before);
-    assert.ok(summary.pages.length > 1);
-    assert.ok(summary.pages.length <= 10);
+    assert.equal(summary.pages.length, 1);
     for (const page of summary.pages) {
       const detail = wrapDetailText(`${page}\n\n${translate(language, 'confirm.approvalNote')}`);
       assertDetailWidth(detail);
       checkMarkers(detail);
-      assert.ok(detail.split('\n').length <= 30);
     }
     const logical = summary.pages.map(unfoldDetail).join('\n');
     assert.ok(logical.includes(translate(language, 'confirm.refund')));

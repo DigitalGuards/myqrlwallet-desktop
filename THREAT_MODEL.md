@@ -185,13 +185,27 @@ Known ultra-wide glyphs use atomic visible `\u{...}` escapes: U+2E3A-U+2E3B
 U+12000-U+1254F (Cuneiform blocks). Escaped characters use the width of their
 visible escape text.
 
-All five native catalogs use this same width model. German and Russian labels
-consume their measured columns and full translated notes count toward the
-existing 30-line and 10-page review budgets. The multilingual layout tests cover
-every existing typed-data review fixture, long transaction warnings and amounts,
-reversible message bodies, source
-markers, native page counters and final-page approval. Labels always retain a
-space before their values, including labels longer than the alignment target.
+All five native catalogs use this same width model. English retains the original
+page boundaries and acceptance limits. Localized message and typed-data reviews
+first try the 30-line and 10-page budgets with their translated labels and notes.
+If those labels exceed a metadata, row or page budget, the review uses the
+English row-to-page assignment with complete translated text. Those fallback
+pages can exceed 30 lines. Transactions retain their original single-page
+review, including long origin rows, without a new display-size rejection.
+Native height and scrolling remain platform-dependent for these tall pages.
+The multilingual tests compare source characters, English pages and acceptance
+against a pinned pre-localization oracle. Labels retain a space before values.
+
+The language-boundary audit covers origin name/URL/channel rows, typed-data
+signing headers and domain metadata, message headings and approval notes,
+typed-data field rows, and transaction recipient/data/fee/gas rows. Wrapping is
+lossless, preserving complete escapes, code points and boundary spaces. Only
+layout consumes translated label widths; acceptance and source preview
+selection use the English reference. Message body chunks use a fixed 46-column
+budget. Typed-data path elision uses a fixed 80-character target, and transaction
+calldata retains the original fixed 66-character prefix. Grouped addresses,
+canonical numbers, metadata escaping and wallet-removal account wrapping retain
+all source characters.
 
 Residual risk: rows made of unusually wide glyphs can still wrap in some fonts.
 The wrapped overflow then shows without a main-written marker and can resemble
@@ -259,10 +273,10 @@ uses `Message (hex, N bytes):` and hexadecimal rows of up to 46 hex characters
 
 Every page repeats the full grouped account, unverified dApp origin block
 (or wallet-renderer provenance) and byte count. The bold label carries the
-request number and page indicator. The existing 30-line budget counts explicit
+request number and page indicator. The English 30-line budget counts explicit
 detail lines, including blank lines, metadata continuations and the wrapped
-approval note. Preparation
-stops at the 10-page cap; an oversized review fails with
+approval note. Localized layouts use the compatibility fallback described above.
+English preparation stops at the 10-page cap; an oversized review fails with
 `message too long to review in the trusted dialog` before a dialog opens or
 the signer is called. Pages before the last offer `Next` and `Cancel`.
 Only the final page offers `Approve & sign`, with Cancel as the default.
@@ -301,9 +315,9 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   name/URL (or wallet-renderer provenance), full grouped account, scheme,
   and a `Signing:` row with the primary type and a bounded domain-name preview.
   Page one also shows the full domain block, primary type, wallet chain ID
-  and all chain warnings. Oversized mandatory metadata rejects
+  and all chain warnings. Mandatory metadata exceeding the English budget rejects
   before any dialog opens.
-  Each page, including the approval note, has a budget of 30 explicit lines at
+  Each English page, including the approval note, has a budget of 30 explicit lines at
   `DETAIL_LINE_COLUMNS` (48 display columns). Both continuation styles, word
   boundaries, unbroken tokens and blank lines consume that budget; wide ASCII
   glyphs and non-ASCII code points use the two- and three-column classes above,
@@ -321,8 +335,12 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   indices, and include a unique row number to distinguish hidden ancestors.
   A long leaf with many indices can exceed the label target and still counts
   toward the page budget.
-  String/byte previews use a 64-character budget including an ellipsis and
-  the original character/byte length. Preview truncation and wrapping preserve
+  String/byte previews select source characters with the original 64-character
+  English budget, including an ellipsis and the English character/byte length
+  annotation. The translated length annotation is appended after selecting that
+  prefix. Every language therefore shows the same source characters, including
+  the compact domain-name preview in the signing header.
+  Preview truncation and wrapping preserve
   complete escape sequences and code points. Formatting escapes only bounded input
   prefixes; full metadata is size-checked before escaping. Preview tails still
   participate in the signature. Rows are generated lazily and preparation

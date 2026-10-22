@@ -1,8 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'error.transactionLong':
-    'Los detalles de la transacción exceden el límite del diálogo de confirmación de confianza.',
   'unlock.keychainReason': 'Desbloquea tu billetera QRL',
   'common.cancel': 'Cancelar',
   'common.next': 'Siguiente',
@@ -149,26 +147,6 @@ const catalog = {
     'Tus archivos anteriores de billetera se conservan. Importa tu frase de recuperación o semilla extendida para crear su cuenta v3. Para recuperar una copia anterior, abre Desktop v1.0.0 y usa su exportación de billetera. Los saldos anteriores de la red de prueba no se transfieren a v3.',
   'menu.settings': 'Ajustes...',
   'menu.file': 'Archivo',
-  'menu.about': 'Acerca de MyQRLWallet',
-  'menu.services': 'Servicios',
-  'menu.hide': 'Ocultar MyQRLWallet',
-  'menu.hideOthers': 'Ocultar otras',
-  'menu.unhide': 'Mostrar todas',
-  'menu.quit': 'Salir de MyQRLWallet',
-  'menu.edit': 'Editar',
-  'menu.undo': 'Deshacer',
-  'menu.redo': 'Rehacer',
-  'menu.cut': 'Cortar',
-  'menu.copy': 'Copiar',
-  'menu.paste': 'Pegar',
-  'menu.selectAll': 'Seleccionar todo',
-  'menu.window': 'Ventana',
-  'menu.minimize': 'Minimizar',
-  'menu.zoom': 'Zoom',
-  'menu.close': 'Cerrar',
-  'menu.front': 'Traer todas al frente',
-  'about.version': 'Versión {{version}}',
-  'about.description': 'Billetera de escritorio QRL poscuántica con un firmante aislado.',
 } satisfies Record<keyof typeof en, string>;
 
 export default catalog;

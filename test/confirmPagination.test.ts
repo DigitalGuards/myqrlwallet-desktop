@@ -301,10 +301,10 @@ test('transaction values and wallet-removal addresses fit the shared detail widt
     assert.equal(await finishConfirmation(t, confirmSignature(parent, transaction, context)), true);
     const current = shown.slice(start);
     const detail = current.map((page) => unfoldDetail(page.detail ?? '')).join('\n');
-    for (const page of current) assert.ok((page.detail ?? '').split('\n').length <= 30);
+    assert.equal(current.length, 1, 'transactions retain the origin/dev single page');
     assert.ok(detail.includes(`To:        ${groupQrlAddress(SIGNER)}`));
     assert.ok(detail.includes('Name:    MW@%'));
-    assert.match(shown.at(-1)?.message ?? '', /^Request \d+, page \d+ of \d+\n/);
+    assert.match(shown.at(-1)?.message ?? '', /^Request \d+\n/);
   }
   assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
   assert.ok(
