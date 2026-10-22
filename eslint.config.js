@@ -93,6 +93,7 @@ export const baseConfig = [
       'node_modules/**',
       'railway-wallet-reference/**',
       '**/*.d.ts',
+      '**/*.d.mts',
     ],
   },
 

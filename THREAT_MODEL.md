@@ -54,8 +54,8 @@ Desktop-owned unlock and settings windows, custom menu items, and wallet-owned
 error and startup notices use these static catalogs. Platform menu roles,
 including About and Quit, retain their OS-provided behavior and localization.
 Trusted transaction, message, typed-data and Remove wallet confirmations remain
-English in every language for now. Their code, page boundaries, acceptance
-limits and approval behavior are unchanged. Confirmation translation is deferred
+English in every language for now. Language selection leaves their page
+boundaries, acceptance limits and approval behavior unchanged. Confirmation translation is deferred
 to a separate change after the page-visibility fix.
 
 Before the renderer reports on each launch, main resolves the OS preferred
@@ -221,6 +221,72 @@ The only page indicator is in the native bold `message` field:
 The detail field has no app-generated page counter. A forged counter inside
 dApp text stays in the detail field and cannot reach the bold label, including
 when the toolkit adds a continuation.
+
+#### Transaction pages and qualified visibility
+
+Main sizes transaction reviews from
+`screen.getDisplayMatching(parent.getBounds()).workArea` in DIP. Display scale
+factors are never multiplied into this budget, and runtime reads no OS font
+settings. The fixed geometry comes from GTK 3 on Xvfb with DejaVu Sans:
+
+| Font / text scale | Detail line | Bold heading line | Chrome |
+|---|---:|---:|---:|
+| 12 pt / 100% | 19 px | 23 px | 76 px |
+| 10 pt / 125% | 20 px | 24 px | 76 px |
+| 12 pt / 125% (budget) | 24 px | 29 px | 76 px |
+
+The vertical margin is 48 DIP, two worst-case detail lines, reserved for native
+layout and placement slack. Heading width uses 20 DIP per existing display
+column, with 96 DIP reserved horizontally for padding and placement. The fixed
+width is `min(46, max(24, floor((workArea.width - 96) / 20)))` columns: 46 in both
+qualified work areas. The cap uses the qualified 1024-wide budget because GTK
+adds word wraps to wider explicit lines even when the work area could fit them.
+Overwide `Send {amount}?` and `Max cost {max cost}.` headings gain line
+breaks between existing characters. Every digit, space and punctuation mark is
+retained, with no truncation or rounding; headings within the budget remain
+byte-identical to 1.4.3.
+
+For `h` wrapped heading lines, every page's body allowance is
+`max(4, floor((workArea.height - 76 - 48 - 29 * (h + 1)) / 24) - 3)`.
+The extra heading line is the main-owned request/page label. The final three
+detail lines reserve the blank separator and the complete wrapped approval
+note. An ordinary two-line heading allows 20 body lines at 1024x768 and 18 at
+1280x720. Longer headings reduce the allowance on every page. The four-body-line
+floor leaves room for a continuation label and three original lines. If that
+floor or the heading-width floor cannot fit a tiny work area, the native dialog
+is shown anyway, as in 1.4.3.
+
+One-page preservation is defined against this conservative allowance: a
+transaction whose original heading and complete body fit retains its 1.4.3
+summary, rows, text, buttons, `defaultId` and `cancelId`. Longer reviews paginate
+even when a smaller font could show the original on one page. Rows that fit a
+whole page stay complete. Only a taller row splits between its existing wrapped
+lines, and each continuation page starts with that row's main-owned label plus
+` (continued)`. Removing those labels and concatenating pages recovers every
+1.4.3 detail line byte for byte, in order. The origin block stays last in that
+order and ends on the final page. Transactions have no page cap and gain no
+display-size rejection path. Message and typed-data summaries retain their
+existing budgets, text and rejection limits.
+
+The qualified guarantee covers **every transaction page of the regression
+corpus on Linux GTK 3, Xvfb work areas 1024x768 and 1280x720, DejaVu Sans 8 to
+12 pt at 100% and 125% text**: all lines and both buttons are visible inside the
+work area, horizontally and vertically. The corpus includes the 80-digit
+heading, invisible-character URL, gas warning and `40 18 1 0` fixtures, plus a
+short transaction within the allowance. The native sweep inspects each live
+GTK/Pango line allocation and both button rectangles. This is a bounded corpus
+qualification. Outside that band, including larger fonts, higher text scaling,
+smaller work areas and unqualified Windows/macOS native geometry, a page can
+still overflow as in 1.4.3; its buttons then leave the screen and Enter cancels.
+An app-drawn confirmation window is the proposed long-term fix, with the owner
+decision pending.
+
+Pages before the last offer `Next` and `Cancel`; only the last offers
+`Cancel` and `Approve & sign`. Cancel remains both the default and Escape target.
+The shared one-at-a-time gate and 1000 ms arming delay are unchanged. A display
+metrics/topology change or moving the parent to another display aborts the open
+review or its arming timer, including a racing approval. Continuing requires a
+fresh review. Existing lock, navigation, renderer and signer aborts still apply.
 
 #### Message signatures
 
@@ -411,8 +477,8 @@ settlement that runs out of gas defers the payout into a credit).
   maxFeePerGas, and repeats the max cost on its own line of the bold message
   (`Send 1 Quanta?` then `Max cost ... Quanta.`), because for a zero-value
   contract call the fee is the whole cost. The explicit line break keeps the
-  toolkit from wrapping the label for amounts up to ten whole digits; values
-  near the 80-digit schema maximum still wrap (trusted numbers, no spoof path).
+  toolkit from wrapping the label for ordinary amounts. Longer headings use the
+  explicit character-boundary wrapping and per-page height budget above.
 - Buys: the fee the user approves is computed from the gas limit that will be
   signed, and an inflated limit is visible and priced before approval. Unused
   gas is refunded; a call that fails out of gas or burns gas can consume the

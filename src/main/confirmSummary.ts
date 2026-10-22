@@ -69,18 +69,19 @@ export function gasWarningThreshold(estimated: bigint): bigint {
  */
 export function originDetail(origin: DAppOrigin | undefined): string {
   if (!origin) return '';
-  return wrapDetailText(
-    [
-      '',
-      'Requested by dApp (unverified, dApp-supplied):',
-      wrapDetailText(`  Name:    ${singleLineText(origin.name)}`, 'dapp'),
-      origin.url
-        ? wrapDetailText(`  URL:     ${singleLineText(origin.url)}`, 'dapp')
-        : '  URL:     (not provided)',
-      wrapDetailText(`  Channel: ${origin.channelId}`, 'dapp'),
-      'Only approve if you initiated this action in that dApp.',
-    ].join('\n'),
-  );
+  return wrapDetailText(['', ...originRows(origin)].join('\n'));
+}
+
+function originRows(origin: DAppOrigin): string[] {
+  return [
+    'Requested by dApp (unverified, dApp-supplied):',
+    wrapDetailText(`  Name:    ${singleLineText(origin.name)}`, 'dapp'),
+    origin.url
+      ? wrapDetailText(`  URL:     ${singleLineText(origin.url)}`, 'dapp')
+      : '  URL:     (not provided)',
+    wrapDetailText(`  Channel: ${origin.channelId}`, 'dapp'),
+    'Only approve if you initiated this action in that dApp.',
+  ];
 }
 
 export interface ConfirmSummary {
@@ -518,6 +519,114 @@ const UNATTRIBUTED_GAS_BLOCK_SHARE = 10n;
 const REFUND_NOTE =
   'Unused gas is refunded, but a call that fails out of gas or burns gas can consume the whole limit, so the cost below is reachable.';
 
+export interface ConfirmationWorkArea {
+  width: number;
+  height: number;
+}
+
+/**
+ * GTK 3 / DejaVu Sans 12 pt at 125%: detail 24, heading 29, chrome 76 DIP.
+ * Two extra detail lines (48 DIP) reserve vertical slack. Heading columns use
+ * 20 DIP and 96 DIP of horizontal slack for the native padding and placement.
+ * Cap headings at the qualified 1024-wide budget: GTK can add word wraps to
+ * longer explicit lines even when the work area is wide enough for them.
+ * These fixed allowances use only Electron's DIP work area, with no font probe.
+ */
+export const TRANSACTION_DISPLAY = {
+  detailLine: 24,
+  headingLine: 29,
+  chrome: 76,
+  verticalMargin: 48,
+  headingColumn: 20,
+  horizontalMargin: 96,
+  minimumHeadingColumns: 24,
+  maximumHeadingColumns: 46,
+  minimumBodyLines: 4,
+} as const;
+
+/** Insert only line breaks, retaining every heading character and original break. */
+export function wrapTransactionHeading(message: string, area: ConfirmationWorkArea): string {
+  const columns = Math.min(
+    TRANSACTION_DISPLAY.maximumHeadingColumns,
+    Math.max(
+      TRANSACTION_DISPLAY.minimumHeadingColumns,
+      Math.floor(
+        (area.width - TRANSACTION_DISPLAY.horizontalMargin) / TRANSACTION_DISPLAY.headingColumn,
+      ),
+    ),
+  );
+  return message
+    .split('\n')
+    .map((original) => {
+      const lines: string[] = [];
+      let line = '';
+      let used = 0;
+      for (const char of original) {
+        const width = displayWidth(char);
+        if (used + width > columns) {
+          lines.push(line);
+          line = '';
+          used = 0;
+        }
+        line += char;
+        used += width;
+      }
+      lines.push(line);
+      return lines.join('\n');
+    })
+    .join('\n');
+}
+
+/** Body allowance excludes the request label, wrapped heading and approval note. */
+export function transactionBodyLineLimit(message: string, area: ConfirmationWorkArea): number {
+  const headingLines = 1 + message.split('\n').length;
+  const noteLines = typedDataDisplayLines(`\n${SIGNATURE_APPROVAL_NOTE}`);
+  return Math.max(
+    TRANSACTION_DISPLAY.minimumBodyLines,
+    Math.floor(
+      (area.height -
+        TRANSACTION_DISPLAY.chrome -
+        TRANSACTION_DISPLAY.verticalMargin -
+        headingLines * TRANSACTION_DISPLAY.headingLine) /
+        TRANSACTION_DISPLAY.detailLine,
+    ) - noteLines,
+  );
+}
+
+/**
+ * Accept already wrapped rows in their original order. A row that fits a whole
+ * page moves intact. Only a taller row splits, between existing wrapped lines;
+ * its continuation pages start with the same main-owned label. There is no cap.
+ */
+export function paginateTransactionRows(rows: readonly string[], bodyLines: number): string[] {
+  const limit = Math.max(TRANSACTION_DISPLAY.minimumBodyLines, bodyLines);
+  const pages: string[] = [];
+  let page: string[] = [];
+  const flush = () => {
+    if (page.length > 0) pages.push(page.join('\n'));
+    page = [];
+  };
+  for (const row of rows) {
+    const lines = row.split('\n');
+    if (page.length + lines.length > limit) flush();
+    if (lines.length <= limit) {
+      page.push(...lines);
+      continue;
+    }
+    // Every splittable transaction row has a fixed main-written colon label.
+    const label = row.slice(0, row.indexOf(':') + 1);
+    for (let offset = 0; offset < lines.length;) {
+      if (offset > 0) page.push(`${label} (continued)`);
+      const count = Math.min(limit - page.length, lines.length - offset);
+      page.push(...lines.slice(offset, offset + count));
+      offset += count;
+      if (offset < lines.length) flush();
+    }
+  }
+  flush();
+  return pages;
+}
+
 /** The gas-limit row plus any provenance or warning lines that belong with it. */
 function gasLines(
   gas: string,
@@ -592,6 +701,7 @@ function gasLines(
 export function summariseSignatureRequest(
   req: SignatureRequest,
   context: ConfirmContext = {},
+  workArea: ConfirmationWorkArea = { width: 1024, height: 768 },
 ): ConfirmSummary {
   const { build, blockGasLimit } = context;
   switch (req.kind) {
@@ -603,7 +713,7 @@ export function summariseSignatureRequest(
       const priorityFeePerGas = BigInt(tx.maxPriorityFeePerGas);
       const maxFee = gas * feePerGas;
       const maxCost = BigInt(tx.value) + maxFee;
-      const detail = [
+      const rows = [
         row('Amount:', formatQuanta(tx.value)),
         wrapDetailText(row('To:', groupQrlAddress(tx.to)), 'dapp'),
         // Main verifies tx.from against the unlocked signer before confirmation.
@@ -619,12 +729,16 @@ export function summariseSignatureRequest(
         tx.data && tx.data !== '0x'
           ? wrapDetailText(row('Data:', `${tx.data.slice(0, 66)}…`), 'dapp')
           : row('Data:', '(none)'),
-      ].join('\n');
+        ...(req.origin ? originRows(req.origin) : []),
+      ].map((entry) => wrapDetailText(entry));
+      const message = wrapTransactionHeading(
+        `Send ${formatQuanta(tx.value)}?\nMax cost ${formatQuanta(maxCost)}.`,
+        workArea,
+      );
       return {
         title: 'Confirm transaction',
-        // Two explicit lines keep the max cost prominent without a toolkit wrap.
-        message: `Send ${formatQuanta(tx.value)}?\nMax cost ${formatQuanta(maxCost)}.`,
-        pages: [wrapDetailText(detail + originDetail(req.origin))],
+        message,
+        pages: paginateTransactionRows(rows, transactionBodyLineLimit(message, workArea)),
       };
     }
     case 'message':

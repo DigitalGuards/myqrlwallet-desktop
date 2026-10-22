@@ -33,7 +33,9 @@
     "rebuild:native": "electron-builder install-app-deps",
     "fuses:read": "electron-fuses read --app",
     "predist:win": "node scripts/ensure-win-napi.cjs",
-    "test:e2e:i18n": "node --import tsx scripts/e2e-i18n.mjs"
+    "test:e2e:i18n": "node --import tsx scripts/e2e-i18n.mjs",
+    "test:native:confirm": "node --import tsx scripts/test-confirmation-visibility.mjs",
+    "test:confirm:inventory": "node --import tsx scripts/confirmation-pagination-inventory.mjs"
   },
   "overrides": {
     "@theqrl/mldsa87": "$@theqrl/mldsa87",
