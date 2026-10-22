@@ -15,7 +15,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 44 (locked to 44.7.0; bundled Node 24.18.1 + Chromium 152) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md).
+- **Stack:** Electron 44 (locked to 44.9.3; bundled Node 24.22.0 + Chromium 152.0.7977.167) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded over `file://`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** every key-touching operation (wallet generation, seed encrypt/decrypt, ML-DSA-87 signing) runs in the isolated signer. The renderer routes those through `window.qrlWallet`; its in-page seed/signing primitives are neutered (throw) under desktop, as defense-in-depth.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -72,7 +72,7 @@ The confirmation dialogs are OS-native message boxes, shown here as drawn on Lin
   or later; Windows ia32 and Linux armv7l are unsupported.
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
   `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
-  currently 24.18.1; this floor is only for building, testing, and packaging locally.)
+  currently 24.22.0; this floor is only for building, testing, and packaging locally.)
   `@types/node` stays at `^22` to enforce that development API floor.
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
@@ -277,6 +277,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
+For Desktop 1.4.3, use frontend revision
+`c63534ab08620897280f26f3bd3927f5102331b2`, the renderer source shipped in 1.4.2.
+CI pins that same revision for this release.
+
 ## Packaging and signing
 
 Build the platform installer with electron-builder (26.x GA). Each target runs
@@ -375,7 +379,7 @@ acceptance scenarios in `CLAUDE.md` section 6.
 
 ## Validation gates
 
-CI runs on pushes and pull requests targeting `dev` or `main`, using Node 22 to install locked dependencies, ensure the Electron binary is present, audit production dependencies, check formatting, lint, type-check, run tests, and build the shell with the public frontend's `dev` renderer.
+CI runs on pushes and pull requests targeting `dev` or `main`, using Node 22 to install locked dependencies, ensure the Electron binary is present, audit production dependencies, check formatting, lint, type-check, run tests, and build the shell with the pinned public frontend renderer.
 The audit gate blocks high or critical production advisories unless `audit-allowlist.json` supplies a matching, reasoned, unexpired exception.
 
 ```bash
