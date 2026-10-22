@@ -6,9 +6,11 @@ the decision document (`docs/ARCHITECTURE_RESEARCH.md`): OS app-binding is
 cost-raising and detection-generating, not a guarantee. The Argon2id-derived
 password is the real protection.
 
-Runtime baseline: Electron 44, locked to 44.7.0 (Chromium 152, Node 24.18.1).
+Runtime baseline: Electron 44, locked to 44.9.3 (Chromium 152.0.7977.167, Node 24.22.0).
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) covers the Electron 43/44
 changes against these boundaries.
+The [1.4.3 security notes](CHANGELOG.md#143---2026-10-22) distinguish the
+included eMudhra mitigation from the confirmed gaps in October Node.js security coverage.
 
 ## Assets
 
