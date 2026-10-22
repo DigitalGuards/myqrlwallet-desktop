@@ -66,6 +66,37 @@ explicit transaction chain IDs. Upgrade from 1.1.0 before using connected dApps.
 
 The confirmation dialogs are OS-native message boxes, shown here as drawn on Linux. Windows draws them in its own style.
 
+Transaction reviews paginate using the parent display's Electron DIP work area.
+The conservative allowance uses 24 px detail lines, 29 px bold heading lines,
+76 px chrome and a 48 px vertical margin, measured at DejaVu Sans 12 pt / 125%
+text. Every page reserves the request label, wrapped heading and approval note:
+an ordinary two-line heading leaves 20 body lines at 1024x768 and 18 at 1280x720.
+The heading width uses 20 DIP per column with 96 DIP horizontal slack, capped
+at 46 display columns in both work areas because GTK adds word wraps to wider
+headings even when the work area could fit them. Overwide headings gain only line breaks,
+preserving the complete amount and max cost. Transactions within this
+conservative allowance keep their exact 1.4.3 single-page rendering and buttons.
+Longer reviews paginate even if a smaller font could fit them. Complete rows
+stay together whenever they fit a page; taller rows continue between their
+existing wrapped lines with the row label and ` (continued)` on each
+continuation page. All original lines stay in order, with the origin block at
+the end. Only the final page offers approval, and Cancel stays the default.
+
+The qualified guarantee is that **every transaction page of the corpus fits
+horizontally and vertically, with every line and both buttons visible**, on
+Linux GTK 3 under Xvfb at 1024x768 and 1280x720 work areas, DejaVu Sans 8 to 12 pt
+at 100% and 125% text. This includes the 80-digit heading, invisible URL, gas
+warning and `40 18 1 0` fixtures. The floor is four body lines and 24 heading
+columns; even when that floor exceeds a tiny work area, the dialog is shown as
+in 1.4.3. Transactions have no page cap or new display-size rejection. Display
+changes during review abort it and require a fresh request; the one-at-a-time
+gate and arming delay remain unchanged. Message and typed-data summaries are
+unchanged. Outside the qualified band (including larger fonts, higher text
+scaling, smaller screens and unqualified Windows/macOS geometry), a page can
+still overflow as in 1.4.3; its buttons then leave the screen and Enter cancels.
+An app-drawn confirmation window is the proposed long-term fix, with the owner
+decision pending. See [the layout budget](THREAT_MODEL.md#transaction-pages-and-qualified-visibility).
+
 ## Prerequisites
 
 - Electron 44 supports 64-bit platforms. macOS builds require macOS 13 (Ventura)
@@ -410,6 +441,11 @@ no network). The suites exercise the load-bearing signer logic directly:
   `confirmPagination.test.ts` cover every typed-data field and message byte
   appearing once across pages, the message body gutter, approval only on the
   last page, and refusal above 10 pages.
+- `confirmTransactionPages.test.ts` covers complete-row pagination, overheight
+  row continuations, heading wrapping, allowance boundaries, the floor and
+  byte-identical message/typed-data summaries against 1.4.3 on the corpus.
+  `confirmationGate.test.ts` also checks display-change aborts, unchanged
+  one-page native options and DIP sizing at multiple display scale factors.
 - `signer.session.test.ts` - the unlock lifecycle: correct-password unlock,
   `withSeed` yields exactly the stored seed, wrong-password authentication
   failure, `lock()` teardown, and the autolock timer firing (mock timers).
@@ -425,6 +461,25 @@ What the node suite cannot cover (it has no Electron runtime): IPC sender
 validation, the confirmation modal, the signer fork/correlation in
 `signerBridge`, and the keychain vaults. Exercise those via the manual
 acceptance scenarios in `CLAUDE.md` section 6.
+
+Two local scripts provide reproducible transaction visibility evidence:
+
+```bash
+npm run test:confirm:inventory
+env -u DISPLAY -u WAYLAND_DISPLAY npm run test:native:confirm
+```
+
+The inventory loads the 1.4.3 summariser from Git revision `0a6d581` without
+changing the checkout. For each request and work area it asserts acceptance,
+page counts, one-page identity within the allowance and concatenated detail
+lines in their original order (continuation labels aside). Keep that revision
+available in local history. The native sweep needs Linux GTK 3, DejaVu Sans,
+`xvfb-run`, `xdotool`, a C compiler and Node C headers (`NODE_INCLUDE_DIR` can
+select the headers). It runs 20 isolated Xvfb profiles, measures every live
+line and both buttons, and writes JSON evidence under a temporary directory.
+It refuses inherited X11/Wayland displays. Both checks remain local scripts;
+the complete native sweep exceeds the roughly two-minute CI budget and adds
+no required check name.
 
 ## Validation gates
 

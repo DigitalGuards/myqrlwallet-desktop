@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { beforeEach, test, type TestContext } from 'node:test';
-import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
+import type { MessageBoxOptions, MessageBoxReturnValue, Rectangle } from 'electron';
 import type { SignatureRequest } from '../src/shared/schemas';
 import { signWithConfirmation } from '../src/main/signatureRequest';
-import { summariseSignatureRequest } from '../src/main/confirmSummary';
+import {
+  SIGNATURE_APPROVAL_NOTE,
+  summariseSignatureRequest,
+  wrapDetailText,
+} from '../src/main/confirmSummary';
+import { loadBaseline } from '../scripts/confirmation-baseline.mjs';
+import { visibilityCases } from './confirmationVisibilityFixtures';
 import { payloadWith, SIGNER } from './typedDataFixtures';
 import { RECIPIENTS, reviewRequest, withReviewDomain } from './typedDataReviewFixtures';
 import {
@@ -15,7 +21,7 @@ import {
 } from './confirmationClock';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
-const { BrowserWindow, dialog } = await import('electron');
+const { BrowserWindow, dialog, screen } = await import('electron');
 const { confirmSignature, confirmRemoveWallet } = await import('../src/main/confirm');
 const { ARM_DELAY_MS, confirmationGate } = await import('../src/main/confirmationGate');
 beforeEach(mockConfirmationClock);
@@ -341,3 +347,117 @@ test('subframe and same-document navigation preserve the active request', async 
   click(1);
   assert.equal(await approved, true);
 });
+
+const transaction = visibilityCases.find((fixture) => fixture.name === 'transaction invisible URL');
+assert.ok(transaction);
+const transactionPageCount = summariseSignatureRequest(transaction.request, transaction.context)
+  .pages.length;
+
+for (const event of [
+  'display-metrics-changed',
+  'display-added',
+  'display-removed',
+  'parent changes display',
+]) {
+  for (const state of ['open', 'arming first page', 'arming next page']) {
+    test(`${event} aborts transaction review while ${state}, including racing approval`, async (t) => {
+      const { parent, shown, click } = manualDialogs(t, true);
+      const rejected = assert.rejects(
+        confirmSignature(parent, transaction.request, transaction.context),
+        /confirmation display changed/,
+      );
+      await flushConfirmations();
+      if (state !== 'arming first page') await advanceConfirmations(t, ARM_DELAY_MS);
+      if (state === 'arming next page') {
+        click(0);
+        await flushConfirmations();
+      }
+      const count = shown.length;
+      if (event === 'parent changes display') {
+        const display = screen.getDisplayMatching(parent.getBounds());
+        t.mock.method(screen, 'getDisplayMatching', () => ({ ...display, id: display.id + 1 }));
+        parent.emit('move');
+      } else screen.emit(event);
+      await rejected;
+      await advanceConfirmations(t, ARM_DELAY_MS * 2);
+      assert.equal(shown.length, count);
+      for (const name of ['display-metrics-changed', 'display-added', 'display-removed']) {
+        assert.equal(screen.listenerCount(name), 0);
+      }
+      assert.equal(parent.listenerCount('move'), 0);
+      const fresh = confirmSignature(parent, message);
+      await advanceConfirmations(t, ARM_DELAY_MS);
+      click(0);
+      assert.equal(await fresh, false);
+    });
+  }
+}
+
+test('a move within the same display keeps the active confirmation', async (t) => {
+  const { parent, click } = manualDialogs(t);
+  const approved = confirmSignature(parent, transaction.request, transaction.context);
+  for (let i = 0; i < transactionPageCount; i++) {
+    await advanceConfirmations(t, ARM_DELAY_MS);
+    parent.emit('move');
+    click(i === transactionPageCount - 1 ? 1 : 0);
+    await flushConfirmations();
+  }
+  assert.equal(await approved, true);
+});
+
+for (let cancelAt = -1; cancelAt < transactionPageCount; cancelAt++) {
+  test(`transaction review keeps the arming delay and final-only approval (cancel page ${cancelAt})`, async (t) => {
+    const { parent, shown, click } = manualDialogs(t);
+    const approved = confirmSignature(parent, transaction.request, transaction.context);
+    const expected = cancelAt < 0 ? transactionPageCount : cancelAt + 1;
+    for (let i = 0; i < expected; i++) {
+      await advanceConfirmations(t, ARM_DELAY_MS - 1);
+      assert.equal(shown.length, i);
+      await advanceConfirmations(t, 1);
+      const options = shown[i]?.options;
+      assert.ok(options);
+      const final = i === transactionPageCount - 1;
+      assert.deepEqual(options.buttons, final ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel']);
+      assert.equal(options.defaultId, final ? 0 : 1);
+      assert.equal(options.cancelId, final ? 0 : 1);
+      click(i === cancelAt ? (final ? 0 : 1) : final ? 1 : 0);
+      await flushConfirmations();
+    }
+    assert.equal(await approved, cancelAt < 0);
+    await advanceConfirmations(t, ARM_DELAY_MS * 2);
+    assert.equal(shown.length, expected);
+  });
+}
+
+for (const scaleFactor of [1, 1.25, 2, 3]) {
+  test(`a transaction inside the allowance keeps the complete 1.4.3 native options at display scale ${scaleFactor}`, async (t) => {
+    const fixture = visibilityCases.find((entry) => entry.name === 'transaction within allowance');
+    assert.ok(fixture);
+    const { parent, shown, click } = manualDialogs(t);
+    const display = screen.getDisplayMatching(parent.getBounds());
+    t.mock.method(screen, 'getDisplayMatching', (bounds: Rectangle) => {
+      assert.deepEqual(bounds, parent.getBounds());
+      return { ...display, scaleFactor };
+    });
+    const original = loadBaseline().summariseSignatureRequest(fixture.request, fixture.context);
+    const approved = confirmSignature(parent, fixture.request, fixture.context);
+    await advanceConfirmations(t, ARM_DELAY_MS);
+    const options = shown[0]?.options;
+    assert.ok(options);
+    const { signal, ...visible } = options;
+    assert.equal(signal?.aborted, false);
+    assert.deepEqual(visible, {
+      type: 'warning',
+      title: original.title,
+      message: `Request 1\n${original.message}`,
+      detail: wrapDetailText(`${original.pages[0]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+      buttons: ['Cancel', 'Approve & sign'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    click(1);
+    assert.equal(await approved, true);
+    assert.equal(shown.length, 1);
+  });
+}
