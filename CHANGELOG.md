@@ -2,6 +2,38 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.3 - 2026-10-22
+
+### Security
+
+- Upgrade Electron from 44.7.2 to exactly 44.9.3 in the lockfile, preserving
+  the manifest's caret range. It bundles Chromium 152.0.7977.167 and Node 24.22.0.
+- Include the [eMudhra certificate mitigation introduced in Electron 44.9.1](https://github.com/electron/electron/releases/tag/v44.9.1).
+  The [Electron advisory](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9)
+  confirms that both Chromium and Node networking block the compromised
+  intermediates, protecting connections against server impersonation.
+- Include the [44.9.3 backports from ANGLE, Chromium, PDFium, Skia and V8](https://github.com/electron/electron/releases/tag/v44.9.3).
+- Coverage of the [October Node.js security release](https://nodejs.org/en/blog/release/v24.22.1)
+  is incomplete: Electron 44.9.3 bundles Node 24.22.0 with selected patches.
+  Local runtime checks using upstream TLS regression cases still accept
+  non-canonical and fullwidth IP hostnames against DNS certificate names.
+  Node 24.22.1 fixes these hostname bypasses, the Brotli decoder RCE
+  (CVE-2026-111497), DNS name truncation and other issues. A further runtime
+  update is required to satisfy the full October Node.js security-update scope.
+
+### Release scope
+
+- Retain the 1.4.2 renderer from frontend dev revision
+  `c63534ab08620897280f26f3bd3927f5102331b2`, built by `scripts/build-renderer.sh`.
+  CI uses the same pinned source revision.
+- Preserve all nine explicit fuses, `strictlyRequireAllFuses`, CSP, permission
+  handlers, sandbox, context isolation, signer utility process and navigation
+  restrictions. Wallet behavior is unchanged.
+
+<!-- discord -->
+**MyQRLWallet Desktop 1.4.3** is a security update. Electron 44.9.3 blocks compromised eMudhra certificates that could let an attacker impersonate a server and includes additional browser-engine security fixes. The wallet screens and security settings stay the same. Updating is recommended for these protections. A further runtime update is needed for the separate October Node.js security fixes.
+<!-- /discord -->
+
 ## 1.4.2 - 2026-10-17
 
 ### Security
