@@ -173,8 +173,10 @@ the preferred list is empty. Regional English/German/Spanish/Russian codes map
 to their base code. `zh-CN`, `zh-SG` and `zh-Hans-*` map to `zh-CN`; unspecified
 and Traditional Chinese fall back to English. Unsupported lists use English.
 
-The renderer calls the optional `window.qrlWallet.setLanguage(language)` at
-startup and after each language change. It returns `Promise<void>` after the
+A renderer that supports languages calls the optional
+`window.qrlWallet.setLanguage(language)` at startup and after each language
+change; the web wallet adds this call in its language release, so builds with
+an earlier renderer keep the system language. It returns `Promise<void>` after the
 choice is saved in the versioned settings store and applied. Feature-detect the
 method when supporting earlier desktop versions. This method only selects one
 of the five static catalogs. Objects, regional variants and additional label
