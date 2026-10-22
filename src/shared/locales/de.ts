@@ -2,10 +2,7 @@ import type en from './en';
 
 const catalog = {
   'unlock.keychainReason': 'QRL-Wallet entsperren',
-  'common.cancel': 'Abbrechen',
-  'common.next': 'Weiter',
   'common.continue': 'Fortfahren',
-  'common.ok': 'OK',
   'unlock.title': 'MyQRLWallet entsperren',
   'unlock.account': 'Zu entsperrendes Konto',
   'unlock.password': 'Passwort eingeben',
@@ -61,81 +58,6 @@ const catalog = {
   'settings.removeDevice': 'Von diesem Gerät entfernen',
   'settings.removeHelp':
     'Löscht den verschlüsselten Seed des aktiven Kontos dauerhaft von diesem Gerät. Zur Wiederherstellung wird die Wiederherstellungsphrase (oder der Hex-Seed) benötigt. Andere Konten auf diesem Gerät bleiben erhalten. Eine Bestätigung wird angefordert.',
-  'confirm.approve': 'Genehmigen & signieren',
-  'confirm.approvalNote':
-    'Nur genehmigen, wenn diese Aktion selbst gestartet wurde und die Angaben korrekt sind.',
-  'confirm.request': 'Anfrage {{number}}',
-  'confirm.page': 'Anfrage {{number}}, Seite {{page}} von {{pages}}',
-  'confirm.origin': 'Anfrage von dApp (ungeprüft, von dApp angegeben):',
-  'confirm.name': 'Name:',
-  'confirm.url': 'URL:',
-  'confirm.channel': 'Kanal:',
-  'confirm.absent': '(nicht angegeben)',
-  'confirm.initiated': 'Nur genehmigen, wenn diese Aktion in dieser dApp selbst gestartet wurde.',
-  'confirm.renderer': 'Anfrage von: Wallet-Oberfläche (dApp-Herkunft nicht angegeben)',
-  'confirm.account': 'Konto:',
-  'confirm.scheme': 'Schema:',
-  'confirm.signing': 'Signatur für:',
-  'confirm.domain': 'Domain {{field}}:',
-  'confirm.walletChain': 'Wallet-Netzwerk chainId: {{chainId}}',
-  'confirm.chainMismatch': 'WARNUNG: Die chainId der Domain weicht vom Wallet-Netzwerk ab.',
-  'confirm.chainUnbound':
-    'WARNUNG: Diese Signatur ist an keine Blockchain gebunden und kann auf anderen Blockchains wiederverwendet werden.',
-  'confirm.primaryType': 'Primärtyp:',
-  'confirm.fields': 'Nachrichtenfelder:',
-  'confirm.messageText': 'Nachricht (Text, {{bytes}} Bytes):',
-  'confirm.messageHex': 'Nachricht (Hex, {{bytes}} Bytes):',
-  'confirm.empty': '(leere Nachricht)',
-  'confirm.bytes': '{{count}} Bytes',
-  'confirm.characters': '{{count}} Zeichen',
-  'confirm.amount': 'Betrag:',
-  'confirm.to': 'An:',
-  'confirm.from': 'Von:',
-  'confirm.nonce': 'Nonce:',
-  'confirm.gas': 'Gaslimit:',
-  'confirm.fee': 'Max. Gebühr:',
-  'confirm.cost': 'Max. Kosten:',
-  'confirm.chain': 'Chain-ID:',
-  'confirm.data': 'Daten:',
-  'confirm.none': '(keine)',
-  'confirm.feeValue': '{{fee}} (bis zu {{perGas}} pro Gas, Priorität {{priority}})',
-  'confirm.estimate': '{{gas}} (Schätzung dieser Wallet)',
-  'confirm.dappGas': '{{gas}} (von der dApp festgelegt; Wallet-Schätzung {{estimate}})',
-  'confirm.walletGas': '{{gas}} (Schätzung dieser Wallet; dApp-Anfrage {{requested}})',
-  'confirm.cappedGas':
-    '{{gas}} (auf das Block-Gaslimit begrenzt; dApp-Anfrage {{requested}}, Wallet-Schätzung {{estimate}})',
-  'confirm.feeUnknown':
-    'HINWEIS: Die Gebührenfelder wurden nicht von dieser Wallet erstellt. Daher ist unbekannt, wie dieses Gaslimit gewählt wurde.',
-  'confirm.refund':
-    'Ungenutztes Gas wird erstattet. Ein Aufruf, der wegen Gasmangels scheitert oder Gas verbraucht, kann das gesamte Limit ausschöpfen. Die unten genannten Kosten können daher anfallen.',
-  'confirm.blockWarning':
-    'WARNUNG: Dieses Gaslimit beansprucht mehr als ein Zehntel eines ganzen Blocks. {{refund}}',
-  'confirm.gasWarning':
-    'WARNUNG: Die dApp fordert deutlich mehr Gas als von dieser Wallet geschätzt. {{refund}} Nur genehmigen, wenn bekannt ist, warum dieser Aufruf so viel benötigt.',
-  'confirm.transactionTitle': 'Transaktion bestätigen',
-  'confirm.send': '{{amount}} senden?\nMax. Kosten {{cost}}.',
-  'confirm.messageTitle': 'Nachrichtensignatur bestätigen',
-  'confirm.messageQuestion': 'Diese Nachricht mit dem Wallet-Schlüssel signieren?',
-  'confirm.typedTitle': 'Signatur strukturierter Daten bestätigen',
-  'confirm.typedQuestion': 'Diese strukturierten Daten mit dem Wallet-Schlüssel signieren?',
-  'remove.button': 'Wallet entfernen',
-  'remove.title': 'Wallet von diesem Gerät entfernen?',
-  'remove.question': 'Diese Wallet dauerhaft von diesem Gerät entfernen?',
-  'remove.warning':
-    'Der verschlüsselte Seed wird von diesem Gerät gelöscht. Die Wallet kann nur mit der Wiederherstellungsphrase wiederhergestellt werden. Dies kann nicht rückgängig gemacht werden.',
-  'error.metadata':
-    'Die Sicherheitsangaben der strukturierten Daten überschreiten das Anzeigelimit. dApp-Herkunftsangaben oder Domain-Metadaten kürzen.',
-  'error.typedLong':
-    'Die strukturierten Daten sind für eine sichere Prüfung auf dem Desktop zu umfangreich (maximal {{pages}} Seiten).',
-  'error.messageLong':
-    'Nachricht zu lang für die Prüfung im vertrauenswürdigen Dialog (maximal {{pages}} Seiten).',
-  'error.lockedConfirm':
-    'Wallet während der Bestätigung gesperrt. Entsperren und erneut versuchen.',
-  'error.busyConfirm': 'Eine andere Bestätigung ist bereits geöffnet',
-  'error.navigatedConfirm':
-    'Wallet-Fenster während der Bestätigung neu geladen oder gewechselt. Erneut versuchen.',
-  'error.stoppedConfirm': 'Wallet-Oberfläche während der Bestätigung beendet. Erneut versuchen.',
-  'error.languageConfirm': 'Sprache während der Bestätigung geändert. Anfrage erneut prüfen.',
   'error.startTitle': 'MyQRLWallet konnte nicht gestartet werden',
   'error.startHelp':
     'Die App kann nicht fortfahren und wird geschlossen. Bei wiederholtem Auftreten MyQRLWallet neu installieren.',

@@ -155,11 +155,17 @@ unlocked account. Message and typed-data signing work offline.
 
 ## Native languages
 
-Desktop-owned unlock and settings surfaces, transaction/message/typed-data and
-wallet-removal confirmations, application menus, About and error dialogs support
-English (`en`), German (`de`), Spanish (`es`), Russian (`ru`) and Simplified Chinese
-(`zh-CN`). All five catalogs ship in the app; native translation uses no network.
-Quanta, QRL, QRL 2.0 and MyQRLWallet retain their names.
+Desktop-owned unlock and settings windows, custom application menu items, and
+wallet-owned error and startup notices use five static catalogs bundled with
+the app: English (`en`), German (`de`), Spanish (`es`), Russian (`ru`) and
+Simplified Chinese (`zh-CN`). Native translation uses no network. Platform menu
+roles, including About and Quit, retain their OS-provided behavior and
+localization. Quanta, QRL, QRL 2.0 and MyQRLWallet retain their names.
+
+Trusted transaction, message, typed-data and Remove wallet confirmations remain
+English in every language for now. Their text, pagination and approval behavior
+are unchanged. Translating these confirmations is deferred to a separate change
+after the page-visibility fix.
 
 At each startup, before the renderer reports its choice, main uses the first
 supported `app.getPreferredSystemLanguages()` entry, with `app.getLocale()` when
@@ -170,32 +176,29 @@ and Traditional Chinese fall back to English. Unsupported lists use English.
 The renderer calls the optional `window.qrlWallet.setLanguage(language)` at
 startup and after each language change. It returns `Promise<void>` after the
 choice is saved in the versioned settings store and applied. Feature-detect the
-method when supporting earlier desktop versions. Only the exact five codes
-above are accepted; objects, regional variants and additional label data are
-rejected at this bridge. Security preferences remain native-owned.
+method when supporting earlier desktop versions. This method only selects one
+of the five static catalogs. Objects, regional variants and additional label
+data are rejected at this bridge. Security preferences remain native-owned.
 
 Unlock and settings update in place, including displayed wallet-owned errors,
-without losing form input. Menus rebuild immediately. A language change cancels
-an open or arming trusted confirmation: the user must review a fresh request in
-the new language. Each review uses one catalog for its complete page sequence.
-External error details, dApp text, origins, addresses and amounts retain their
-existing formatting and escaping. Main still owns the source markers, page
-counter, budgets, arming delay and final-page approval.
+without losing form input. Custom menu items update immediately. External error
+details retain their original text. Language changes leave open and arming
+trusted confirmations unchanged.
 
 `src/shared/locales/` holds the static catalogs. Key/placeholder parity, regional
-resolution, settings persistence, real IPC sender/schema rejection, and all five
-languages' trusted layout are covered by `npm test`. The headless native probe
-uses the pinned frontend's Playwright installation and requires Xvfb, xdotool, xprop
-and ImageMagick. After `npm run build`, run:
+resolution, settings persistence and real IPC sender/schema rejection are
+covered by `npm test`. The headless native window probe uses the pinned
+frontend's Playwright installation and requires Xvfb and ImageMagick. After
+`npm run build`, run:
 
 ```bash
 env -u DISPLAY -u WAYLAND_DISPLAY xvfb-run -a -s '-screen 0 1600x1100x24 -nolisten tcp' npm run test:e2e:i18n
 ```
 
-It checks German and Chinese unlock, settings and genuine OS confirmation
-dialogs with disposable profiles and an offline synthetic wallet. Screenshots
-and results go to a temporary directory, configurable with `QRL_I18N_EVIDENCE`.
-No installer is needed.
+It checks German and Chinese unlock and settings windows, live menu translation,
+and verbatim external settings errors with disposable profiles and an offline
+synthetic wallet. Screenshots and results go to a temporary directory,
+configurable with `QRL_I18N_EVIDENCE`. No installer is needed.
 
 ## Architecture: four processes, one trust gradient
 

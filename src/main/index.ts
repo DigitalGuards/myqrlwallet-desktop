@@ -9,7 +9,6 @@
 import { applyLanguage, onLanguageChanged, t } from './language';
 import { resolveLanguage } from '../shared/language';
 import { installApplicationMenu } from './applicationMenu';
-import { confirmationGate } from './confirmationGate';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -411,7 +410,6 @@ app
     registerSettingsIpc(settingsDeps);
     installApplicationMenu(() => showSettingsView(settingsDeps));
     onLanguageChanged(() => {
-      confirmationGate.abort(new Error(t('error.languageConfirm')));
       installApplicationMenu(() => showSettingsView(settingsDeps));
     });
     // A qrlconnect:// URI that arrived while locked was buffered (deliver()

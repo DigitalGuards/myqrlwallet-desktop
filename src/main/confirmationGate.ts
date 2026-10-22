@@ -1,5 +1,3 @@
-import { translator } from '../shared/i18n';
-import type { Language } from '../shared/language';
 import { setTimeout as delay } from 'node:timers/promises';
 import { dialog, type BrowserWindow, type MessageBoxOptions } from 'electron';
 
@@ -44,17 +42,17 @@ export class ConfirmationGate {
     parent: BrowserWindow,
     pages: MessageBoxOptions[],
     approvalId: number,
-    language: Language = 'en',
   ): Promise<boolean> {
-    const t = translator(language);
-    if (this.active) throw new Error(t('error.busyConfirm'));
+    if (this.active) throw new Error('another confirmation is already open');
     this.lastClosedAt = Math.max(this.lastClosedAt, this.clock.now());
     const controller = new AbortController();
     const { signal } = controller;
     const requestNumber = ++this.requestNumber;
     let webContents: BrowserWindow['webContents'] | undefined;
     const navigated = () => {
-      controller.abort(new Error(t('error.navigatedConfirm')));
+      controller.abort(
+        new Error('Wallet window reloaded or navigated during confirmation. Please try again.'),
+      );
     };
     const navigationStarted = (
       details: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
@@ -62,7 +60,7 @@ export class ConfirmationGate {
       if (details.isMainFrame && !details.isSameDocument) navigated();
     };
     const rendererGone = () => {
-      controller.abort(new Error(t('error.stoppedConfirm')));
+      controller.abort(new Error('Wallet renderer stopped during confirmation. Please try again.'));
     };
     try {
       this.active = controller;
@@ -79,11 +77,9 @@ export class ConfirmationGate {
           ({ response } = await dialog.showMessageBox(parent, {
             ...options,
             message:
-              t(pages.length > 1 ? 'confirm.page' : 'confirm.request', {
-                number: requestNumber,
-                page: index + 1,
-                pages: pages.length,
-              }) + `\n${options.message}`,
+              `Request ${requestNumber}` +
+              (pages.length > 1 ? `, page ${index + 1} of ${pages.length}` : '') +
+              `\n${options.message}`,
             signal,
           }));
         } finally {

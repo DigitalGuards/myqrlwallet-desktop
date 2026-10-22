@@ -2,10 +2,7 @@ import type en from './en';
 
 const catalog = {
   'unlock.keychainReason': 'Desbloquea tu billetera QRL',
-  'common.cancel': 'Cancelar',
-  'common.next': 'Siguiente',
   'common.continue': 'Continuar',
-  'common.ok': 'Aceptar',
   'unlock.title': 'Desbloquear MyQRLWallet',
   'unlock.account': 'Cuenta que desbloquear',
   'unlock.password': 'Introduce la contraseña',
@@ -60,83 +57,6 @@ const catalog = {
   'settings.removeDevice': 'Eliminar de este dispositivo',
   'settings.removeHelp':
     'Elimina permanentemente la semilla cifrada de la cuenta activa de este dispositivo. Necesitarás la frase de recuperación (o la semilla hexadecimal) para restaurarla. Las demás cuentas de este dispositivo se conservan. Se te pedirá confirmación.',
-  'confirm.approve': 'Aprobar y firmar',
-  'confirm.approvalNote': 'Aprueba solo si iniciaste esta acción y los datos son correctos.',
-  'confirm.request': 'Solicitud {{number}}',
-  'confirm.page': 'Solicitud {{number}}, página {{page}} de {{pages}}',
-  'confirm.origin': 'Solicitud de dApp (sin verificar, datos de la dApp):',
-  'confirm.name': 'Nombre:',
-  'confirm.url': 'URL:',
-  'confirm.channel': 'Canal:',
-  'confirm.absent': '(no proporcionado)',
-  'confirm.initiated': 'Aprueba solo si iniciaste esta acción en esa dApp.',
-  'confirm.renderer': 'Solicitud de: interfaz de la billetera (origen de dApp no proporcionado)',
-  'confirm.account': 'Cuenta:',
-  'confirm.scheme': 'Esquema:',
-  'confirm.signing': 'Firma de:',
-  'confirm.domain': 'Dominio {{field}}:',
-  'confirm.walletChain': 'chainId de la red de la billetera: {{chainId}}',
-  'confirm.chainMismatch':
-    'ADVERTENCIA: el chainId del dominio difiere del de la red de la billetera.',
-  'confirm.chainUnbound':
-    'ADVERTENCIA: esta firma no está vinculada a una cadena y puede reutilizarse en otras cadenas.',
-  'confirm.primaryType': 'Tipo principal:',
-  'confirm.fields': 'Campos del mensaje:',
-  'confirm.messageText': 'Mensaje (texto, {{bytes}} bytes):',
-  'confirm.messageHex': 'Mensaje (hex, {{bytes}} bytes):',
-  'confirm.empty': '(mensaje vacío)',
-  'confirm.bytes': '{{count}} bytes',
-  'confirm.characters': '{{count}} caracteres',
-  'confirm.amount': 'Importe:',
-  'confirm.to': 'Para:',
-  'confirm.from': 'De:',
-  'confirm.nonce': 'Nonce:',
-  'confirm.gas': 'Límite de gas:',
-  'confirm.fee': 'Comisión máx.:',
-  'confirm.cost': 'Coste máx.:',
-  'confirm.chain': 'ID de cadena:',
-  'confirm.data': 'Datos:',
-  'confirm.none': '(ninguno)',
-  'confirm.feeValue': '{{fee}} (hasta {{perGas}} por gas, prioridad {{priority}})',
-  'confirm.estimate': '{{gas}} (estimación de esta billetera)',
-  'confirm.dappGas': '{{gas}} (fijado por la dApp; estimación de la billetera {{estimate}})',
-  'confirm.walletGas': '{{gas}} (estimación de esta billetera; la dApp pidió {{requested}})',
-  'confirm.cappedGas':
-    '{{gas}} (limitado al gas del bloque; la dApp pidió {{requested}}, estimación de la billetera {{estimate}})',
-  'confirm.feeUnknown':
-    'NOTA: esta billetera no preparó los campos de comisión, por lo que desconoce cómo se eligió este límite de gas.',
-  'confirm.refund':
-    'El gas no utilizado se reembolsa, pero una llamada que falla por falta de gas o lo consume puede agotar todo el límite, por lo que el coste indicado puede alcanzarse.',
-  'confirm.blockWarning':
-    'ADVERTENCIA: este límite de gas supera una décima parte de un bloque completo. {{refund}}',
-  'confirm.gasWarning':
-    'ADVERTENCIA: la dApp pidió mucho más gas del estimado por esta billetera. {{refund}} Aprueba solo si sabes por qué esta llamada necesita tanto.',
-  'confirm.transactionTitle': 'Confirmar transacción',
-  'confirm.send': '¿Enviar {{amount}}?\nCoste máx. {{cost}}.',
-  'confirm.messageTitle': 'Confirmar firma de mensaje',
-  'confirm.messageQuestion': '¿Firmar este mensaje con la clave de tu billetera?',
-  'confirm.typedTitle': 'Confirmar firma de datos estructurados',
-  'confirm.typedQuestion': '¿Firmar estos datos estructurados con la clave de tu billetera?',
-  'remove.button': 'Eliminar billetera',
-  'remove.title': '¿Eliminar la billetera de este dispositivo?',
-  'remove.question': '¿Eliminar permanentemente esta billetera de este dispositivo?',
-  'remove.warning':
-    'La semilla cifrada se eliminará de este dispositivo. Solo podrás restaurar la billetera con tu frase de recuperación. Esta acción es irreversible.',
-  'error.metadata':
-    'Los detalles de seguridad de los datos estructurados exceden el límite de visualización. Acorta los metadatos del origen de la dApp o del dominio.',
-  'error.typedLong':
-    'La solicitud de datos estructurados es demasiado grande para revisarla de forma segura en escritorio (máximo {{pages}} páginas).',
-  'error.messageLong':
-    'mensaje demasiado largo para revisarlo en el diálogo de confianza (máximo {{pages}} páginas).',
-  'error.lockedConfirm':
-    'La billetera se bloqueó durante la confirmación. Desbloquéala e inténtalo de nuevo.',
-  'error.busyConfirm': 'ya hay otra confirmación abierta',
-  'error.navigatedConfirm':
-    'La ventana de la billetera se recargó o cambió de página durante la confirmación. Inténtalo de nuevo.',
-  'error.stoppedConfirm':
-    'La interfaz de la billetera se detuvo durante la confirmación. Inténtalo de nuevo.',
-  'error.languageConfirm':
-    'El idioma cambió durante la confirmación. Revisa la solicitud de nuevo.',
   'error.startTitle': 'MyQRLWallet no pudo iniciarse',
   'error.startHelp':
     'La aplicación no puede continuar y se cerrará. Si el problema persiste, vuelve a instalar MyQRLWallet.',

@@ -11,11 +11,7 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
     fork() { throw new Error('Unexpected signer process'); }
   };
   export const app = {
-    name: 'MyQRLWallet',
     getPath() { throw new Error('Unexpected app path'); }
-  };
-  export const Menu = {
-    buildFromTemplate() { throw new Error('Unexpected native menu'); }
   };
   export default { BrowserWindow, dialog, utilityProcess, app };
 `)}`;

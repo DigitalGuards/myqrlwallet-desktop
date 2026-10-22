@@ -9,7 +9,8 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
   export const shell = {};
   export const dialog = { async showMessageBox() { throw new Error('Unexpected dialog'); } };
   export const utilityProcess = { fork() { throw new Error('Unexpected signer'); } };
-  export const app = { isPackaged: true, getPath() { throw new Error('Unexpected app path'); } };
+  export const app = { name: 'MyQRLWallet', isPackaged: true, getPath() { throw new Error('Unexpected app path'); } };
+  export const Menu = { buildFromTemplate() { throw new Error('Unexpected native menu'); } };
   export default { BrowserWindow, WebContentsView, ipcMain, shell, dialog, app };
 `)}`;
 export function resolve(specifier, context, nextResolve) {

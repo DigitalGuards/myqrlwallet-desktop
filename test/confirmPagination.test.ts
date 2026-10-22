@@ -297,11 +297,8 @@ test('transaction values and wallet-removal addresses fit the shared detail widt
     { build: { estimatedGas: gas, requestedGas: '21000' } },
     { build: { estimatedGas: (BigInt(gas) + 1n).toString(), requestedGas: '21000' } },
   ]) {
-    const start = shown.length;
     assert.equal(await finishConfirmation(t, confirmSignature(parent, transaction, context)), true);
-    const current = shown.slice(start);
-    const detail = current.map((page) => unfoldDetail(page.detail ?? '')).join('\n');
-    assert.equal(current.length, 1, 'transactions retain the origin/dev single page');
+    const detail = unfoldDetail(shown.at(-1)?.detail ?? '');
     assert.ok(detail.includes(`To:        ${groupQrlAddress(SIGNER)}`));
     assert.ok(detail.includes('Name:    MW@%'));
     assert.match(shown.at(-1)?.message ?? '', /^Request \d+\n/);

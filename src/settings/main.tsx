@@ -205,12 +205,7 @@ function SettingsApp() {
           <div className="settings-body">
             <p className="settings-help">{t('settings.loading')}</p>
             {saveStatus && !saveStatus.ok && (
-              <p className="settings-status error">
-                {t(saveStatus.message)}
-                {saveStatus.detail && (
-                  <span className="settings-error-detail">{saveStatus.detail}</span>
-                )}
-              </p>
+              <p className="settings-status error">{saveStatus.detail ?? t(saveStatus.message)}</p>
             )}
           </div>
         </div>
@@ -283,10 +278,7 @@ function SettingsApp() {
               <p className="settings-help">{t('settings.registerHelp')}</p>
               {protocolStatus && (
                 <p className={`settings-status ${protocolStatus.ok ? 'ok' : 'error'}`}>
-                  {t(protocolStatus.message)}
-                  {protocolStatus.detail && (
-                    <span className="settings-error-detail">{protocolStatus.detail}</span>
-                  )}
+                  {protocolStatus.detail ?? t(protocolStatus.message)}
                 </p>
               )}
             </section>
@@ -306,10 +298,7 @@ function SettingsApp() {
               <p className="settings-help">{t('settings.logsHelp')}</p>
               {logsStatus && (
                 <p className={`settings-status ${logsStatus.ok ? 'ok' : 'error'}`}>
-                  {t(logsStatus.message)}
-                  {logsStatus.detail && (
-                    <span className="settings-error-detail">{logsStatus.detail}</span>
-                  )}
+                  {logsStatus.detail ?? t(logsStatus.message)}
                 </p>
               )}
             </section>
@@ -339,19 +328,13 @@ function SettingsApp() {
               survive it. */}
             {removeStatus && (
               <p className={`settings-status ${removeStatus.ok ? 'ok' : 'error'}`}>
-                {t(removeStatus.message)}
-                {removeStatus.detail && (
-                  <span className="settings-error-detail">{removeStatus.detail}</span>
-                )}
+                {removeStatus.detail ?? t(removeStatus.message)}
               </p>
             )}
 
             {saveStatus && (
               <p className={`settings-status ${saveStatus.ok ? 'ok' : 'error'}`}>
-                {t(saveStatus.message)}
-                {saveStatus.detail && (
-                  <span className="settings-error-detail">{saveStatus.detail}</span>
-                )}
+                {saveStatus.detail ?? t(saveStatus.message)}
               </p>
             )}
           </div>

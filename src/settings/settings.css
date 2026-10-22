@@ -353,8 +353,3 @@ select {
   max-width: 100%;
   white-space: normal;
 }
-.settings-error-detail {
-  display: block;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}

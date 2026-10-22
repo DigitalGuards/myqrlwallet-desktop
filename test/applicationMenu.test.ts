@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { LANGUAGES } from '../src/shared/language';
 import { translate } from '../src/shared/i18n';
 
-register(new URL('./electronMockLoader.mjs', import.meta.url));
+register(new URL('./ipcLanguageMockLoader.mjs', import.meta.url));
 const { applicationMenuTemplate } = await import('../src/main/applicationMenu');
 const { applyLanguage } = await import('../src/main/language');
 

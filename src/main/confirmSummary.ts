@@ -12,9 +12,6 @@
  * record is the only wallet-computed input here; when one is missing, the
  * summary says so plainly.
  */
-import { translator, type MessageKey, type Values } from '../shared/i18n';
-import type { Language } from '../shared/language';
-type Translator = ReturnType<typeof translator>;
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
 import type { GasBuildRecord } from './buildRecords';
 import { groupQrlAddress } from '../shared/address';
@@ -28,7 +25,6 @@ import {
 } from '../shared/typedData';
 
 const DECIMALS = 18n;
-const english = translator('en');
 
 /** Conservative width shared by every trusted confirmation detail line. */
 export const DETAIL_LINE_COLUMNS = 48;
@@ -46,9 +42,7 @@ export function formatQuanta(smallestUnit: string | bigint): string {
 
 /** Label column width, so every detail line stays aligned in the dialog. */
 const LABEL_WIDTH = 11;
-const paddedLabel = (label: string, width: number): string =>
-  label.padEnd(Math.max(width, label.length + 1));
-const row = (label: string, value: string): string => `${paddedLabel(label, LABEL_WIDTH)}${value}`;
+const row = (label: string, value: string): string => `${label.padEnd(LABEL_WIDTH)}${value}`;
 
 /**
  * How far above the wallet's own estimate a dApp-requested gas limit may go
@@ -73,27 +67,18 @@ export function gasWarningThreshold(estimated: bigint): bigint {
  * user WHO CLAIMS to be asking. Schema length caps bound the metadata; escaping keeps
  * URL whitespace and direction marks visible inside labelled, wrapped rows.
  */
-export function originDetail(
-  origin: DAppOrigin | undefined,
-  t: Translator = translator('en'),
-): string {
+export function originDetail(origin: DAppOrigin | undefined): string {
   if (!origin) return '';
   return wrapDetailText(
     [
       '',
-      t('confirm.origin'),
-      wrapDetailText(
-        `  ${paddedLabel(t('confirm.name'), 9)}${singleLineText(origin.name)}`,
-        'dapp',
-      ),
+      'Requested by dApp (unverified, dApp-supplied):',
+      wrapDetailText(`  Name:    ${singleLineText(origin.name)}`, 'dapp'),
       origin.url
-        ? wrapDetailText(
-            `  ${paddedLabel(t('confirm.url'), 9)}${singleLineText(origin.url)}`,
-            'dapp',
-          )
-        : `  ${paddedLabel(t('confirm.url'), 9)}${t('confirm.absent')}`,
-      wrapDetailText(`  ${t('confirm.channel')} ${origin.channelId}`, 'dapp'),
-      t('confirm.initiated'),
+        ? wrapDetailText(`  URL:     ${singleLineText(origin.url)}`, 'dapp')
+        : '  URL:     (not provided)',
+      wrapDetailText(`  Channel: ${origin.channelId}`, 'dapp'),
+      'Only approve if you initiated this action in that dApp.',
     ].join('\n'),
   );
 }
@@ -127,49 +112,18 @@ export const TYPED_DATA_DISPLAY_LIMITS = {
   labelChars: 80,
 } as const;
 
-export const SIGNATURE_APPROVAL_NOTE = english('confirm.approvalNote');
+export const SIGNATURE_APPROVAL_NOTE =
+  'Approve only if you initiated this and the details are correct.';
 
-/** Only display-budget failures can retry with the English page boundaries. */
-class ReviewLimitError extends Error {
-  constructor(
-    readonly key: MessageKey,
-    t: Translator,
-    readonly values: Values = {},
-  ) {
-    super(t(key, values));
-  }
-}
-
-/** English decides acceptance. Localized labels may consume additional pages. */
-function translatedPages(
-  render: (text: Translator, layout?: Translator) => string[],
-  t: Translator,
-): string[] {
-  let baseline: string[];
-  try {
-    baseline = render(english);
-  } catch (error) {
-    if (error instanceof ReviewLimitError)
-      throw new Error(t(error.key, error.values), { cause: error });
-    throw error;
-  }
-  if (t === english) return baseline;
-  try {
-    return render(t);
-  } catch (error) {
-    if (!(error instanceof ReviewLimitError)) throw error;
-    // Keep every translated row and use the same row-to-page assignment as English.
-    // These pages may be taller than the preferred localized display budget.
-    return render(t, english);
-  }
-}
+const TYPED_METADATA_ERROR =
+  'Typed-data security details exceed the confirmation display limit. Shorten the dApp origin or domain metadata.';
 
 /** Full metadata must fit on page one. Bound escaping before measuring it. */
-function fullTypedText(value: string, t: Translator): string {
+function fullTypedText(value: string): string {
   const maxChars = TYPED_DATA_DISPLAY_LIMITS.lines * DETAIL_LINE_COLUMNS;
-  if (value.length > maxChars) throw new ReviewLimitError('error.metadata', t);
+  if (value.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
   const escaped = singleLineText(value.slice(0, maxChars));
-  if (escaped.length > maxChars) throw new ReviewLimitError('error.metadata', t);
+  if (escaped.length > maxChars) throw new Error(TYPED_METADATA_ERROR);
   return escaped;
 }
 
@@ -312,7 +266,7 @@ const MESSAGE_BODY_GUTTER = `${LEFT_TO_RIGHT_MARK}| `;
 const MESSAGE_BODY_COLUMNS = DETAIL_LINE_COLUMNS - displayWidth(MESSAGE_BODY_GUTTER);
 
 /** Wrap complete escaped code points, reserving two display columns for the gutter. */
-function* messageTextRows(value: string, t: Translator): Generator<string> {
+function* messageTextRows(value: string): Generator<string> {
   let line = '';
   let used = 0;
   for (const char of value) {
@@ -326,7 +280,7 @@ function* messageTextRows(value: string, t: Translator): Generator<string> {
     line += escaped;
     used += width;
   }
-  yield MESSAGE_BODY_GUTTER + (line.length > 0 ? line : t('confirm.empty'));
+  yield MESSAGE_BODY_GUTTER + (line.length > 0 ? line : '(empty message)');
 }
 
 function* messageHexRows(hex: string): Generator<string> {
@@ -335,11 +289,7 @@ function* messageHexRows(hex: string): Generator<string> {
   }
 }
 
-function messagePages(
-  req: Extract<SignatureRequest, { kind: 'message' }>,
-  t: Translator,
-  layout: Translator = t,
-): string[] {
+function messagePages(req: Extract<SignatureRequest, { kind: 'message' }>): string[] {
   const hex = req.messageHex.startsWith('0x') ? req.messageHex.slice(2) : req.messageHex;
   let text: string | undefined;
   try {
@@ -350,44 +300,40 @@ function messagePages(
   } catch {
     // Invalid UTF-8 receives complete hexadecimal review.
   }
-  const headerFor = (labels: Translator): string[] => [
-    row(labels('confirm.account'), groupQrlAddress(req.signer)),
-    req.origin ? originDetail(req.origin, labels) : labels('confirm.renderer'),
-    labels(text === undefined ? 'confirm.messageHex' : 'confirm.messageText', {
-      bytes: hex.length / 2,
-    }),
+  const heading = `Message (${text === undefined ? 'hex' : 'text'}, ${hex.length / 2} bytes):`;
+  const header = [
+    row('Account:', groupQrlAddress(req.signer)),
+    req.origin
+      ? originDetail(req.origin)
+      : 'Requested by: wallet renderer (dApp origin not provided)',
   ];
-  const header = headerFor(t);
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
-  const tooLong = () => new ReviewLimitError('error.messageLong', t, { pages: maxPages });
-  const base = headerFor(layout).join('\n');
-  const baseLines = typedDataDisplayLines(`${base}\n\n${layout('confirm.approvalNote')}`);
-  if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw tooLong();
+  const tooLong = `message too long to review in the trusted dialog (maximum ${maxPages} pages).`;
+  const base = [...header, heading].join('\n');
+  const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  if (baseLines > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(tooLong);
   let body: string[] = [];
   const bodies = [body];
   let used = baseLines;
-  const rows = text === undefined ? messageHexRows(hex) : messageTextRows(text, layout);
-  const translated = text === undefined ? messageHexRows(hex) : messageTextRows(text, t);
+  const rows = text === undefined ? messageHexRows(hex) : messageTextRows(text);
   // Stop at the page cap while preparing the full review, before opening a dialog.
   for (const line of rows) {
     const cost = typedDataDisplayLines(line);
     if (used + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
       if (bodies.length >= maxPages || baseLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
-        throw tooLong();
+        throw new Error(tooLong);
       }
       body = [];
       bodies.push(body);
       used = baseLines;
     }
-    const rendered = translated.next();
-    if (rendered.done) throw new Error('missing translated message row');
-    body.push(rendered.value);
+    body.push(line);
     used += cost;
   }
-  return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));
+  return bodies.map((bodyLines) => wrapDetailText([...header, heading, ...bodyLines].join('\n')));
 }
 
-function displayTypedText(value: string, length: string, translatedLength: string): string {
+function displayTypedText(value: string, length: string): string {
   // Escape only a bounded input prefix, even for maximum-size control text.
   const limit = TYPED_DATA_DISPLAY_LIMITS.valueChars;
   let input = '';
@@ -403,10 +349,10 @@ function displayTypedText(value: string, length: string, translatedLength: strin
     if (prefix.length + token.length + suffix.length > limit) break;
     prefix += token;
   }
-  return prefix + `…" [${translatedLength}]`;
+  return prefix + suffix;
 }
 
-function* typedMessageRows(payload: TypedDataPayload, t: Translator): Generator<string> {
+function* typedMessageRows(payload: TypedDataPayload): Generator<string> {
   let count = 0;
   const formatRow = (path: string, type: string, value: string): string => {
     count += 1;
@@ -437,75 +383,56 @@ function* typedMessageRows(payload: TypedDataPayload, t: Translator): Generator<
       for (const [index, item] of value.entries())
         yield* walk(parsed.inner, item, `${path}[${index}]`);
     } else {
-      yield formatRow(path, type, typedScalar(type, value, payload.types, t));
+      yield formatRow(path, type, typedScalar(type, value, payload.types));
     }
   }
   yield* walkStruct(payload.primaryType, payload.message, 'message');
 }
 
-function typedScalar(
-  type: string,
-  value: unknown,
-  types: TypeMap,
-  t: Translator,
-  shorten = true,
-): string {
+function typedScalar(type: string, value: unknown, types: TypeMap, shorten = true): string {
   const parsed = parseFieldType(type, types);
   if (parsed.kind === 'uintN' || parsed.kind === 'intN')
     return parseIntValue(value, type).toString();
   if (parsed.kind === 'bool' && typeof value === 'boolean') return String(value);
   if (typeof value !== 'string') throw new Error('invalid typed-data summary value');
   if (parsed.kind === 'address') return groupQrlAddress(value);
-  if (!shorten) return `"${fullTypedText(value, t)}"`;
+  if (!shorten) return `"${fullTypedText(value)}"`;
   if ((parsed.kind === 'bytes' || parsed.kind === 'bytesN') && value.length <= 66) {
     return `"${value}"`;
   }
-  const bytes = parsed.kind === 'bytes' || parsed.kind === 'bytesN';
-  const key = bytes ? 'confirm.bytes' : 'confirm.characters';
-  const values = { count: bytes ? (value.length - 2) / 2 : value.length };
-  // The fixed English suffix budget selects source characters before translation.
-  return displayTypedText(value, english(key, values), t(key, values));
+  const length =
+    parsed.kind === 'bytes' || parsed.kind === 'bytesN'
+      ? `${(value.length - 2) / 2} bytes`
+      : `${value.length} characters`;
+  return displayTypedText(value, length);
 }
 
-function typedDataHeader(
+function typedDataPages(
   req: Extract<SignatureRequest, { kind: 'typedData' }>,
-  t: Translator,
+  connectedChainId: number | undefined,
 ): string[] {
   const { payload } = req;
   const scheme = typedDataSchemeVersion(payload);
-  return [
+  const header = [
     ...(req.origin
       ? [
-          t('confirm.origin'),
-          wrapDetailText(
-            `${paddedLabel(t('confirm.name'), 9)}${fullTypedText(req.origin.name, t)}`,
-            'dapp',
-          ),
+          'Requested by dApp (unverified, dApp-supplied):',
+          wrapDetailText(`Name:    ${fullTypedText(req.origin.name)}`, 'dapp'),
           req.origin.url
-            ? wrapDetailText(
-                `${paddedLabel(t('confirm.url'), 9)}${fullTypedText(req.origin.url, t)}`,
-                'dapp',
-              )
-            : `${paddedLabel(t('confirm.url'), 9)}${t('confirm.absent')}`,
+            ? wrapDetailText(`URL:     ${fullTypedText(req.origin.url)}`, 'dapp')
+            : 'URL:     (not provided)',
         ]
-      : [t('confirm.renderer')]),
-    row(t('confirm.account'), groupQrlAddress(req.signer)),
-    row(t('confirm.scheme'), scheme),
+      : ['Requested by: wallet renderer (dApp origin not provided)']),
+    row('Account:', groupQrlAddress(req.signer)),
+    row('Scheme:', scheme),
     wrapDetailText(
       row(
-        t('confirm.signing'),
-        `${fullTypedText(payload.primaryType, t)} / ${typedScalar('string', payload.domain['name'], payload.types, t)}`,
+        'Signing:',
+        `${fullTypedText(payload.primaryType)} / ${typedScalar('string', payload.domain['name'], payload.types)}`,
       ),
       'dapp',
     ),
   ];
-}
-
-function typedDataMetadata(
-  payload: TypedDataPayload,
-  connectedChainId: number | undefined,
-  t: Translator,
-): string[] {
   const lines: string[] = [];
   for (const [name, type] of [
     ['name', 'string'],
@@ -517,61 +444,50 @@ function typedDataMetadata(
     const value = payload.domain[name];
     lines.push(
       value === undefined
-        ? `${t('confirm.domain', { field: name })} ${t('confirm.absent')}`
+        ? `Domain ${name}: (not provided)`
         : wrapDetailText(
-            `${t('confirm.domain', { field: name })} ${typedScalar(type, value, payload.types, t, false)}`,
+            `Domain ${name}: ${typedScalar(type, value, payload.types, false)}`,
             'dapp',
           ),
     );
   }
   if (connectedChainId !== undefined) {
-    lines.push(t('confirm.walletChain', { chainId: connectedChainId }));
+    lines.push(`Wallet network chainId: ${connectedChainId}`);
     const domainChain = payload.domain['chainId'];
     if (
       domainChain !== undefined &&
       parseIntValue(domainChain, 'uint256') !== BigInt(connectedChainId)
     ) {
-      lines.push(t('confirm.chainMismatch'));
+      lines.push('WARNING: domain chainId differs from the wallet network.');
     }
   }
   if (payload.domain['chainId'] === undefined) {
-    lines.push(t('confirm.chainUnbound'));
+    lines.push(
+      'WARNING: this signature is not bound to a chain and can be replayed on other chains.',
+    );
   }
-  lines.push(wrapDetailText(`${t('confirm.primaryType')} ${payload.primaryType}`, 'dapp'));
-  return lines;
-}
-
-function typedDataPages(
-  req: Extract<SignatureRequest, { kind: 'typedData' }>,
-  connectedChainId: number | undefined,
-  t: Translator,
-  layout: Translator = t,
-): string[] {
-  const { payload } = req;
-  const header = typedDataHeader(req, t);
-  const lines = typedDataMetadata(payload, connectedChainId, t);
+  lines.push(wrapDetailText(`Primary type: ${payload.primaryType}`, 'dapp'));
   const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
   // Metadata is mandatory on page one; later pages repeat the compact header.
-  const base = typedDataHeader(req, layout).join('\n');
-  const baseLines = typedDataDisplayLines(`${base}\n\n${layout('confirm.approvalNote')}`);
-  const heading = t('confirm.fields');
-  const headingLines = typedDataDisplayLines(layout('confirm.fields'));
+  const base = header.join('\n');
+  const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  const heading = 'Message fields:';
+  const headingLines = typedDataDisplayLines(heading);
   const continuationLines = baseLines + headingLines;
-  let used =
-    baseLines +
-    typedDataDisplayLines(typedDataMetadata(payload, connectedChainId, layout).join('\n'));
-  if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new ReviewLimitError('error.metadata', t);
+  let used = baseLines + typedDataDisplayLines(lines.join('\n'));
+  if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(TYPED_METADATA_ERROR);
   const bodies = [lines];
   let body = lines;
   let needsHeading = true;
   // Consume rows lazily so a request over the page limit stops formatting as
   // soon as it is known to be too large. No dialog is shown during preparation.
-  const translated = typedMessageRows(payload, t);
-  for (const field of typedMessageRows(payload, layout)) {
+  for (const field of typedMessageRows(payload)) {
     const cost = typedDataDisplayLines(field);
     if (used + cost + (needsHeading ? headingLines : 0) > TYPED_DATA_DISPLAY_LIMITS.lines) {
       if (bodies.length >= maxPages || continuationLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
-        throw new ReviewLimitError('error.typedLong', t, { pages: maxPages });
+        throw new Error(
+          `Typed-data request is too large to review safely on desktop (maximum ${maxPages} pages).`,
+        );
       }
       body = [];
       bodies.push(body);
@@ -584,9 +500,7 @@ function typedDataPages(
       used += headingLines;
       needsHeading = false;
     }
-    const rendered = translated.next();
-    if (rendered.done) throw new Error('missing translated typed-data row');
-    body.push(rendered.value);
+    body.push(field);
     used += cost;
   }
   return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));
@@ -600,22 +514,30 @@ function typedDataPages(
  */
 const UNATTRIBUTED_GAS_BLOCK_SHARE = 10n;
 
+/** The wording that explains what an over-large gas limit can actually cost. */
+const REFUND_NOTE =
+  'Unused gas is refunded, but a call that fails out of gas or burns gas can consume the whole limit, so the cost below is reachable.';
+
 /** The gas-limit row plus any provenance or warning lines that belong with it. */
 function gasLines(
   gas: string,
   build: GasBuildRecord | undefined,
   blockGasLimit: bigint | undefined,
-  t: Translator,
 ): string[] {
   if (!build) {
-    const lines = [row(t('confirm.gas'), gas), t('confirm.feeUnknown')];
+    const lines = [
+      row('Gas limit:', gas),
+      'NOTE: the fee fields were not assembled by this wallet, so it cannot say how this gas limit was chosen.',
+    ];
     if (blockGasLimit !== undefined && BigInt(gas) > blockGasLimit / UNATTRIBUTED_GAS_BLOCK_SHARE) {
-      lines.push(t('confirm.blockWarning', { refund: t('confirm.refund') }));
+      lines.push(
+        `WARNING: this gas limit claims more than a tenth of a whole block. ${REFUND_NOTE}`,
+      );
     }
     return lines;
   }
   if (build.requestedGas === undefined) {
-    return [row(t('confirm.gas'), t('confirm.estimate', { gas }))];
+    return [row('Gas limit:', `${gas} (this wallet's estimate)`)];
   }
   const built = BigInt(gas);
   const requested = BigInt(build.requestedGas);
@@ -625,27 +547,28 @@ function gasLines(
   // would credit the dApp with a number it did not choose.
   if (built === requested) {
     const lines = [
-      row(t('confirm.gas'), t('confirm.dappGas', { gas, estimate: estimated.toString() })),
+      row('Gas limit:', `${gas} (set by the dApp; wallet estimate ${estimated.toString()})`),
     ];
     if (requested > gasWarningThreshold(estimated)) {
-      lines.push(t('confirm.gasWarning', { refund: t('confirm.refund') }));
+      lines.push(
+        `WARNING: the dApp asked for far more gas than this wallet estimated. ${REFUND_NOTE} Approve only if you know why this call needs that much.`,
+      );
     }
     return lines;
   }
   if (built === estimated) {
     return [
-      row(t('confirm.gas'), t('confirm.walletGas', { gas, requested: requested.toString() })),
+      row(
+        'Gas limit:',
+        `${gas} (this wallet's estimate; the dApp asked for ${requested.toString()})`,
+      ),
     ];
   }
   // Neither the request nor the estimate: the block gas limit capped the floor.
   return [
     row(
-      t('confirm.gas'),
-      t('confirm.cappedGas', {
-        gas,
-        requested: requested.toString(),
-        estimate: estimated.toString(),
-      }),
+      'Gas limit:',
+      `${gas} (capped at the block gas limit; the dApp asked for ${requested.toString()}, wallet estimate ${estimated.toString()})`,
     ),
   ];
 }
@@ -669,9 +592,7 @@ function gasLines(
 export function summariseSignatureRequest(
   req: SignatureRequest,
   context: ConfirmContext = {},
-  language: Language = 'en',
 ): ConfirmSummary {
-  const t = language === 'en' ? english : translator(language);
   const { build, blockGasLimit } = context;
   switch (req.kind) {
     case 'transaction': {
@@ -683,49 +604,42 @@ export function summariseSignatureRequest(
       const maxFee = gas * feePerGas;
       const maxCost = BigInt(tx.value) + maxFee;
       const detail = [
-        row(t('confirm.amount'), formatQuanta(tx.value)),
-        wrapDetailText(row(t('confirm.to'), groupQrlAddress(tx.to)), 'dapp'),
+        row('Amount:', formatQuanta(tx.value)),
+        wrapDetailText(row('To:', groupQrlAddress(tx.to)), 'dapp'),
         // Main verifies tx.from against the unlocked signer before confirmation.
-        row(t('confirm.from'), groupQrlAddress(tx.from)),
-        row(t('confirm.nonce'), String(tx.nonce)),
-        ...gasLines(gas.toString(), build, blockGasLimit, t),
+        row('From:', groupQrlAddress(tx.from)),
+        row('Nonce:', String(tx.nonce)),
+        ...gasLines(gas.toString(), build, blockGasLimit),
         row(
-          t('confirm.fee'),
-          t('confirm.feeValue', {
-            fee: formatQuanta(maxFee),
-            perGas: feePerGas.toString(),
-            priority: priorityFeePerGas.toString(),
-          }),
+          'Max fee:',
+          `${formatQuanta(maxFee)} (up to ${feePerGas.toString()} per gas, priority ${priorityFeePerGas.toString()})`,
         ),
-        row(t('confirm.cost'), formatQuanta(maxCost)),
-        row(t('confirm.chain'), String(tx.chainId)),
+        row('Max cost:', formatQuanta(maxCost)),
+        row('Chain id:', String(tx.chainId)),
         tx.data && tx.data !== '0x'
-          ? wrapDetailText(row(t('confirm.data'), `${tx.data.slice(0, 66)}…`), 'dapp')
-          : row(t('confirm.data'), t('confirm.none')),
+          ? wrapDetailText(row('Data:', `${tx.data.slice(0, 66)}…`), 'dapp')
+          : row('Data:', '(none)'),
       ].join('\n');
       return {
-        title: t('confirm.transactionTitle'),
+        title: 'Confirm transaction',
         // Two explicit lines keep the max cost prominent without a toolkit wrap.
-        message: t('confirm.send', { amount: formatQuanta(tx.value), cost: formatQuanta(maxCost) }),
-        pages: [wrapDetailText(detail + originDetail(req.origin, t))],
+        message: `Send ${formatQuanta(tx.value)}?\nMax cost ${formatQuanta(maxCost)}.`,
+        pages: [wrapDetailText(detail + originDetail(req.origin))],
       };
     }
     case 'message':
       return {
-        title: t('confirm.messageTitle'),
-        message: t('confirm.messageQuestion'),
+        title: 'Confirm message signature',
+        message: 'Sign this message with your wallet key?',
         // req.signer is trustworthy to display: main verified it against the
         // unlocked session before this modal, and the signer re-enforces it.
-        pages: translatedPages((labels, layout) => messagePages(req, labels, layout), t),
+        pages: messagePages(req),
       };
     case 'typedData':
       return {
-        title: t('confirm.typedTitle'),
-        message: t('confirm.typedQuestion'),
-        pages: translatedPages(
-          (labels, layout) => typedDataPages(req, context.connectedChainId, labels, layout),
-          t,
-        ),
+        title: 'Confirm typed-data signature',
+        message: 'Sign this structured data with your wallet key?',
+        pages: typedDataPages(req, context.connectedChainId),
       };
   }
 }
