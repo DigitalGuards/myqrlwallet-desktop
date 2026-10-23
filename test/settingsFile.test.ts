@@ -67,6 +67,16 @@ test('corrupt JSON self-heals to defaults and stays writable', async () => {
   assert.deepEqual(await readSettingsFile(file), updated);
 });
 
+test('an own __proto__ key counts as an extra key (strict envelope)', async () => {
+  const file = await tmpSettingsPath();
+  await writeFile(
+    file,
+    '{"v":1,"autolockMs":900000,"biometricUnlock":false,"__proto__":{"x":1}}',
+    'utf8',
+  );
+  assert.deepEqual(await readSettingsFile(file), { v: 1 }, '__proto__ key -> defaults');
+});
+
 test('wrong version and extra keys count as corrupt (strict envelope)', async () => {
   const file = await tmpSettingsPath();
   await writeFile(file, JSON.stringify({ v: 2, autolockMs: 900_000 }), 'utf8');

@@ -61,3 +61,25 @@ test('main and signer preserve dApp origin text caps for astral input', () => {
     assert.equal(parseSignerRequest({ ...wire, request: oversized }), null);
   }
 });
+
+test('an oversized channel id reports the same first issue as before', () => {
+  const origin = { via: 'dapp', name: 'dApp', url: '', channelId: astral.repeat(33) };
+  const rejected = SignatureRequestSchema.safeParse({
+    kind: 'message',
+    messageHex: '0xab',
+    signer: address,
+    origin,
+  });
+  assert.equal(rejected.success, false);
+  const [issue] = rejected.error.issues;
+  assert.ok(issue);
+  assert.equal(issue.code, 'too_big');
+  assert.deepEqual(issue.path, ['origin', 'channelId']);
+});
+
+test('an own __proto__ key counts as an unknown key on a strict request', () => {
+  const request: unknown = JSON.parse(
+    `{"kind":"message","messageHex":"0xab","signer":"${address}","__proto__":{"x":1}}`,
+  );
+  assert.equal(SignatureRequestSchema.safeParse(request).success, false);
+});

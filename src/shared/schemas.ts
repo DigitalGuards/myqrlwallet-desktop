@@ -177,7 +177,7 @@ export const DAppOriginSchema = z
     channelId: z
       .string()
       .min(1)
-      .max(64)
+      .superRefine(maxUtf16Length(64))
       .regex(/^[0-9a-fA-F-]+$/, 'must be a hex/uuid channel id'),
   })
   .strict();
@@ -359,7 +359,7 @@ function fixedHexSchema(bytes: number): z.ZodString {
 
 const RawTransactionSchema = z
   .string()
-  .max(2 * 256 * 1024 + 2)
+  .superRefine(maxUtf16Length(2 * 256 * 1024 + 2))
   .regex(/^0x(?:[0-9a-fA-F]{2})+$/, 'must be non-empty, byte-aligned 0x hex');
 
 const TransactionSignatureResultSchema = z
