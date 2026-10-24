@@ -3,9 +3,12 @@
 Post-quantum, self-custody QRL desktop wallet. An Electron shell built around a
 hardened four-process architecture: a sandboxed renderer (the real
 `myqrlwallet-frontend` React app, reused as-is), a broker main process, and an
-isolated signer `utilityProcess` that is the sole holder of plaintext key
-material. Even a fully compromised renderer yields no key material, because keys
-never live there.
+isolated signer `utilityProcess` that holds the decrypted keys and signs. Once
+an account exists, a compromised renderer yields no key material: seed
+decryption and signing stay in the signer. Account setup is the exception: the
+renderer shows a new account's recovery phrase once for backup, and the import
+forms read the recovery phrase, hex seed or wallet file you enter before
+handing it to the signer.
 
 This implements the decision document in
 [`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md). Read that first
@@ -182,7 +185,9 @@ reviews above 10 pages are refused. Message signing receives the same complete
 paginated review: every byte appears once as escaped text or full hex, with a
 visible `| ` gutter on every body row. Main validates every resource bound
 before confirmation; the signer checks them again and binds the request to its
-unlocked account. Message and typed-data signing work offline.
+unlocked account. Message signing, and typed data without a domain chain ID,
+work offline. Typed data that names a chain ID in its domain waits for a
+successful chain lookup over RPC; if the lookup fails, approval stays disabled.
 
 ## Native languages
 
