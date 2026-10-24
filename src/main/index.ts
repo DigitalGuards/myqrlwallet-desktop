@@ -7,7 +7,7 @@
  * proxies RPC, and owns the encrypted seed file on disk.
  */
 import { applyLanguage, onLanguageChanged, t } from './language';
-import { resolveLanguage } from '../shared/language';
+import { startupLanguage } from '../shared/language';
 import { installApplicationMenu } from './applicationMenu';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -341,7 +341,12 @@ function createWindow(startLocked = false): void {
 app
   .whenReady()
   .then(async () => {
-    applyLanguage(resolveLanguage(app.getPreferredSystemLanguages(), app.getLocale()));
+    // Native windows and menus open before the wallet window reports its
+    // language, so start in the saved choice.
+    const { language: savedLanguage } = await readSettings();
+    applyLanguage(
+      startupLanguage(savedLanguage, app.getPreferredSystemLanguages(), app.getLocale()),
+    );
     logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);

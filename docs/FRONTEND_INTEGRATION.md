@@ -249,11 +249,12 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 
 ## Build the bundled renderer
 
-Desktop 1.4.4 uses frontend main revision
-`683d0642f2b91b9e70c61e56989bddc4ff4b1ab0`, the web wallet released on 2026-10-24.
+Desktop 1.4.5 uses frontend main revision
+`1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
 This includes English, German, Spanish, Russian and Simplified Chinese catalogs,
-the dApp approval visibility gate, the typed-data chain check and the frontend
-zod fix. `.github/workflows/ci.yml` pins the same full revision.
+the desktop language choice on the Settings page, the Add NFT picker fix, the
+dApp approval visibility gate, the typed-data chain check and the frontend zod
+fix. `.github/workflows/ci.yml` pins the same full revision.
 
 `scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
 the frontend checkout, installs its locked dependencies, builds it and stages
