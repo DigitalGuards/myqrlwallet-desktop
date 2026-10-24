@@ -19,6 +19,16 @@ import { assertValidQrlAddressCase } from './addressCase';
 import { typedDataSchemeVersion, validateTypedDataPayload } from './typedData';
 import { hasBoundedTypedDataIpcSize } from './typedDataIpcSize';
 
+/** Preserve the desktop's UTF-16 input caps across Zod's code-point length change.
+ * The password cap must also match the native unlock window's string.length check. */
+function maxUtf16Length(maximum: number) {
+  return (value: string, context: z.RefinementCtx<string>): void => {
+    if (value.length > maximum) {
+      context.addIssue({ code: 'too_big', origin: 'string', maximum, inclusive: true });
+    }
+  };
+}
+
 /** A native QIP-55 address: uppercase `Q` plus 128 hexadecimal characters.
  * This schema checks shape. Typed-data payloads also check public checksum
  * casing here; transaction addresses are checked again by the signer. */
@@ -143,13 +153,17 @@ export const DAppOriginSchema = z
      * name is rendered into the trusted confirm dialog, so line-break/bidi
      * injection dies at the boundary (defense-in-depth; the qrlconnect URI
      * ingress is ASCII-only anyway). */
-    name: z.string().min(1).max(64).regex(DAPP_NAME_SAFE, 'control characters not allowed'),
+    name: z
+      .string()
+      .min(1)
+      .superRefine(maxUtf16Length(64))
+      .regex(DAPP_NAME_SAFE, 'control characters not allowed'),
     /** dApp URL from ORIGINATOR_INFO; a plain http(s) URL, or empty when the
      * dApp supplied something unusable (the renderer sanitiser maps a
      * non-http(s)/unparseable URL to '' rather than dropping provenance). */
     url: z
       .string()
-      .max(256)
+      .superRefine(maxUtf16Length(256))
       .refine((s) => {
         if (s === '') return true;
         try {
@@ -163,7 +177,7 @@ export const DAppOriginSchema = z
     channelId: z
       .string()
       .min(1)
-      .max(64)
+      .superRefine(maxUtf16Length(64))
       .regex(/^[0-9a-fA-F-]+$/, 'must be a hex/uuid channel id'),
   })
   .strict();
@@ -229,7 +243,7 @@ export const SignatureRequestSchema = z.discriminatedUnion('kind', [
  * at provisioning time, not unlock time (an existing wallet may predate a
  * stricter policy).
  */
-export const PasswordSchema = z.string().min(1).max(1024);
+export const PasswordSchema = z.string().min(1).superRefine(maxUtf16Length(1024));
 
 /**
  * `password` is optional: omitting it asks main to unlock via a KEK retrieved
@@ -249,7 +263,7 @@ export const UnlockRequestSchema = z
 export const ImportWalletRequestSchema = z
   .object({
     /** BIP39-style mnemonic; word count validated downstream by wallet.js. */
-    mnemonic: z.string().min(1).max(4096).optional(),
+    mnemonic: z.string().min(1).superRefine(maxUtf16Length(4096)).optional(),
     /** Raw 51-byte hex extended seed (the web wallet's "hex seed" import). */
     hexSeed: HexSeedSchema.optional(),
     password: PasswordSchema,
@@ -345,7 +359,7 @@ function fixedHexSchema(bytes: number): z.ZodString {
 
 const RawTransactionSchema = z
   .string()
-  .max(2 * 256 * 1024 + 2)
+  .superRefine(maxUtf16Length(2 * 256 * 1024 + 2))
   .regex(/^0x(?:[0-9a-fA-F]{2})+$/, 'must be non-empty, byte-aligned 0x hex');
 
 const TransactionSignatureResultSchema = z
