@@ -2,9 +2,10 @@
 
 This is an honest accounting of what the wallet protects, who it protects
 against, what each control buys, and where each control stops. The tone follows
-the decision document (`docs/ARCHITECTURE_RESEARCH.md`): OS app-binding is
-cost-raising and detection-generating, not a guarantee. The Argon2id-derived
-password is the real protection.
+the decision document (`docs/ARCHITECTURE_RESEARCH.md`): OS app-binding raises
+the cost of accessing a saved KEK. The password-derived Argon2id KEK protects
+stolen wallet envelopes while the attacker lacks that KEK. Whoever obtains
+the KEK can decrypt both recovery envelopes without the password.
 
 Runtime baseline: Electron 44, locked to 44.9.3 (Chromium 152.0.7977.167, Node 24.22.0).
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) covers the Electron 43/44
@@ -16,10 +17,10 @@ included eMudhra mitigation from the confirmed gaps in October Node.js security 
 
 | Asset | Where it lives | Sensitivity |
 |---|---|---|
-| Mnemonic | Inside the encrypted seed blob at rest; materialised only in the signer during import. | Critical: full account recovery. |
-| Hex extended seed (51 bytes) | Inside the encrypted blob at rest; materialised in the signer during a signature. | Critical: derives the ML-DSA-87 secret key, can sign any spend. |
+| Mnemonic (recovery phrase) | Encrypted at rest; generated or recovered in the signer; shown once in the renderer for a new account's backup, read by import forms or recovered by renderer-side wallet-file decryption, and brokered through main. | Critical: full account recovery. |
+| Hex extended seed (51 bytes) | Encrypted at rest; decrypted in the signer for unlock/signing; read by import forms or recovered by renderer-side wallet-file decryption, and brokered through main. | Critical: derives the ML-DSA-87 secret key, can sign any spend. |
 | ML-DSA-87 secret key (4896 bytes) | Derived in the signer from the hex seed, per operation, zeroized immediately. | Critical: signs transactions/messages. |
-| KEK (256-bit) | Derived from the password via Argon2id; held in the signer session while unlocked; optionally wrapped into the OS keychain. | Critical: unwraps the seed. |
+| KEK (256-bit) | Derived from the password via Argon2id; held in the signer session while unlocked; optionally stored in the OS keychain and transits main during provisioning and keychain unlock. | Critical: decrypts both recovery envelopes without the password. |
 | User password | Supplied per unlock; never persisted, never logged. | Critical: derives the KEK. |
 | Encrypted seed file | `userData` dir, `0600`, AES-256-GCM, salt + KDF params alongside. | Sensitive at rest: an Argon2id-hardened blob. |
 
@@ -41,6 +42,47 @@ network/dApp -> renderer -> [contextBridge] -> preload -> [IPC] -> main -> [pare
 - The signer is reachable only from main, over `parentPort`. The renderer has no
   handle to it.
 
+Once an account exists, the signer holds decrypted keys and performs signing.
+During account setup, the renderer shows a new account's recovery phrase once
+for backup. Import forms read typed recovery phrases and hex seeds, and encrypted
+wallet files are decrypted in the renderer or its worker. Main brokers these
+secrets between the renderer and the signer. A compromised renderer during setup
+or import can recover that account.
+
+### Native language selection
+
+`window.qrlWallet.setLanguage(language)` is the renderer's sole native language
+control. `IPC.SET_LANGUAGE` uses the same `isTrustedSender` top-frame gate and
+zod argument validation as other wallet IPC calls. The schema accepts exactly
+`en`, `de`, `es`, `ru`, and `zh-CN`. A renderer can only select one of five static
+catalogs bundled with the application. It cannot inject label text, catalog
+paths, placeholders, code, markup or translation URLs.
+
+Desktop-owned unlock and settings windows, custom menu items, and wallet-owned
+error and startup notices use these static catalogs. Platform menu roles,
+including About and Quit, retain their OS-provided behavior and localization.
+Trusted transaction, message, typed-data and Remove wallet confirmations remain
+English in every language for now. Language selection leaves their page
+boundaries, acceptance limits and approval behavior unchanged. Confirmation translation is deferred
+to a separate change after the page-visibility fix.
+
+Before the renderer reports on each launch, main resolves the OS preferred
+languages (or OS locale), with English as the fallback. Accepted choices are
+persisted as the optional `language` field of `userData/settings.json`. Store
+updates are serialized so concurrent language and security-setting writes
+preserve each other's fields. The wallet renderer gains no access to auto-lock,
+biometric preferences or other settings through this method.
+
+The isolated unlock and settings surfaces receive only a validated language
+code through their narrow read/subscription bridges; each renders its own
+bundled catalog. A live change updates those surfaces and custom menu items
+without a reload. Open and arming trusted confirmations stay in English and
+continue under the existing lifecycle and abort checks.
+
+Translation interpolation uses one replacement pass, so data containing
+placeholder syntax remains data. External error details retain their original
+text. Quanta, QRL, QRL 2.0 and MyQRLWallet remain unchanged.
+
 ## Attacker model and what each control buys (and its limits)
 
 ### A. Same-user malware / infostealer (no code injection)
@@ -54,12 +96,12 @@ not injecting into our signed process.
   (`src/main/seedFile.ts`). On every unlock the signer derives the deployed
   `Q` + 128 address from the authenticated seed and rejects an envelope whose
   plaintext address metadata names a different account (`src/signer/session.ts`).
-- Buys: stealing the file yields only an Argon2id-hardened blob. Offline cracking
-  is bounded by the memory-hard KDF; a strong password is infeasible to brute.
-- Limit: a weak password is crackable offline once the file is exfiltrated. The
-  KDF cost is the only thing standing between the attacker and the seed. This is
-  why the password is the load-bearing control and why `calibrate:kdf` must be
-  run and the parameters frozen near 500 ms on target hardware.
+- Buys: stealing the file without the KEK leaves a password-guessing attack
+  subject to Argon2id's memory and time cost.
+- Limit: a weak password is crackable offline once the file is exfiltrated.
+  Recovering the KEK bypasses password guessing and decrypts both recovery
+  envelopes directly. `calibrate:kdf` measures the password-guessing cost;
+  its parameters must be frozen near 500 ms on target hardware.
 
 - Control: OS app-binding of the KEK as defense-in-depth.
   - macOS `MacKeychainVault` (`src/keyvault/macKeychainVault.ts`): KEK stored
@@ -73,6 +115,10 @@ not injecting into our signed process.
   binary cannot export the KEK, and user-presence forces an interactive Touch ID
   prompt. This is where app-binding genuinely pulls its weight.
 - Limits, stated honestly:
+  - The OS keychain protects access to the saved KEK according to its platform
+    policy. It provides no additional password barrier after the KEK is
+    recovered, including through same-context code execution or main-process
+    memory access during provisioning or keychain unlock.
   - (c) Linux libsecret has NO per-application access control (CVE-2018-19358,
     ruled a desktop design problem, not a bug): any app can read any secret while
     the keyring is unlocked. So the default vault on Linux (and Windows, unless
@@ -90,11 +136,14 @@ A malicious page or injected script achieves arbitrary code execution inside the
 renderer (the failure class behind the competitor-wallet RCE that motivated this
 design).
 
-- Control: the renderer holds no keys, has no Node, is sandboxed, and its only
-  reachable surface is `QrlWalletApi`. Containment is the full hardening
+- Control: the renderer has no Node, is sandboxed, and reaches native wallet
+  operations through `QrlWalletApi`. Ordinary desktop unlock and signing
+  decrypt keys in the signer. Containment is the full hardening
   checklist (`SECURITY.md`): `contextIsolation`, `sandbox`,
-  `nodeIntegration: false`, strict CSP (no `unsafe-inline`/`unsafe-eval`), IPC
-  sender + schema validation, navigation lockdown, fuses, ASAR integrity.
+  `nodeIntegration: false`, CSP with no document-script `unsafe-inline` or JS
+  `unsafe-eval`, IPC sender + schema validation, navigation lockdown, fuses,
+  and ASAR integrity enforcement on macOS and Windows. Linux runs modified
+  JavaScript inside the ASAR with the release fuses enabled.
 - Buys: a fully compromised renderer can request a signature, but only over a
   specific payload that the user must approve in the main-drawn confirmation
   modal (`src/main/confirm.ts`). The two renderer-reachable DESTRUCTIVE
@@ -102,12 +151,31 @@ design).
   (`REMOVE_WALLET`) each require a main-drawn confirmation (`confirmSignature` /
   `confirmRemoveWallet`, `src/main/confirm.ts`), so a compromised renderer can
   neither sign nor irreversibly wipe the encrypted seed without a trusted prompt
-  it cannot draw over. The unlock password is collected in a main-owned native
-  window (`src/unlock/`, `src/main/unlockWindow.ts`), not the renderer, so a
-  compromised renderer cannot draw a fake unlock screen or keylog the real
-  password. The renderer cannot read the seed, reach the signer, touch disk, or
-  exfiltrate over the network beyond the CSP `connect-src` allowlist. It yields
-  no key material.
+  it cannot draw over. The genuine unlock password input stays isolated in a
+  separate main-owned native window (`src/unlock/`, `src/main/unlockWindow.ts`).
+  The wallet renderer cannot read that window's DOM or keystrokes and has no
+  direct signer handle or unrestricted filesystem API.
+- Setup/import limit: the renderer shows a new account's recovery phrase once
+  for backup, reads typed recovery phrases and hex seeds, and decrypts encrypted
+  wallet files in the renderer or its worker. Main brokers these secrets to or
+  from the signer. A compromised renderer during setup or import can recover
+  that account.
+- CSP limit: `connect-src` restricts fetch, XHR, WebSockets and other request
+  types it governs. `img-src 'self' data: https:` permits data to be sent to any
+  HTTPS image URL, and `worker-src 'self' blob:` permits generated worker code.
+  The CSP does not stop a compromised renderer from sending secrets it can read,
+  including setup or import recovery material, to an outside host. Both image
+  loading outside `connect-src` and generated blob-worker execution succeeded
+  in the Electron renderer probes.
+- Unlock phishing limit: compromised renderer code can draw a lookalike
+  password prompt in the wallet surface and read what is typed into it. The
+  genuine native unlock window stays isolated. Its English OS-window title is
+  `Unlock MyQRLWallet` (localized in other supported languages); main hides the
+  wallet window, and the unlock window is configured to disable resizing,
+  minimizing, maximizing and fullscreen. Closing it while locked exits the app.
+  These title and behavior cues help distinguish the genuine flow, but the app provides no
+  unforgeable authentication indicator for a password form. A matching title
+  or appearance alone cannot establish authenticity.
 - Limit: the renderer can still ask for signatures. The trusted confirmation
   modal is the backstop. If the user blindly approves a malicious payload, the
   signature is produced. Also, context isolation can be defeated by an unpatched
@@ -187,6 +255,72 @@ The only page indicator is in the native bold `message` field:
 The detail field has no app-generated page counter. A forged counter inside
 dApp text stays in the detail field and cannot reach the bold label, including
 when the toolkit adds a continuation.
+
+#### Transaction pages and qualified visibility
+
+Main sizes transaction reviews from
+`screen.getDisplayMatching(parent.getBounds()).workArea` in DIP. Display scale
+factors are never multiplied into this budget, and runtime reads no OS font
+settings. The fixed geometry comes from GTK 3 on Xvfb with DejaVu Sans:
+
+| Font / text scale | Detail line | Bold heading line | Chrome |
+|---|---:|---:|---:|
+| 12 pt / 100% | 19 px | 23 px | 76 px |
+| 10 pt / 125% | 20 px | 24 px | 76 px |
+| 12 pt / 125% (budget) | 24 px | 29 px | 76 px |
+
+The vertical margin is 48 DIP, two worst-case detail lines, reserved for native
+layout and placement slack. Heading width uses 20 DIP per existing display
+column, with 96 DIP reserved horizontally for padding and placement. The fixed
+width is `min(46, max(24, floor((workArea.width - 96) / 20)))` columns: 46 in both
+qualified work areas. The cap uses the qualified 1024-wide budget because GTK
+adds word wraps to wider explicit lines even when the work area could fit them.
+Overwide `Send {amount}?` and `Max cost {max cost}.` headings gain line
+breaks between existing characters. Every digit, space and punctuation mark is
+retained, with no truncation or rounding; headings within the budget remain
+byte-identical to 1.4.3.
+
+For `h` wrapped heading lines, every page's body allowance is
+`max(4, floor((workArea.height - 76 - 48 - 29 * (h + 1)) / 24) - 3)`.
+The extra heading line is the main-owned request/page label. The final three
+detail lines reserve the blank separator and the complete wrapped approval
+note. An ordinary two-line heading allows 20 body lines at 1024x768 and 18 at
+1280x720. Longer headings reduce the allowance on every page. The four-body-line
+floor leaves room for a continuation label and three original lines. If that
+floor or the heading-width floor cannot fit a tiny work area, the native dialog
+is shown anyway, as in 1.4.3.
+
+One-page preservation is defined against this conservative allowance: a
+transaction whose original heading and complete body fit retains its 1.4.3
+summary, rows, text, buttons, `defaultId` and `cancelId`. Longer reviews paginate
+even when a smaller font could show the original on one page. Rows that fit a
+whole page stay complete. Only a taller row splits between its existing wrapped
+lines, and each continuation page starts with that row's main-owned label plus
+` (continued)`. Removing those labels and concatenating pages recovers every
+1.4.3 detail line byte for byte, in order. The origin block stays last in that
+order and ends on the final page. Transactions have no page cap and gain no
+display-size rejection path. Message and typed-data summaries retain their
+existing budgets, text and rejection limits.
+
+The qualified guarantee covers **every transaction page of the regression
+corpus on Linux GTK 3, Xvfb work areas 1024x768 and 1280x720, DejaVu Sans 8 to
+12 pt at 100% and 125% text**: all lines and both buttons are visible inside the
+work area, horizontally and vertically. The corpus includes the 80-digit
+heading, invisible-character URL, gas warning and `40 18 1 0` fixtures, plus a
+short transaction within the allowance. The native sweep inspects each live
+GTK/Pango line allocation and both button rectangles. This is a bounded corpus
+qualification. Outside that band, including larger fonts, higher text scaling,
+smaller work areas and unqualified Windows/macOS native geometry, a page can
+still overflow as in 1.4.3; its buttons then leave the screen and Enter cancels.
+An app-drawn confirmation window is the proposed long-term fix, with the owner
+decision pending.
+
+Pages before the last offer `Next` and `Cancel`; only the last offers
+`Cancel` and `Approve & sign`. Cancel remains both the default and Escape target.
+The shared one-at-a-time gate and 1000 ms arming delay are unchanged. A display
+metrics/topology change or moving the parent to another display aborts the open
+review or its arming timer, including a racing approval. Continuing requires a
+fresh review. Existing lock, navigation, renderer and signer aborts still apply.
 
 #### Message signatures
 
@@ -310,7 +444,15 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   with the `Wallet network chainId` and a mismatch raises a warning. A domain
   without a chain ID warns that the signature is not bound to a chain and can
   be replayed on other chains. The requested domain is preserved in the
-  signature. This path works offline. dApp name, URL and channel remain
+  signature. Main's domain comparison uses its configured chain ID. Before
+  either message or typed-data signing reaches main, the bundled renderer calls
+  `assertNetworkReady`, which checks `qrl_chainId` and genesis over RPC and
+  refuses signing while RPC is unavailable. This also applies to typed data
+  without a domain chain ID. A domain chain ID additionally makes approval wait
+  for a successful RPC lookup and comparison with the wallet chain; a mismatch
+  is shown as a warning. The signer's cryptographic operation uses supplied
+  network data, so a direct signer unit test bypasses these UI prerequisites.
+  dApp name, URL and channel remain
   explicitly unverified renderer-supplied metadata. Main
   authenticates neither domain ownership nor contract behavior. Renderer
   display text, precomputed digests and scheme choices are rejected as extra
@@ -377,8 +519,8 @@ settlement that runs out of gas defers the payout into a credit).
   maxFeePerGas, and repeats the max cost on its own line of the bold message
   (`Send 1 Quanta?` then `Max cost ... Quanta.`), because for a zero-value
   contract call the fee is the whole cost. The explicit line break keeps the
-  toolkit from wrapping the label for amounts up to ten whole digits; values
-  near the 80-digit schema maximum still wrap (trusted numbers, no spoof path).
+  toolkit from wrapping the label for ordinary amounts. Longer headings use the
+  explicit character-boundary wrapping and per-page height budget above.
 - Buys: the fee the user approves is computed from the gas limit that will be
   signed, and an inflated limit is visible and priced before approval. Unused
   gas is refunded; a call that fails out of gas or burns gas can consume the
@@ -426,8 +568,11 @@ A malicious dependency or a tampered build artifact.
   unaudited `@noble/post-quantum` is kept off the spend path entirely. Current
   Windows/Linux releases are unsigned and provide SHA-256 checksums. Hooks for
   Authenticode, macOS notarization and PGP signing are available when their
-  credentials are configured. ASAR integrity and the `OnlyLoadAppFromAsar`
-  fuse restrict packaged code loading.
+  credentials are configured. `OnlyLoadAppFromAsar` restricts application
+  entry-point loading. Electron enforces embedded ASAR integrity on macOS and
+  Windows. Linux runs modified JavaScript inside the ASAR: a synthetic probe on
+  Electron 44.9.3 with the release fuse hook executed a changed payload without
+  updating its integrity hashes. No installer was built for that probe.
 - Buys: a swapped dependency is caught by the lockfile; users can verify
   downloaded artifacts against the published checksums. Signed builds can
   additionally provide independently verifiable publisher provenance.
@@ -489,12 +634,14 @@ had, and none of it depends on being a window:
 - **Settings is main-owned** (`src/main/settingsView.ts`, its pure decision
   helpers in `src/main/settingsViewPolicy.ts`, and `src/settings/`): its own
   web contents with the same `hardenedWebPreferences`, its own preload exposing
-  only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`), a
+  only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`, plus
+  `getLanguage`/`onLanguageChanged`), a
   no-network meta CSP, and every IPC handler gated by a live-sender check
   (`fromSettingsView`: the event sender must BE this view's web contents) plus
   a zod-strict argument parse. The wallet renderer is a different web contents
   underneath: it cannot draw into the panel, script it, read its DOM, or
-  read/write any setting. Its only capability is asking main to show the panel
+  read/write its security settings. It can select a bundled language through
+  the separate validated method above and ask main to show the panel
   (`IPC.OPEN_DESKTOP_SETTINGS`, sender-gated, no data in either direction).
   Keyboard focus moves into the panel when it opens and returns to the wallet
   renderer when it closes; tab traversal does not cross web contents, so it
@@ -527,10 +674,12 @@ had, and none of it depends on being a window:
   trusted to clean up after a removal it did not perform.
 - **Settings store holds no secrets** (`src/main/settingsFile.ts`,
   `userData/settings.json`): a versioned, zod-strict envelope
-  (`autolockMs`, `biometricUnlock`) written atomically at mode `0600` like the
+  (`autolockMs`, `biometricUnlock`, `language`, `legacyNoticeAckV1`) written
+  atomically at mode `0600` like the
   seed store, self-healing on corruption (any unparsable content degrades to
   defaults; startup never throws). Same-user malware reading it learns only a
-  timeout preference. Autolock resolves env `QRL_AUTOLOCK_MS` > store >
+  timeout, language and feature preferences. Autolock resolves env
+  `QRL_AUTOLOCK_MS` > store >
   default; a live change re-arms the open signer session via the private
   `signer:setAutolock` message, which is never exposed on the renderer bridge.
   Disabling biometric unlock deletes every wallet's stored KEK from the OS
@@ -541,20 +690,23 @@ had, and none of it depends on being a window:
 
 These are the specific, acknowledged weaknesses. Each maps to a code path.
 
-### (a) The KEK transits main when provisioning the OS keychain
+### (a) The KEK transits main during keychain provisioning and unlock
 
-When `importWallet` is called with `useKeychain: true`, the signer derives the
-KEK, exports it as hex, and returns it to main, which writes it into the OS
-keychain (`src/main/ipc.ts` `IMPORT_WALLET`, calling `keyVault.store`). For that
-window the KEK exists as a JS string in the main process, outside the signer
-isolation boundary.
+When setup/import requests keychain use, or password unlock provisions an
+explicitly enabled vault, the signer returns the derived KEK as hex to main,
+which calls `keyVault.store`. Keychain unlock retrieves that same KEK into main
+and passes it to the signer (`src/main/ipc.ts`, `src/main/unlockWindow.ts`).
+During both provisioning and retrieval the KEK exists as a JS string in main,
+outside the signer isolation boundary.
 
-- Why it is accepted: this is the only way to seed the OS keychain, and the
-  keychain is defense-in-depth, not the primary control. The code minimises the
-  KEK's lifetime by dropping the only reference immediately after the store, and
-  the comment at the call site flags the tradeoff.
-- Residual risk: a main-process compromise during that narrow window could read
-  the KEK. The Argon2id password remains the protection of last resort.
+- Why it is accepted: main owns OS-keychain access and brokers the KEK for
+  quick unlock. The references are short-lived, but V8 strings cannot be
+  reliably zeroized.
+- Residual risk: whoever obtains the KEK can decrypt both recovery envelopes
+  without knowing or cracking the password. A main-process compromise during
+  provisioning or keychain unlock can recover it. The synthetic production-KDF
+  probe recovered the seed and recovery phrase using only the KEK and envelopes.
+  Password strength protects stolen envelopes only while the KEK remains secret.
 
 ### (b) The hex seed is an un-zeroizable V8 string during a signature
 
@@ -573,9 +725,10 @@ place.
   seed are encrypted in SEPARATE envelopes under the same KEK
   (`EncryptedSeed.seed` vs `EncryptedSeed.mnemonic`, `src/shared/protocol.ts`).
   The signing path decrypts and string-materialises ONLY the hex seed
-  (`SignerSession.withSeed`/`withSeedAsync`); the mnemonic, the most
-  catastrophic secret, is never decrypted on the hot signing path, only on an
-  explicit export/backup operation.
+  (`SignerSession.withSeed`/`withSeedAsync`). The recovery phrase is shown once
+  for backup during creation and handled during import; it is not decrypted on
+  the hot signing path. Either representation is sufficient to recover the
+  account.
 - Residual risk: a memory scrape of the signer during a signature could recover
   the hex seed string before GC reclaims it. This is the residual that hardware
   signing (a future stage) would close.
@@ -615,9 +768,10 @@ observable techniques (injection, memory scraping), which is why they are moving
 to hardware binding (TPM / Secure Enclave, DBSC).
 
 - Implication for this wallet: treat `MacKeychainVault` and `SafeStorageVault` as
-  cost-raising and detection-generating, never as a guarantee. The Argon2id
-  password is what actually protects the seed when same-context malware wins. We
-  communicate this to users and do not oversell "app-bound" storage.
+  access controls around a saved KEK. Same-context malware that recovers the KEK
+  can decrypt the wallet envelopes without the password. Argon2id protects a
+  stolen encrypted file when the attacker lacks that KEK; OS app-binding does
+  not preserve a password barrier after KEK recovery.
 - Steering: high-value Linux users should use full-disk encryption plus a
   hardware wallet; hardware-wallet / air-gapped signing is a planned stage for
   all platforms.
@@ -640,8 +794,9 @@ that Electron recommends disabling in favor of a registered custom scheme.
   custom-scheme migration and renderer validation. The
   load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'
   'wasm-unsafe-eval'` with no inline/eval of JS, navigation lockdown,
-  deny-by-default permissions) are
-  unaffected and still contain a renderer compromise.
+  deny-by-default permissions) retain their scope. Setup/import secrets remain
+  readable by the renderer, HTTPS images can send them to outside hosts, and
+  generated blob workers are allowed.
 - Residual risk: an in-origin renderer RCE has the additional `file://`
   capabilities described above.
 - Hardening follow-up: migrate the renderer to a registered privileged custom

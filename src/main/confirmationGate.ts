@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { dialog, type BrowserWindow, type MessageBoxOptions } from 'electron';
+import { dialog, screen, type BrowserWindow, type MessageBoxOptions } from 'electron';
 
 export const ARM_DELAY_MS = 1000;
 
@@ -49,6 +49,7 @@ export class ConfirmationGate {
     const { signal } = controller;
     const requestNumber = ++this.requestNumber;
     let webContents: BrowserWindow['webContents'] | undefined;
+    const displayId = screen.getDisplayMatching(parent.getBounds()).id;
     const navigated = () => {
       controller.abort(
         new Error('Wallet window reloaded or navigated during confirmation. Please try again.'),
@@ -62,6 +63,14 @@ export class ConfirmationGate {
     const rendererGone = () => {
       controller.abort(new Error('Wallet renderer stopped during confirmation. Please try again.'));
     };
+    const displayChanged = () => {
+      controller.abort(
+        new Error('The confirmation display changed. Please review the request again.'),
+      );
+    };
+    const parentMoved = () => {
+      if (screen.getDisplayMatching(parent.getBounds()).id !== displayId) displayChanged();
+    };
     try {
       this.active = controller;
       webContents = parent.webContents;
@@ -69,6 +78,10 @@ export class ConfirmationGate {
       webContents.on('did-navigate', navigated);
       webContents.on('render-process-gone', rendererGone);
       parent.on('closed', rendererGone);
+      parent.on('move', parentMoved);
+      screen.on('display-metrics-changed', displayChanged);
+      screen.on('display-added', displayChanged);
+      screen.on('display-removed', displayChanged);
       for (const [index, options] of pages.entries()) {
         await this.waitToArm(signal);
         signal.throwIfAborted();
@@ -97,6 +110,10 @@ export class ConfirmationGate {
       webContents?.off('did-navigate', navigated);
       webContents?.off('render-process-gone', rendererGone);
       parent.off('closed', rendererGone);
+      parent.off('move', parentMoved);
+      screen.off('display-metrics-changed', displayChanged);
+      screen.off('display-added', displayChanged);
+      screen.off('display-removed', displayChanged);
     }
   }
 }

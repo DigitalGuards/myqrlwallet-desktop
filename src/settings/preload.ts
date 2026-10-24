@@ -9,6 +9,8 @@
  * the gate).
  */
 import { contextBridge, ipcRenderer } from 'electron';
+import type { Language } from '../shared/language';
+import type { MessageKey } from '../shared/i18n';
 
 export type SettingsAction = 'reregister-protocol' | 'open-logs';
 
@@ -39,13 +41,34 @@ export interface SettingsInfo {
 }
 
 const api = {
+  getLanguage: (): Promise<Language> => ipcRenderer.invoke('settings:getLanguage'),
+  onLanguageChanged: (callback: (language: Language) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, language: unknown) => {
+      // Keep sandboxed preload entries self-contained: shared runtime imports
+      // create chunks that the sandbox cannot require.
+      if (
+        language === 'en' ||
+        language === 'de' ||
+        language === 'es' ||
+        language === 'ru' ||
+        language === 'zh-CN'
+      )
+        callback(language);
+    };
+    ipcRenderer.on('wallet:languageChanged', listener);
+    return () => {
+      ipcRenderer.removeListener('wallet:languageChanged', listener);
+    };
+  },
   /** Current settings + wallet info + platform capability flags. */
   get: (): Promise<SettingsInfo> => ipcRenderer.invoke('settings:get'),
   /** Persist a partial update; returns the stored (clamped) result. */
   set: (patch: Partial<DesktopSettings>): Promise<{ settings: DesktopSettings }> =>
     ipcRenderer.invoke('settings:set', patch),
   /** Run a data-free maintenance action. */
-  action: (action: SettingsAction): Promise<{ ok: boolean; error?: string }> =>
+  action: (
+    action: SettingsAction,
+  ): Promise<{ ok: boolean; error?: string; errorKey?: MessageKey }> =>
     ipcRenderer.invoke('settings:action', { action }),
   /** Remove the ACTIVE wallet from this device. Main draws the trusted
    * confirmation (default Cancel) and rejects with a cancel message when the

@@ -6,6 +6,7 @@
  * from the validated request, and only then does main ask the signer to sign.
  */
 import type { BrowserWindow } from 'electron';
+import { screen } from 'electron';
 import type { SignatureRequest } from '../shared/schemas';
 import { groupQrlAddress } from '../shared/address';
 import {
@@ -38,7 +39,8 @@ export async function confirmSignature(
   req: SignatureRequest,
   context: ConfirmContext = {},
 ): Promise<boolean> {
-  const { title, message, pages } = summariseSignatureRequest(req, context);
+  const { workArea } = screen.getDisplayMatching(parent.getBounds());
+  const { title, message, pages } = summariseSignatureRequest(req, context, workArea);
   return confirmationGate.show(
     parent,
     pages.map((detail, index) => ({

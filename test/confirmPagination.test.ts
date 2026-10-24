@@ -297,11 +297,15 @@ test('transaction values and wallet-removal addresses fit the shared detail widt
     { build: { estimatedGas: gas, requestedGas: '21000' } },
     { build: { estimatedGas: (BigInt(gas) + 1n).toString(), requestedGas: '21000' } },
   ]) {
+    const firstPage = shown.length;
     assert.equal(await finishConfirmation(t, confirmSignature(parent, transaction, context)), true);
-    const detail = unfoldDetail(shown.at(-1)?.detail ?? '');
+    const detail = shown
+      .slice(firstPage)
+      .map((page) => unfoldDetail(page.detail ?? ''))
+      .join('\n');
     assert.ok(detail.includes(`To:        ${groupQrlAddress(SIGNER)}`));
     assert.ok(detail.includes('Name:    MW@%'));
-    assert.match(shown.at(-1)?.message ?? '', /^Request \d+\n/);
+    assert.match(shown.at(-1)?.message ?? '', /^Request \d+, page \d+ of \d+\n/);
   }
   assert.equal(await finishConfirmation(t, confirmRemoveWallet(parent, SIGNER)), true);
   assert.ok(

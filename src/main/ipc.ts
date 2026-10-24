@@ -17,6 +17,7 @@
  */
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import type { z } from 'zod';
+import { setLanguage } from './language';
 import { logConsole } from './log';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import { signWithConfirmation } from './signatureRequest';
@@ -43,6 +44,7 @@ import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
 import { EVENTS, IPC } from '../shared/constants';
 import {
+  LanguageSchema,
   BuildTransactionRequestSchema,
   CreateWalletRequestSchema,
   GetBalanceRequestSchema,
@@ -115,6 +117,8 @@ export function registerIpcHandlers(deps: Deps): void {
       return fn(parsed.data, event);
     });
   }
+
+  handle(IPC.SET_LANGUAGE, LanguageSchema, setLanguage);
 
   /** Wrap a handler for a channel that takes no argument: sender validation
    * only, and whatever the renderer sent is ignored. */
