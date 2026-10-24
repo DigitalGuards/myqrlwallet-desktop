@@ -2,6 +2,17 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Add a personal phrase to the native unlock window, with native Settings
+  controls to view, regenerate or customize it in all five supported languages.
+  Main generates and saves the phrase while preserving existing preferences.
+  The wallet renderer has no access to it. Checking the phrase helps users
+  recognize fake password prompts drawn by a compromised wallet window.
+  Malware that can read the settings file or the screen can copy the phrase.
+
 ## 1.4.4 - 2026-10-24
 
 ### Added

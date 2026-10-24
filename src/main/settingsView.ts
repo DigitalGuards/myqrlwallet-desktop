@@ -24,9 +24,9 @@
  * window that is already on screen, so it can never reveal a wallet window
  * that the lock hid.
  *
- * No secrets cross this surface: the store holds a timeout preference and a
- * biometric toggle, the actions (re-register protocol handler, open logs
- * folder) carry no data, and wallet removal runs the same trusted-confirmed
+ * The personal unlock mark stays within native surfaces. The store also holds
+ * a timeout preference and a biometric toggle; maintenance actions (re-register
+ * protocol handler, open logs folder) carry no data. Wallet removal runs the same trusted-confirmed
  * flow as the renderer path (src/main/walletRemoval.ts), now parented to the
  * wallet window because the panel has no window of its own.
  */
@@ -42,6 +42,7 @@ import {
 } from 'electron';
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
+import { UnlockPhraseSchema } from '../shared/schemas';
 import { confirmRemoveWallet } from './confirm';
 import { logMain, logsDir } from './log';
 import { deleteSeed, getActiveAddress, hasAnySeed, listSeeds, readSeedByAddress } from './seedFile';
@@ -54,6 +55,7 @@ import {
 } from './settingsViewPolicy';
 import {
   getEffectiveAutolockMs,
+  getUnlockPhrase,
   hasAutolockEnvOverride,
   readSettings,
   updateSettings,
@@ -84,14 +86,16 @@ let hostTeardown: (() => void)[] = [];
 let ipcRegistered = false;
 
 /** The stored envelope resolved to the concrete values the UI shows. */
-function toUiSettings(stored: StoredSettings): { autolockMs: number; biometricUnlock: boolean } {
+async function toUiSettings(stored: StoredSettings) {
   return {
+    unlockPhrase: stored.unlockPhrase ?? (await getUnlockPhrase()),
     autolockMs: stored.autolockMs ?? DEFAULT_AUTOLOCK_MS,
     biometricUnlock: stored.biometricUnlock ?? true,
   };
 }
 
 const SetSchema = z.strictObject({
+  unlockPhrase: UnlockPhraseSchema.optional(),
   autolockMs: z.number().int().optional(),
   biometricUnlock: z.boolean().optional(),
 });
@@ -118,7 +122,8 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
   const fromSettingsView = (event: IpcMainInvokeEvent): boolean =>
     settingsView !== null &&
     !settingsView.webContents.isDestroyed() &&
-    event.sender === settingsView.webContents;
+    event.sender === settingsView.webContents &&
+    event.senderFrame === settingsView.webContents.mainFrame;
 
   onLanguageChanged((language) => {
     if (settingsView && !settingsView.webContents.isDestroyed()) {
@@ -139,7 +144,7 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
       getActiveAddress(),
     ]);
     return {
-      settings: toUiSettings(stored),
+      settings: await toUiSettings(stored),
       // Which account the destructive Remove action targets. A public address,
       // not a secret; the wallet renderer displays it freely.
       wallet: { activeAddress },
@@ -211,7 +216,12 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
       // Provisioning happens at the next unlock/import, never from here.
       logMain('[settings] biometric unlock enabled (KEK provisions on next unlock)');
     }
-    return { settings: toUiSettings(stored) };
+    return { settings: await toUiSettings(stored) };
+  });
+
+  ipcMain.handle('settings:randomizeUnlockPhrase', async (event) => {
+    if (!fromSettingsView(event)) throw new Error('unauthorized');
+    return getUnlockPhrase(true);
   });
 
   ipcMain.handle('settings:action', async (event, raw: unknown) => {

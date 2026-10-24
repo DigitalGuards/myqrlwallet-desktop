@@ -1,6 +1,15 @@
 import type en from './en';
 
 const catalog = {
+  'unlock.phraseLabel': '个人识别短语',
+  'unlock.phraseHelp': 'MyQRLWallet 仅在显示此短语的窗口中请求你的密码。',
+  'unlock.phraseLoading': '正在加载个人识别短语...',
+  'unlock.phraseUnavailable': '无法加载个人识别短语。请关闭并重新打开 MyQRLWallet。',
+  'settings.phraseHelp': '输入密码前，请在解锁窗口中确认此短语。',
+  'settings.phraseRandom': '选择新的随机短语',
+  'settings.phraseCustom': '自定义短语',
+  'settings.phraseRules': '请输入 3 至 64 个字符：字母、汉字或数字，以单个空格或连字符分隔。',
+  'settings.phraseSave': '保存短语',
   'unlock.keychainReason': '解锁你的 QRL 钱包',
   'common.continue': '继续',
   'unlock.title': '解锁 MyQRLWallet',
