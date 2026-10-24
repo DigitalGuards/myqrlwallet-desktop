@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { catalogs, translate, minutesLabel, type MessageKey } from '../src/shared/i18n';
-import { isLanguage, LANGUAGES, resolveLanguage } from '../src/shared/language';
+import { isLanguage, LANGUAGES, resolveLanguage, startupLanguage } from '../src/shared/language';
 import { LanguageSchema } from '../src/shared/schemas';
 import { readSettingsFile, updateSettingsFile } from '../src/main/settingsFile';
 
@@ -33,6 +33,14 @@ test('language detection follows preference order, regional variants and Simplif
     assert.equal(resolveLanguage(tags), expected);
   assert.equal(resolveLanguage([], 'de-AT'), 'de');
   assert.equal(resolveLanguage([]), 'en');
+});
+
+test('startup uses the saved language before the system language', () => {
+  assert.equal(startupLanguage('de', ['en-US'], 'en-US'), 'de');
+  assert.equal(startupLanguage('zh-CN', [], 'ru-RU'), 'zh-CN');
+  assert.equal(startupLanguage(undefined, ['ru-RU', 'en-US'], 'en-US'), 'ru');
+  assert.equal(startupLanguage(undefined, [], 'es-ES'), 'es');
+  assert.equal(startupLanguage(undefined, []), 'en');
 });
 
 for (const language of LANGUAGES) {
