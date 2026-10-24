@@ -276,6 +276,9 @@ function installFileProtocolHandler(): void {
     const headers = new Headers(served.headers);
     headers.set('Content-Security-Policy', csp);
     headers.set('X-Content-Type-Options', 'nosniff');
+    // Suppress automatic hostname lookups. Explicit resource hints retain
+    // separate Chromium behavior; see SECURITY.md for the remaining channels.
+    headers.set('X-DNS-Prefetch-Control', 'off');
     return new Response(served.body, {
       status: served.status,
       statusText: served.statusText,

@@ -19,6 +19,9 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
   export const app = {
     getPath() { throw new Error('Unexpected app path'); }
   };
+  export const shell = {
+    openExternal() { throw new Error('Unexpected external link'); }
+  };
   export default { BrowserWindow, dialog, utilityProcess, app, screen };
 `)}`;
 

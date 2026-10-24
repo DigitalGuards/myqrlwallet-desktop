@@ -105,5 +105,16 @@ export function connectSrcOrigins(): string[] {
   return [...origins];
 }
 
+/** Backend image origin, selected from the same build inputs as build-renderer.sh. */
+export function rendererServerOrigin(): string {
+  const mode = process.env.VITE_NODE_ENV;
+  const production = !mode || mode === 'production';
+  const server = production
+    ? process.env.VITE_SERVER_URL_PRODUCTION
+    : process.env.VITE_SERVER_URL_DEVELOPMENT;
+  const fallback = production ? 'https://qrlwallet.com/api' : 'https://dev.qrlwallet.com/api';
+  return `https://${new URL(server === undefined || server === '' ? fallback : server).host}`;
+}
+
 export const APP_ID = 'com.digitalguards.qrlwallet.desktop';
 export const PRODUCT_NAME = 'MyQRLWallet';
