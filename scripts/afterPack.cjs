@@ -98,8 +98,8 @@ exports.default = async function afterPack(context) {
       [FuseV1Options.EnableCookieEncryption]: true,
       // Use Electron's stock snapshot; this app ships no custom browser snapshot.
       [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: false,
-      // The renderer uses file://. Disable only with a custom-scheme migration.
-      [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+      // App origins need no extra file-protocol privileges.
+      [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
       // Preserve V8's WebAssembly bounds-checking trap handlers.
       [FuseV1Options.WasmTrapHandlers]: true,
       // macOS: re-seal the ad-hoc signature so the real signing step is valid.
@@ -108,7 +108,7 @@ exports.default = async function afterPack(context) {
     console.log(
       '[afterPack] fuses set: RunAsNode=off NodeOptions=off NodeCliInspect=off ' +
         'AsarIntegrity=on OnlyLoadAppFromAsar=on CookieEncryption=on ' +
-        'BrowserSnapshot=off FileProtocolExtraPrivileges=on WasmTrapHandlers=on' +
+        'BrowserSnapshot=off FileProtocolExtraPrivileges=off WasmTrapHandlers=on' +
         (isMac ? ' (ad-hoc signature reset)' : ''),
     );
   } catch (err) {

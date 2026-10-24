@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { cp, readFile, writeFile } from 'node:fs/promises';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { rendererServerOrigin } from './src/main/config';
@@ -7,7 +8,7 @@ import { rendererServerOrigin } from './src/main/config';
  * electron-vite builds three targets into `out/`:
  *   - main    -> out/main/index.js  + out/main/signer.js  (the utilityProcess)
  *   - preload -> out/preload/index.js  (CJS, sandbox-compatible)
- *   - renderer-> out/renderer/index.html + assets  (loaded via loadFile)
+ *   - renderer-> native app surfaces with assets inside each surface directory
  *
  * `build.externalizeDeps` keeps node/native deps (argon2, @theqrl/*, zod) out
  * of the main/preload bundles so they load from node_modules at runtime
@@ -46,6 +47,7 @@ export default defineConfig({
           // Dedicated preloads for the native unlock + settings windows.
           unlock: resolve(__dirname, 'src/unlock/preload.ts'),
           settings: resolve(__dirname, 'src/settings/preload.ts'),
+          storageMigration: resolve(__dirname, 'src/preload/storageMigration.ts'),
         },
         output: {
           // Sandboxed preloads must be CommonJS.
@@ -60,13 +62,31 @@ export default defineConfig({
   // `npm run build`). The only renderers electron-vite builds here are the two
   // small, app-owned native windows: unlock (out/unlock) and settings
   // (out/settings). Multi-page build rooted at src/ so each page keeps its
-  // directory (out/<page>/index.html, matching the loadFile paths in
-  // src/main/unlockWindow.ts and src/main/settingsWindow.ts); shared assets
-  // land in out/assets with per-page relative references (base './').
+  // directory. Copy the common assets into each surface so every served file
+  // stays inside that origin's directory, including realpath containment.
   renderer: {
     root: 'src',
-    plugins: [react()],
-    // Relative base so assets resolve under file:// (loadFile).
+    plugins: [
+      react(),
+      {
+        name: 'native-surface-assets',
+        apply: 'build',
+        async closeBundle() {
+          for (const surface of ['unlock', 'settings']) {
+            const directory = resolve(__dirname, 'out', surface);
+            await cp(resolve(__dirname, 'out/assets'), resolve(directory, 'assets'), {
+              recursive: true,
+            });
+            const html = resolve(directory, 'index.html');
+            await writeFile(
+              html,
+              (await readFile(html, 'utf8')).replaceAll('../assets/', './assets/'),
+            );
+          }
+        },
+      },
+    ],
+    // Relative base resolves within each app origin.
     base: './',
     build: {
       // This output only ever runs in Electron 44's bundled Chromium 152, so pin

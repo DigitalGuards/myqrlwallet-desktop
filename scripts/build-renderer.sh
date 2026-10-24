@@ -3,7 +3,7 @@
 # build-renderer.sh
 #
 # Builds the REAL ../myqrlwallet-frontend React app as the desktop renderer and
-# stages it at out/renderer/, loaded by the main process via loadFile().
+# stages it at out/renderer/, served by the main process at app://wallet/index.html.
 #
 # Release builds set QRL_FRONTEND_DIR to a detached checkout of the revision
 # documented in docs/FRONTEND_INTEGRATION.md. CI checks out that pinned revision.
@@ -12,9 +12,9 @@
 #
 # The frontend needs exactly two desktop adaptations, both already in the
 # frontend repo and BOTH web-safe:
-#   1. Vite `base: './'` under file:// - driven here by VITE_DESKTOP=1
+#   1. Vite `base: './'` under app://wallet - driven here by VITE_DESKTOP=1
 #      (config/vite.config.ts reads it; web builds keep '/').
-#   2. createBrowserRouter -> createHashRouter under file:// - handled at
+#   2. createBrowserRouter -> createHashRouter under app://wallet - handled at
 #      RUNTIME in the frontend (router.tsx detects window.qrlWallet), so no
 #      build flag and no post-build HTML surgery is needed.
 #
@@ -94,7 +94,7 @@ if [[ "${VITE_NODE_ENV}" == "production" ]]; then
 else
   echo "[build-renderer]   server/RPC -> ${VITE_SERVER_URL_DEVELOPMENT}, explorer -> ${VITE_EXPLORER_URL_DEVELOPMENT}"
 fi
-# VITE_DESKTOP=1 -> base './' for file://. The router switches to hash routing
+# VITE_DESKTOP=1 -> base './' for app://wallet. The router switches to hash routing
 # at runtime via window.qrlWallet, so nothing else is needed.
 npm --prefix "${FRONTEND_DIR}" run build
 
@@ -108,6 +108,7 @@ echo "[build-renderer] staging build into ${OUT_RENDERER}"
 rm -rf "${OUT_RENDERER}"
 mkdir -p "${OUT_RENDERER}"
 cp -R "${FRONTEND_DIST}/." "${OUT_RENDERER}/"
+cp "${DESKTOP_DIR}/src/migration/index.html" "${OUT_RENDERER}/storage-migration.html"
 
 RENDER_HTML="${OUT_RENDERER}/index.html"
 if [[ ! -s "${RENDER_HTML}" ]]; then
@@ -119,7 +120,7 @@ fi
 # for WEB hosting: script-src carries 'unsafe-inline' and connect-src allows
 # http://localhost:* (both fine behind nginx's strict header, wrong for the
 # desktop). The desktop's authoritative CSP is now delivered as a real response
-# header by the file-protocol handler (src/main/index.ts), but the meta tag
+# header by the app-protocol handler (src/main/appProtocol.ts), but the meta tag
 # stays enforced too, so rewrite it WHOLESALE to the desktop policy: no inline
 # script, no localhost connects, connect-src limited to the configured backend
 # + relay + explorer. Mirror src/main/security.ts buildContentSecurityPolicy,

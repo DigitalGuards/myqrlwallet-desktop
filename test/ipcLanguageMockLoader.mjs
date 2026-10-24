@@ -1,7 +1,7 @@
 const mockUrl = `data:text/javascript,${encodeURIComponent(`
   import { EventEmitter } from 'node:events';
   export class BrowserWindow extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { mainFrame: { url: 'file:///wallet/index.html' } });
+    webContents = Object.assign(new EventEmitter(), { mainFrame: { url: 'app://wallet/index.html' } });
     isDestroyed() { return false; }
   }
   export class WebContentsView {}

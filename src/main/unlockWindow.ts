@@ -12,6 +12,7 @@
  */
 import { getLanguage, onLanguageChanged, t } from './language';
 import path from 'node:path';
+import { APP_URLS, isAppDocument } from '../shared/appUrls';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { logConsole } from './log';
 import {
@@ -134,7 +135,11 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
   ipcRegistered = true;
 
   const fromUnlockWindow = (event: IpcMainInvokeEvent): boolean =>
-    unlockWin !== null && !unlockWin.isDestroyed() && event.sender === unlockWin.webContents;
+    unlockWin !== null &&
+    !unlockWin.isDestroyed() &&
+    event.sender === unlockWin.webContents &&
+    event.senderFrame === unlockWin.webContents.mainFrame &&
+    isAppDocument(event.senderFrame.url, APP_URLS.unlock);
 
   onLanguageChanged((language) => {
     if (unlockWin && !unlockWin.isDestroyed()) {
@@ -331,5 +336,5 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     if (unlockWin === win) unlockWin = null;
   });
 
-  void win.loadFile(path.join(__dirname, '../unlock/index.html'));
+  void win.loadURL(APP_URLS.unlock);
 }

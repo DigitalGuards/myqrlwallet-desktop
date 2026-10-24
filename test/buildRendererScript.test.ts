@@ -47,6 +47,8 @@ function makeFixture(t: TestContext) {
   const scriptPath = join(desktopDir, 'scripts', 'build-renderer.sh');
   mkdirSync(dirname(scriptPath), { recursive: true });
   copyFileSync(SOURCE_SCRIPT, scriptPath);
+  mkdirSync(join(desktopDir, 'src/migration'), { recursive: true });
+  copyFileSync(resolve('src/migration/index.html'), join(desktopDir, 'src/migration/index.html'));
   chmodSync(scriptPath, 0o755);
 
   return {

@@ -9,11 +9,13 @@
 import { applyLanguage, onLanguageChanged, t } from './language';
 import { startupLanguage } from '../shared/language';
 import { installApplicationMenu } from './applicationMenu';
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, dialog, net, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, protocol, session } from 'electron';
 import { windowIcon } from './appIcon';
+import { APP_URLS } from '../shared/appUrls';
+import { createAppProtocolHandler } from './appProtocol';
+import { installFileAccessPolicy, migrateWalletStorage } from './storageMigration';
 import { APP_ID, connectSrcOrigins } from './config';
 import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
 import { logMain } from './log';
@@ -50,6 +52,22 @@ import { readSettings, updateSettings } from './settingsFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
 
+// Register once, before ready. CSP bypass and service workers stay disabled.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      codeCache: true,
+    },
+  },
+]);
+
+let booting = true;
 let mainWindow: BrowserWindow | null = null;
 let keyVaultRef: KeyVault | null = null;
 const signer = new SignerBridge(() => {
@@ -204,94 +222,11 @@ app.on('open-url', (event, url) => {
 
 const RENDERER_DIR = path.join(__dirname, '../renderer');
 
-/**
- * The file-protocol handler does two jobs:
- *
- * 1. Asset remapping. The reused frontend references some assets by
- *    ROOT-absolute paths it authored for web hosting (e.g. the logo
- *    `/icons/theqrlwallet/192.png`, `/tree.svg`). Under loadFile (file://)
- *    those resolve to the filesystem root and 404, so when a requested path
- *    does not exist on disk we remap it under the renderer dir. A traversal
- *    guard keeps every remapped path inside RENDERER_DIR; existing paths (the
- *    relative ./assets bundle) pass through untouched.
- *
- * 2. CSP delivery. webRequest.onHeadersReceived does NOT reliably fire for
- *    file:// document loads (empirically: the frontend's meta CSP, not the
- *    header, was the effective policy; see scripts/build-renderer.sh), which
- *    silently dropped the strict header policy in the packaged app. Serving
- *    file: through protocol.handle lets us attach the CSP as a REAL response
- *    header, restoring `script-src 'self'` as the enforced, load-bearing
- *    control on every platform. The rewritten meta tag in the built renderer
- *    (build-renderer.sh) remains as defense-in-depth.
- */
-function installFileProtocolHandler(): void {
-  const csp = buildContentSecurityPolicy(connectSrcOrigins());
-
-  protocol.handle('file', async (request) => {
-    let filePath: string;
-    try {
-      filePath = fileURLToPath(request.url);
-    } catch {
-      return new Response('bad request', { status: 400 });
-    }
-    if (!existsSync(filePath)) {
-      let urlPath = '/';
-      try {
-        // A root-absolute web path (e.g. /assets/x.js, /tree.svg) resolves under
-        // the file: scheme to the drive/filesystem root. On Windows that yields a
-        // pathname of /C:/assets/x.js, so we strip the leading slash(es) AND an
-        // optional <drive>: prefix; on POSIX only the leading slash is present.
-        // The path then remaps under RENDERER_DIR on every platform.
-        urlPath = new URL(request.url).pathname.replace(/^\/+/, '').replace(/^[A-Za-z]:\//, '');
-      } catch {
-        /* keep default */
-      }
-      const candidate = path.normalize(path.join(RENDERER_DIR, urlPath));
-      if (candidate.startsWith(RENDERER_DIR + path.sep) && existsSync(candidate)) {
-        filePath = candidate;
-      }
-    }
-    // Containment: this handler intercepts EVERY file:// request, so a
-    // compromised renderer must not be able to read arbitrary host files (e.g.
-    // /etc/passwd) by requesting them directly. Only files inside the app
-    // bundle (the built renderer + the native unlock window, both under
-    // app.getAppPath()) are ever served; anything else is a hard 403. The
-    // remap branch above already constrains to RENDERER_DIR, which is inside
-    // this root; this guard also covers the direct existsSync(filePath) case.
-    const appRoot = path.normalize(app.getAppPath());
-    const resolved = path.normalize(filePath);
-    if (resolved !== appRoot && !resolved.startsWith(appRoot + path.sep)) {
-      return new Response('forbidden', { status: 403 });
-    }
-    let served: Response;
-    try {
-      // bypassCustomProtocolHandlers avoids recursing into this handler; the
-      // default loader supplies MIME detection and range/stream handling.
-      served = await net.fetch(pathToFileURL(resolved).toString(), {
-        bypassCustomProtocolHandlers: true,
-      });
-    } catch {
-      return new Response('not found', { status: 404 });
-    }
-    const headers = new Headers(served.headers);
-    headers.set('Content-Security-Policy', csp);
-    headers.set('X-Content-Type-Options', 'nosniff');
-    // Suppress automatic hostname lookups. Explicit resource hints retain
-    // separate Chromium behavior; see SECURITY.md for the remaining channels.
-    headers.set('X-DNS-Prefetch-Control', 'off');
-    return new Response(served.body, {
-      status: served.status,
-      statusText: served.statusText,
-      headers,
-    });
-  });
-}
-
 function rendererDevUrl(): string | undefined {
   // The renderer is the real myqrlwallet-frontend (built into out/renderer by
   // scripts/build-renderer.sh). For live frontend HMR, point QRL_RENDERER_DEV_URL
   // at the frontend's Vite dev server (e.g. http://127.0.0.1:5173). Otherwise
-  // production-style loadFile of the built bundle is used.
+  // the bundled wallet origin is used.
   return !app.isPackaged ? process.env['QRL_RENDERER_DEV_URL'] : undefined;
 }
 
@@ -331,10 +266,10 @@ function createWindow(startLocked = false): void {
 
   const devUrl = rendererDevUrl();
   if (devUrl) {
-    // Development only. Production ALWAYS uses loadFile (the brief's mandate).
+    // Development only: keep the existing Vite server URL.
     void mainWindow.loadURL(devUrl);
   } else {
-    void mainWindow.loadFile(path.join(RENDERER_DIR, 'index.html'));
+    void mainWindow.loadURL(APP_URLS.wallet);
   }
 }
 
@@ -361,10 +296,23 @@ app
       .replace(/\s*MyQRLWallet\/[^\s]+/g, '')
       .replace(/\s*Electron\/[^\s]+/g, '');
 
-    // Serve file:// through protocol.handle: remaps the frontend's root-absolute
-    // asset paths (logo, /tree.svg) AND attaches the strict CSP as a response
-    // header (webRequest does not reliably cover file:// document loads).
-    installFileProtocolHandler();
+    const csp = buildContentSecurityPolicy(connectSrcOrigins());
+    // Main-only loader session: no renderer ever receives this session. The
+    // default session denies file requests, including requests from workers.
+    const bundleReader = session.fromPartition('bundle-reader', { cache: false });
+    protocol.handle(
+      'app',
+      createAppProtocolHandler(
+        {
+          wallet: RENDERER_DIR,
+          unlock: path.join(__dirname, '../unlock'),
+          settings: path.join(__dirname, '../settings'),
+        },
+        csp,
+        (url) => bundleReader.fetch(url, { bypassCustomProtocolHandlers: true }),
+      ),
+    );
+    const allowStorageHelper = installFileAccessPolicy(csp);
 
     // The application menu (with the native Settings entry) is installed
     // further down, once the signer/key-vault deps its click handler needs
@@ -391,6 +339,8 @@ app
     installPermissionHandlers(session.defaultSession);
 
     lockDownNavigation(app);
+
+    if (!devUrl) await migrateWalletStorage(allowStorageHelper);
 
     // One-shot migration of the legacy single-wallet seed.json into the
     // per-address multi-wallet store, BEFORE anything reads the store.
@@ -465,6 +415,7 @@ app
       });
     }
     createWindow(lockedAtStartup);
+    booting = false;
 
     // Cold start via a protocol click (Windows/Linux): the URI is in OUR argv.
     // Buffered by the ingress until the renderer finishes loading.
@@ -503,7 +454,7 @@ app
   });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (!booting && process.platform !== 'darwin') app.quit();
 });
 
 let quitting = false;

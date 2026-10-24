@@ -6,7 +6,7 @@
  * to defaults, never throws at startup).
  *
  * File: userData/settings.json. Versioned zod-strict envelope
- * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1? }`. NO SECRETS, EVER: same-user
+ * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1?, walletOriginMigrationV1? }`. NO SECRETS, EVER: same-user
  * malware can read this file; it learns only non-secret preferences.
  *
  * Autolock resolution order (getEffectiveAutolockMs):
@@ -40,6 +40,8 @@ const StoredSettingsSchema = z.strictObject({
   biometricUnlock: z.boolean().optional(),
   /** The one-time v3 storage notice has been shown and dismissed. */
   legacyNoticeAckV1: z.boolean().optional(),
+  /** The file-origin preferences were copied and verified before opening the UI. */
+  walletOriginMigrationV1: z.boolean().optional(),
 });
 
 export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
@@ -50,6 +52,7 @@ export interface SettingsPatch {
   autolockMs?: number | undefined;
   biometricUnlock?: boolean | undefined;
   legacyNoticeAckV1?: boolean | undefined;
+  walletOriginMigrationV1?: boolean | undefined;
 }
 
 export const SETTINGS_DEFAULTS: StoredSettings = { v: 1 };
@@ -66,6 +69,8 @@ function normalise(s: StoredSettings): StoredSettings {
   if (s.autolockMs !== undefined) out.autolockMs = clampAutolockMs(s.autolockMs);
   if (s.biometricUnlock !== undefined) out.biometricUnlock = s.biometricUnlock;
   if (s.legacyNoticeAckV1 !== undefined) out.legacyNoticeAckV1 = s.legacyNoticeAckV1;
+  if (s.walletOriginMigrationV1 !== undefined)
+    out.walletOriginMigrationV1 = s.walletOriginMigrationV1;
   return out;
 }
 
@@ -156,6 +161,8 @@ async function mergeSettingsFile(filePath: string, patch: SettingsPatch): Promis
   if (patch.autolockMs !== undefined) next.autolockMs = patch.autolockMs;
   if (patch.biometricUnlock !== undefined) next.biometricUnlock = patch.biometricUnlock;
   if (patch.legacyNoticeAckV1 !== undefined) next.legacyNoticeAckV1 = patch.legacyNoticeAckV1;
+  if (patch.walletOriginMigrationV1 !== undefined)
+    next.walletOriginMigrationV1 = patch.walletOriginMigrationV1;
   const validated = normalise(StoredSettingsSchema.parse(next));
   await atomicWrite(filePath, JSON.stringify(validated, null, 2));
   return validated;

@@ -15,6 +15,30 @@ const { app, BrowserWindow, ipcMain } = await import('electron');
 const { registerIpcHandlers } = await import('../src/main/ipc');
 const { SignerBridge } = await import('../src/main/signerBridge');
 const { getLanguage, applyLanguage } = await import('../src/main/language');
+const { isTrustedSender } = await import('../src/main/security');
+
+test('development sender accepts only the configured server origin in an unpackaged app', (t) => {
+  const previous = process.env.QRL_RENDERER_DEV_URL;
+  t.after(() => {
+    if (previous === undefined) delete process.env.QRL_RENDERER_DEV_URL;
+    else process.env.QRL_RENDERER_DEV_URL = previous;
+    Object.defineProperty(app, 'isPackaged', { value: true, configurable: true });
+  });
+  process.env.QRL_RENDERER_DEV_URL = 'http://localhost:5173';
+  const win = new BrowserWindow();
+  const event = { sender: win.webContents, senderFrame: win.webContents.mainFrame };
+  Object.defineProperty(win.webContents.mainFrame, 'url', {
+    value: 'http://localhost:5173/#/import-account',
+    configurable: true,
+  });
+  assert.equal(isTrustedSender(event, win), false);
+  Object.defineProperty(app, 'isPackaged', { value: false, configurable: true });
+  assert.equal(isTrustedSender(event, win), true);
+  for (const url of ['http://localhost:5174/', 'https://localhost:5173/', 'file:///index.html']) {
+    Object.defineProperty(win.webContents.mainFrame, 'url', { value: url, configurable: true });
+    assert.equal(isTrustedSender(event, win), false);
+  }
+});
 
 test('registered setLanguage handler checks the real sender gate and strict schema before persistence', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'qrl-i18n-ipc-'));
@@ -80,15 +104,34 @@ test('registered setLanguage handler checks the real sender gate and strict sche
     assert.equal((await readSettingsFile(path.join(dir, 'settings.json'))).language, 'zh-CN');
   }
   const other = new BrowserWindow();
+  await assert.rejects(async () => {
+    await handler({ ...event, sender: other.webContents }, 'de');
+  }, /unauthorized sender/);
   for (const senderFrame of [null, other.webContents.mainFrame]) {
     await assert.rejects(async () => {
       await handler({ ...event, senderFrame }, 'de');
     }, /unauthorized sender/);
   }
-  Object.defineProperty(win.webContents.mainFrame, 'url', { value: 'https://dapp.example/' });
-  await assert.rejects(async () => {
-    await handler(event, 'de');
-  }, /unauthorized sender/);
+  for (const url of [
+    'file:///wallet/index.html',
+    'app://unlock/index.html',
+    'app://settings/index.html',
+    'app://wallet/storage-migration.html',
+    'app://wallet/index.html?other=1',
+    'app://wallet.evil/index.html',
+    'app://wallet:80/index.html',
+    'https://dapp.example/',
+  ]) {
+    Object.defineProperty(win.webContents.mainFrame, 'url', { value: url, configurable: true });
+    await assert.rejects(async () => {
+      await handler(event, 'de');
+    }, /unauthorized sender/);
+  }
+  Object.defineProperty(win.webContents.mainFrame, 'url', {
+    value: 'app://wallet/index.html#/settings',
+    configurable: true,
+  });
+  await handler(event, 'zh-CN');
   t.mock.method(win, 'isDestroyed', () => true);
   await assert.rejects(async () => {
     await handler(event, 'de');
