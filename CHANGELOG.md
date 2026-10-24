@@ -2,7 +2,21 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.4.5 - 2026-10-24
+
+### Added
+
+- The wallet's Settings page has a language choice: English, German, Spanish,
+  Russian or Simplified Chinese. The choice also updates the unlock window,
+  desktop settings, menus and wallet-owned notices, and stays across restarts.
+  Desktop 1.4.4 followed the system language. `Open desktop security settings`
+  on the same page opens the auto-lock and biometric quick unlock settings.
+
+### Fixed
+
+- The Add NFT picker shows collection covers through the wallet's NFT image
+  component: `ipfs://` covers load through the backend gateway, and covers that
+  cannot load show the placeholder.
 
 ### Security
 
@@ -14,6 +28,19 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   allowed-service, external-browser, explicit resource-hint and WebRTC TCP/proxy
   channels that remain available to compromised renderer code. Add header/meta
   policy parity tests and a reproducible Xvfb request inventory.
+- Retain Electron 44.9.3 with Chromium 152.0.7977.167 and Node 24.22.0. As of
+  2026-10-24, no stable Electron release bundles Node 24.22.1, including 45.0.0.
+
+### Release scope
+
+- Bundle frontend main revision
+  `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on
+  2026-10-24 with the desktop language choice and the Add NFT picker fix, built
+  by `scripts/build-renderer.sh`. CI uses the same pinned source revision.
+
+<!-- discord -->
+**MyQRLWallet Desktop 1.4.5** adds a language choice to Settings: English, German, Spanish, Russian or Simplified Chinese for the wallet and the desktop windows. The wallet window now loads images only from the app and the wallet backend, and runs only its own bundled background workers, which narrows what a compromised page could reach. The Add NFT picker shows collection covers, with a placeholder for covers that cannot load. Electron stays at 44.9.3; a further stable runtime update is still needed for the October Node.js security fixes.
+<!-- /discord -->
 
 ## 1.4.4 - 2026-10-24
 
