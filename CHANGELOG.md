@@ -2,6 +2,76 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.4 - 2026-10-24
+
+### Added
+
+- Desktop unlock and settings windows, custom menus and wallet-owned notices
+  support English, German, Spanish, Russian and Simplified Chinese. The bundled
+  wallet supports the same five languages, and its language choice updates the
+  desktop surfaces. Platform menu roles retain their OS-provided localization.
+- Trusted transaction, message, typed-data and Remove wallet confirmations stay
+  English for now.
+
+### Fixed
+
+- Long transaction confirmations split into pages sized for the display's work
+  area. Every page repeats the `Send {amount}?` and `Max cost {max cost}.`
+  heading, the request number and page indicator, and the approval reminder.
+  The body continues through the original detail rows in order: amount,
+  recipient, sender, nonce, gas limit and its provenance or warnings, maximum
+  fee, maximum cost, chain ID, data preview, and any unverified dApp origin.
+  Each original detail line appears once across the pages; the origin block
+  ends on the final page. A row that exceeds a whole page continues under its
+  label with ` (continued)`. Long headings wrap while retaining every digit.
+- Earlier transaction pages offer `Next` and `Cancel`; only the final page
+  offers `Approve & sign`. Cancel stays the default and Escape action on every
+  page. Short transactions within the page allowance retain their existing
+  single-page rendering. Transactions have no page cap; message and typed-data
+  review limits stay unchanged.
+- Transaction page visibility is qualified on Linux GTK 3 at 1024x768 and
+  1280x720, with DejaVu Sans 8 to 12 pt at 100% and 125% text scaling. Other
+  platform, font and display combinations can still overflow. Moving the
+  wallet to another display or changing display metrics aborts the review so
+  it can restart with the current layout.
+- The wallet's dApp approval controls enable only after every review detail
+  has been shown in the visible area. Changes to the request or its review
+  details require those details to be shown again.
+
+### Security
+
+- Update the locked zod dependency to 4.6.7 and move `@theqrl/web3-validator`
+  onto the same version through a scoped override. Keep the desktop's existing
+  UTF-16 input caps, including passwords, recovery phrases and dApp metadata.
+  Strict requests with an own `__proto__` key are rejected. The bundled
+  frontend includes its corresponding zod fix.
+- Include the renderer's typed-data chain check: a request with a domain chain
+  ID waits for a successful wallet chain lookup before approval.
+- Retain Electron 44.9.3 with Chromium 152.0.7977.167 and Node 24.22.0.
+  As of 2026-10-24, [stable Electron releases](https://releases.electronjs.org/)
+  do not yet bundle Node 24.22.1; alpha and nightly builds do. A further stable
+  runtime update remains necessary for the October Node.js security fixes
+  described in the [1.4.3 security notes](#143---2026-10-22).
+- Correct the security documentation. The renderer handles recovery material
+  during account setup and import; message and typed-data signing need RPC;
+  the CSP allows HTTPS images to any host and blob workers, so a compromised
+  renderer can send out secrets it reads; whoever recovers the keychain KEK can
+  decrypt the wallet without the password; Linux does not enforce embedded ASAR
+  integrity; and a compromised renderer can draw a lookalike unlock prompt.
+  Earlier documents and release notes overstated these protections. No code
+  change.
+
+### Release scope
+
+- Bundle frontend main revision
+  `683d0642f2b91b9e70c61e56989bddc4ff4b1ab0`, the web wallet released on
+  2026-10-24, built by `scripts/build-renderer.sh`. CI uses the same pinned
+  source revision.
+
+<!-- discord -->
+**MyQRLWallet Desktop 1.4.4** brings English, German, Spanish, Russian and Simplified Chinese to the wallet, desktop windows and menus. Long transaction confirmations split into pages, repeating the amount and maximum cost on each page. Wallet dApp approvals enable after every review detail has been shown. Trusted transaction and signing confirmations stay English for now. This release also includes dependency fixes and the wallet's typed-data chain check. Electron stays at 44.9.3; a further stable runtime update is needed for the October Node.js security fixes.
+<!-- /discord -->
+
 ## 1.4.3 - 2026-10-22
 
 ### Security

@@ -1,5 +1,9 @@
 # Electron 44 upgrade review
 
+This historical review covers Desktop 1.4.1 and Electron 44.7.0. Desktop 1.4.4
+uses Electron 44.9.3, Chromium 152.0.7977.167 and Node 24.22.0; see
+[SECURITY.md](../SECURITY.md) for the current runtime baseline and limits.
+
 The desktop runtime moves from Electron 42.11.12 to 44.7.0, declared as
 `^44.7.0` and pinned by `package-lock.json`. Electron 44 bundles Chromium 152
 and Node 24.18.1. The development floor remains Node 22.13.0 with
@@ -28,7 +32,7 @@ outside this review's execution scope.
 | 43 | `chrome.scripting` CSS injection reaches fallback frames | **Not applicable.** No extensions are loaded and no Chrome scripting API is used. |
 | 43 | Open/save dialogs default to Downloads, with home fallback | **Not applicable to an Electron dialog call site.** The shell has no `showOpenDialog`, `showSaveDialog`, sync equivalents, or `defaultPath` override. Wallet file import uses an HTML file input (`src/components/Core/Body/ImportAccount/ImportEncryptedWallet/ImportEncryptedWallet.tsx:282` in the frontend); its export helper uses a Blob download (`src/utils/crypto/walletEncryption.ts:489`). These keep Chromium's picker/download behavior. There is no app-owned last-directory guarantee to preserve. |
 | 43 | Linux `showHiddenFiles` removed | **Not applicable.** No shell or frontend call sets this option. Visibility of hidden files remains a picker/user preference. |
-| 44 | `select-client-certificate` also covers `net` and utility processes; `webContents` may be null and certificates may be selected automatically | **Not applicable to current requests.** There is no event listener to dereference `webContents`. The sole `net.fetch` call loads a contained local `file:` URL (`src/main/index.ts:314`). RPC uses Node's global `fetch` (`src/main/rpc.ts:47`), and the offline signer does not request main-process authentication (`src/main/signerBridge.ts:109`). No new remote Chromium request gains certificate selection. |
+| 44 | `select-client-certificate` also covers `net` and utility processes; `webContents` may be null and certificates may be selected automatically | **Not applicable to current requests.** There is no event listener to dereference `webContents`. The sole `net.fetch` call loads a contained local `file:` URL (`src/main/index.ts:314`). RPC uses Node's global `fetch` (`src/main/rpc.ts:47`), and the isolated signer does not request main-process authentication (`src/main/signerBridge.ts:109`). No new remote Chromium request gains certificate selection. |
 | 44 | macOS 12 removed | **Adapted.** `mac.minimumSystemVersion` is `13.0.0` in `electron-builder.yml:56`; README prerequisites state macOS 13+. macOS packaging is configured but was not exercised on this Linux host. |
 | 44 | ANGLE statically linked; separate EGL/GLES libraries removed | **Not applicable to app code.** No custom ANGLE binaries, graphics switches, or library replacement hooks exist. Packaging uses the stock Electron distribution. |
 | 44 | Frame destinations in `net.request` require navigate mode | **Not applicable.** There is no `net.request` call and no `Sec-Fetch-Dest` / `Sec-Fetch-Mode` override. Local `net.fetch` creates its own request. |
@@ -128,6 +132,12 @@ The existing `file://` privilege tradeoff remains documented in
 are a separate architectural change. Unit tests exercise the actual hook and
 fuse library on synthetic wires, including rejection of an unknown tenth fuse
 before any bytes change. The packaging smoke checks the real Linux binary.
+
+The enabled integrity fuse in this historical readback is a configuration
+result. Electron enforces embedded ASAR integrity on macOS and Windows. A later
+synthetic probe on Linux with Electron 44.9.3 and the release fuse hook executed
+modified JavaScript inside the ASAR without updating its hashes; see
+[the platform limits](../SECURITY.md#7-asar-integrity).
 
 `electron-builder.yml` excludes `out/frontend-source/**` so the source archive
 and its build dependencies stay outside the application ASAR. Only the staged

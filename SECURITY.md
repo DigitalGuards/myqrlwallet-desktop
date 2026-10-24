@@ -1,20 +1,22 @@
 # Security
 
 This document describes the renderer-hardening controls as IMPLEMENTED in this
-repository, where each lives in code, the signer-isolation invariant, and how to
-report a vulnerability. The design rationale is in
+repository, where each lives in code, the signer boundary and setup/import
+limits, and how to report a vulnerability. The design rationale is in
 [`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md); the honest
 limits of each control are in [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
-The runtime is Electron 44, locked to 44.7.0 (Chromium 152, Node 24.18.1).
+The runtime is Electron 44.9.3, Chromium 152.0.7977.167 and Node 24.22.0.
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) records the Electron 43/44
 compatibility checks and the scope of local validation.
 
 ## Renderer-hardening checklist (as built)
 
-The cardinal property is that even a fully compromised renderer yields NO key
-material, because keys never live there. The controls below keep the renderer
-from escalating beyond its sandbox.
+Ordinary desktop unlock and signing decrypt keys in the isolated signer.
+Setup and import expose recovery material to the renderer and main, as detailed
+under [Signer isolation and setup/import limits](#signer-isolation-and-setupimport-limits).
+The controls below restrict the renderer's privileges; readable setup/import
+secrets remain exposed to a compromised renderer.
 
 ### 1. `webPreferences`
 
@@ -67,22 +69,27 @@ form-action 'self';
 worker-src 'self' blob:
 ```
 
-The load-bearing control is `script-src 'self'`: no `unsafe-inline` and no
-`unsafe-eval` for SCRIPT, so a renderer compromise can neither inject nor `eval`
-executable code. `'wasm-unsafe-eval'` permits WebAssembly compilation ONLY (it
-does not enable JS `eval`); the frontend's hash-wasm argon2id needs it to import
-extension keystore backups at full speed, and the wasm bytes come from the same
-bundled same-origin scripts `script-src` already trusts, so it does not widen
-where code can come FROM. `style-src` allows `'unsafe-inline'` because the reused frontend
-(Radix UI) sets inline STYLE attributes at runtime; inline style cannot execute
-code, so this is a much-lower-risk relaxation than inline script would be.
-`base-uri`/`form-action` are `'self'`, which resolves to `file://` for the
-packaged renderer and is therefore effectively as tight as `'none'`. The
-`connect-src` origins are derived from the configured RPC/backend endpoints in
-`src/main/config.ts` (`connectSrcOrigins()`); the renderer can reach those and
-nothing else. In `npm run dev` the Vite dev-server origin and its HMR websocket
-are appended to `connect-src` only (see `src/main/index.ts`); production is never
-widened.
+`script-src 'self' 'wasm-unsafe-eval'` restricts document scripts to the local
+bundle and blocks inline JavaScript and JS `eval`. `'wasm-unsafe-eval'` permits
+WebAssembly compilation, used by hash-wasm argon2id during keystore import.
+`style-src` allows inline styles for the reused frontend's Radix UI.
+`object-src 'none'` blocks embedded objects, `frame-ancestors 'none'` prevents
+framing, and `base-uri`/`form-action` are restricted to `'self'`.
+
+`connect-src` restricts the request types it governs, including fetch, XHR and
+WebSockets, to `'self'` and the configured RPC/backend origins from
+`src/main/config.ts` (`connectSrcOrigins()`). It does not govern image loads.
+`img-src 'self' data: https:` permits data to be sent to any HTTPS image URL,
+including hosts outside that allowlist. `worker-src 'self' blob:` permits
+generated worker code. The CSP does not stop a compromised renderer from
+sending secrets it can read, including setup or import recovery material, to
+an outside host. The Electron renderer probes loaded an intercepted synthetic
+HTTPS image outside `connect-src` without a CSP violation and executed a
+generated blob worker.
+
+In `npm run dev` the Vite dev-server origin and its HMR websocket are appended
+to `connect-src` only (see `src/main/index.ts`); production retains the policy
+above.
 
 `X-Content-Type-Options: nosniff` is set on the same response.
 
@@ -102,7 +109,8 @@ Every `ipcMain.handle` enforces, in order: (1) sender validation, (2) zod parse,
   boundary, before reaching crypto code. All request schemas are `.strict()`.
 - Spend path: `wallet:requestSignature` additionally routes through the trusted
   main-drawn confirmation modal (`confirmSignature()` in `src/main/confirm.ts`)
-  before any signing occurs. The renderer cannot spoof what is being signed.
+  before any signing occurs. The renderer cannot alter that native modal or
+  bypass its approval gate.
 
 The preload (`src/preload/index.ts`) exposes only the named functions of
 `QrlWalletApi` (`src/shared/bridge.ts`) over `contextBridge`. There is no raw
@@ -173,28 +181,46 @@ Verify on a built app with `npm run fuses:read`.
 ### 7. ASAR integrity
 
 `asar: true` in `electron-builder.yml`, with `OnlyLoadAppFromAsar` and
-`EnableEmbeddedAsarIntegrityValidation` fuses on, so the app only loads code from
-the signed `app.asar` and the runtime validates its integrity. Native binaries
-(`@node-rs/argon2`'s prebuilt `.node`) cannot run from inside the asar, so
-`asarUnpack: ['**/*.node']` extracts them to `app.asar.unpacked`; everything else
-stays in the integrity-checked archive.
+`EnableEmbeddedAsarIntegrityValidation` fuses on, restricts the application
+entry-point search to `app.asar`. Electron enforces embedded ASAR integrity on
+macOS and Windows when the packaged integrity metadata and fuse are present.
+See [Electron's platform support](https://www.electronjs.org/docs/latest/tutorial/asar-integrity).
+
+Linux does not enforce embedded ASAR integrity. With Electron 44.9.3 and the
+unchanged release fuse hook, a synthetic ASAR probe executed modified
+JavaScript whose integrity hashes had not been updated. Readback confirmed
+both integrity and ASAR-only fuses were enabled. This was a copied runtime and
+minimal fixture; no installer was built. Fuse readback alone establishes the
+configured fuse values; enforcement needs a platform-specific runtime check.
+
+Native binaries (`@node-rs/argon2`'s prebuilt `.node`) cannot run from inside the
+ASAR, so `asarUnpack: ['**/*.node']` extracts them to `app.asar.unpacked` outside
+the archive's integrity coverage. Current Windows/Linux release binaries are
+unsigned; ASAR integrity does not establish publisher authenticity.
 
 ### 8. Supply chain and distribution
 
 - Lockfile-pinned dependencies; pure-NAPI/JS crypto deps (no native build step,
   no `electron-rebuild`).
-- electron-builder 26.x packaging with Authenticode (Windows) + notarization
-  (macOS) + PGP-detached `.asc` sidecars on every artifact. See the README
-  "Packaging and signing" section for the required environment.
+- electron-builder 26.x supports Authenticode (Windows), notarization (macOS)
+  and PGP-detached `.asc` sidecars when their credentials are supplied. Current
+  Windows/Linux releases are unsigned and provide SHA-256 checksums. See the
+  README "Packaging and signing" section for the required environment.
 - Keep Electron/Chromium current to close the V8 patch gap: context isolation
   can be defeated by an unpatched V8 type-confusion bug, so update cadence is
   itself a security control.
 
-## Signer isolation invariant
+## Signer isolation and setup/import limits
 
-The signer `utilityProcess` (`src/signer/index.ts`) is the ONLY process in which
-plaintext key material (mnemonic, hex seed, ML-DSA-87 secret key) is ever
-materialised, and only transiently. The invariant, enforced in code:
+Once an account exists, the signer holds decrypted keys and performs signing.
+During account setup, the renderer shows a new account's recovery phrase once
+for backup. Import forms read typed recovery phrases and hex seeds, and encrypted
+wallet files are decrypted in the renderer or its worker. Main brokers these
+secrets between the renderer and the signer. A compromised renderer during setup
+or import can recover that account.
+
+The signer `utilityProcess` (`src/signer/index.ts`) handles desktop wallet
+envelope encryption and ordinary unlock/signing decryption. Its boundaries are:
 
 - It is forked by main via `utilityProcess.fork` and speaks ONLY to main over
   `process.parentPort`. The renderer has no handle to it and cannot address it.
@@ -212,8 +238,10 @@ materialised, and only transiently. The invariant, enforced in code:
   replies carry only a short message, never the password or any key bytes.
 
 See [`THREAT_MODEL.md`](THREAT_MODEL.md) for the explicit limits of this
-invariant (notably the un-zeroizable V8 string holding the hex seed during a
-signature, and the KEK transiting main when provisioning the OS keychain).
+isolation (including setup/import exposure, the un-zeroizable V8 string holding
+the hex seed during a signature, and the KEK transiting main during keychain
+provisioning and unlock). Whoever obtains the KEK can decrypt the wallet's
+recovery envelopes without the password.
 
 ## Reporting a vulnerability
 

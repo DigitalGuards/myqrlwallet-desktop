@@ -5,10 +5,10 @@
 # Builds the REAL ../myqrlwallet-frontend React app as the desktop renderer and
 # stages it at out/renderer/, loaded by the main process via loadFile().
 #
-# This is the "easy updates" backbone: it always builds the CURRENT frontend
-# checkout (the submodule), so updating the frontend = bump the submodule and
-# re-run this. The frontend source is NEVER copied/vendored into this repo, so
-# it cannot drift.
+# Release builds set QRL_FRONTEND_DIR to a detached checkout of the revision
+# documented in docs/FRONTEND_INTEGRATION.md. CI checks out that pinned revision.
+# Development builds can use the current sibling frontend checkout (submodule).
+# The frontend source stays in its own repository.
 #
 # The frontend needs exactly two desktop adaptations, both already in the
 # frontend repo and BOTH web-safe:
