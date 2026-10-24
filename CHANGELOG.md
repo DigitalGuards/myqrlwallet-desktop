@@ -52,6 +52,14 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   do not yet bundle Node 24.22.1; alpha and nightly builds do. A further stable
   runtime update remains necessary for the October Node.js security fixes
   described in the [1.4.3 security notes](#143---2026-10-22).
+- Correct the security documentation. The renderer handles recovery material
+  during account setup and import; message and typed-data signing need RPC;
+  the CSP allows HTTPS images to any host and blob workers, so a compromised
+  renderer can send out secrets it reads; whoever recovers the keychain KEK can
+  decrypt the wallet without the password; Linux does not enforce embedded ASAR
+  integrity; and a compromised renderer can draw a lookalike unlock prompt.
+  Earlier documents and release notes overstated these protections. No code
+  change.
 
 ### Release scope
 

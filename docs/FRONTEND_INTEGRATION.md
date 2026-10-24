@@ -1,11 +1,20 @@
 # Reusing myqrlwallet-frontend as the renderer
 
 The bundled renderer is the `myqrlwallet-frontend` React app, built into
-`out/renderer/` by `scripts/build-renderer.sh`. Desktop signing and unlock
-operations call `window.qrlWallet.*`, which routes to the isolated signer.
-Import forms can handle recovery material while provisioning an account;
-ongoing seed decryption and signing stay in the signer process. This document
-describes the integration and its bridge contract.
+`out/renderer/` by `scripts/build-renderer.sh`. Desktop signing calls
+`window.qrlWallet.requestSignature` (`wallet:requestSignature`). Native password
+unlock calls `window.unlockBridge.submit` (`unlock:submit`) from the separate
+unlock window. Main validates each route and brokers it to the isolated signer.
+The wallet renderer also exposes `window.qrlWallet.unlock` (`wallet:unlock`)
+as a separate entry point; the normal native password form uses `unlockBridge`.
+
+Once an account exists, the signer holds decrypted keys and performs signing.
+During account setup, the renderer shows a new account's recovery phrase once
+for backup. Import forms read typed recovery phrases and hex seeds, and encrypted
+wallet files are decrypted in the renderer or its worker. Main brokers these
+secrets between the renderer and the signer. A compromised renderer during setup
+or import can recover that account. This document describes the integration
+and its bridge contract.
 
 ## Two required source changes (frontend repo)
 
@@ -68,22 +77,28 @@ no inline event handlers, no inline `<script>`. (`style-src` keeps
 execute code.)
 
 Any RPC / relay / backend origins the frontend needs at runtime must be added to
-`connect-src` in `src/main/config.ts` (`connectSrcOrigins()`), since the strict
-CSP only permits `'self'` plus the configured origins.
+`connect-src` in `src/main/config.ts` (`connectSrcOrigins()`), which restricts
+the request types it governs, including fetch, XHR and WebSockets. The policy
+also includes `img-src 'self' data: https:`, permitting data to be sent to any
+HTTPS image URL, and `worker-src 'self' blob:`, permitting generated worker
+code. The CSP does not stop a compromised renderer from sending secrets it can
+read, including setup or import recovery material, to an outside host. See the
+[complete policy](../SECURITY.md#2-strict-content-security-policy).
 
 ## Refactor the in-renderer crypto call sites
 
-These are the call sites that currently materialise key material in the renderer.
-Each must be rerouted to `window.qrlWallet.*`. After this refactor, the
-frontend's crypto worker and `WalletEncryptionUtil` are no longer on the
-spend/unlock path in the desktop build.
+These web-wallet call sites use the native bridges on desktop for ordinary
+unlock and signing. The frontend's crypto worker and `WalletEncryptionUtil`
+remain available for encrypted-wallet-file import, which recovers plaintext
+recovery material in the renderer or its worker before main brokers it to the
+signer.
 
 | Frontend call site | Today (in renderer) | Desktop: delegate to |
 |---|---|---|
 | `src/stores/qrlStore.ts` (around the `signTransaction` path, lines ~583/587) | `deriveHexSeedAsync(mnemonic)` then `qrlInstance.accounts.signTransaction(txObject, privateKey)` | `window.qrlWallet.buildTransaction(...)` then `window.qrlWallet.requestSignature({ kind: 'transaction', tx })`, then `window.qrlWallet.sendRawTransaction({ rawTx })` |
 | `src/components/Core/Body/DAppConnect/DAppApprovalModal.tsx` | `WalletEncryptionUtil.decryptSeedWithPin(...)` -> `hexSeed`, then `web3.accounts.signTransaction` / `signMessage` / `signTypedData` (lines ~100, ~239) | `window.qrlWallet.requestSignature({ kind: 'transaction' \| 'message' \| 'typedData', ... })` |
-| `src/utils/crypto/walletEncryption.ts` (`WalletEncryptionUtil`) | encrypt/decrypt seed under PIN in-page | not called on the desktop spend/unlock path; unlock becomes `window.qrlWallet.unlock(...)`, import becomes `window.qrlWallet.importWallet(...)` |
-| `src/utils/crypto/cryptoWorker.ts` / `cryptoWorkerClient.ts` (`deriveHexSeed` worker) | derives the hex seed from the mnemonic in a web worker | not called on the desktop path; derivation happens in the signer (`src/signer/signing.ts`) |
+| `src/utils/crypto/walletEncryption.ts` (`WalletEncryptionUtil`) | encrypt/decrypt seed under PIN in-page | Desktop PIN storage and ordinary unlock/signing avoid this path. Native password unlock uses `window.unlockBridge.submit(...)`; encrypted-wallet-file import still decrypts in the renderer before `window.qrlWallet.importWallet(...)`. |
+| `src/utils/crypto/cryptoWorker.ts` / `cryptoWorkerClient.ts` (`deriveHexSeed` worker) | derives the hex seed from the mnemonic in a web worker | Desktop account derivation happens in the signer (`src/signer/signing.ts`); encrypted-keystore import still uses renderer-side worker decryption. |
 | `src/utils/signing/*` (`sign.ts`, `messageDigest.ts`, `typedData.ts`, `ctx.ts`) | computes digests + ML-DSA-87 signatures in-page | the isolated signer computes message and typed-data digests and signatures with canonical fixture parity. |
 
 The signer reproduces the audited path byte-for-byte: it shares the same
@@ -93,10 +108,11 @@ signature verifies identically to a web-wallet one.
 
 ## Multi-wallet + import routes (bridge contract v2)
 
-The desktop stores any number of wallets (one encrypted envelope per address,
-each under its own password, in `userData/wallet/seeds/<address>.json`) with a
-single ACTIVE account and at most one unlocked signer session. The bridge
-surface for the frontend:
+Native storage has no ten-account cap: it stores one encrypted envelope per
+address, each under its own password, in `userData/wallet/seeds/<address>.json`.
+The renderer blocks imports at ten accounts and requires removing an existing
+account before importing another. There is a single ACTIVE account and at most
+one unlocked signer session. The bridge surface for the frontend:
 
 - `importWallet({ mnemonic, password, useKeychain? })` OR
   `importWallet({ hexSeed, password, useKeychain? })`: exactly one source. The
@@ -114,10 +130,11 @@ surface for the frontend:
   argless, back-compat). Gated by the trusted main-drawn confirmation, which
   names the address.
 - `getStatus()` now also carries `wallets` and `activeAddress`.
-- Encrypted-wallet-file restore needs NO desktop intake: decrypt the file in
-  the import form exactly as the web build does (import-time secrets pass
-  through the renderer on every route, including typed mnemonics), then hand
-  the recovered mnemonic or hexSeed to `importWallet`.
+- Encrypted-wallet-file restore decrypts the file in the renderer or its worker,
+  then passes the recovered phrase or hex seed through
+  `window.qrlWallet.importWallet` and main to the signer. Typed recovery phrases
+  and hex seeds follow the same bridge route. A compromised renderer during
+  import can recover that account.
 
 Frontend wiring expected on desktop: un-hide the hex-seed and encrypted-wallet
 import tabs, route `setActiveAccount` through `setActiveWallet`, drive the
@@ -136,19 +153,28 @@ to the Connect response. Both boundaries enforce account binding. The shared
 renderer retains its older unsupported-method wording on the error path; valid
 requests use the success path without frontend changes.
 
+Message and typed-data signing first call `assertNetworkReady`, which checks
+`qrl_chainId` and genesis over RPC; signing is refused while RPC is unavailable,
+including typed data without a domain chain ID. Typed data with a domain chain
+ID also waits for a successful RPC lookup to compare it with the wallet chain.
+Approval stays disabled while that lookup is pending or failed; a domain
+mismatch is shown as a warning. These renderer prerequisites run before the
+native signing bridge.
+
 ## Adapter sketch: delegate the existing signing service
 
-The cleanest migration is a thin adapter that exposes the same shape the
-frontend's signing code already calls, but routes to `window.qrlWallet`. This
-lets you swap the implementation at one import site rather than rewriting every
-caller.
+This illustrative sketch covers signing, import and session-status bridge
+calls. The bundled frontend implements its adapter in `src/desktop/bridge.ts`.
+Callers perform the network checks above before signing. Native password
+collection belongs to the separate unlock window and its `unlockBridge` route.
 
 ```ts
 // src/adapters/desktopSigner.ts  (in the frontend, desktop build only)
 //
-// Mirrors the call shape of src/utils/signing + qrlStore.sendTransaction, but
-// the seed never enters the renderer: every operation routes to the isolated
-// signer via window.qrlWallet. No deriveHexSeed, no WalletEncryptionUtil.
+// Illustrates signing and import bridge calls. Signing decrypts keys in the
+// signer. Setup/import recovery material is handled in the renderer and
+// brokered through main, including renderer-side wallet-file decryption.
+// Callers apply the renderer's network checks before signing.
 
 import type { UnsignedTransaction } from "...shared/schemas"; // shape only
 
@@ -177,10 +203,7 @@ export const desktopSigner = {
     // -> { signature, publicKey, descriptor, signer, digest, schemeVersion }
   },
 
-  // Session lifecycle replaces in-page PIN decrypt / encrypt.
-  unlock(password?: string) {
-    return api.unlock({ password });          // omit password -> OS keychain (macOS)
-  },
+  // Locking surfaces the separate native unlock window when a wallet exists.
   lock() {
     return api.lock();
   },
@@ -196,12 +219,13 @@ export const desktopSigner = {
 };
 ```
 
-Wiring it in: in `qrlStore.ts`, replace the `deriveHexSeedAsync` +
-`accounts.signTransaction` block with `desktopSigner.signAndSendTransaction(...)`;
-in `DAppApprovalModal.tsx`, replace the `decryptSeedWithPin` + `web3.accounts.*`
-calls with `desktopSigner.signMessage` / `signAndSendTransaction`. The PIN-entry
-UX becomes a call to `desktopSigner.unlock(password)`, and the autolock state can
-drive the UI via `onLockStateChanged`.
+On desktop, `qrlStore.ts` and `DAppApprovalModal.tsx` call the desktop signing
+adapter after the renderer's network checks. The web PIN-entry UI is hidden.
+The native password form calls `window.unlockBridge.submit(password, address)`
+in `src/unlock/main.tsx`; `src/unlock/preload.ts` sends `unlock:submit`, handled
+by `src/main/unlockWindow.ts`. `window.qrlWallet.unlock` sends `wallet:unlock`
+to `src/main/ipc.ts` and remains a separate renderer bridge entry point.
+Autolock state reaches the wallet UI through `onLockStateChanged`.
 
 ## Build the bundled renderer
 

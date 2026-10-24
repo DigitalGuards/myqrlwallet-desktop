@@ -3,16 +3,18 @@
 Post-quantum, self-custody QRL desktop wallet. An Electron shell built around a
 hardened four-process architecture: a sandboxed renderer (the real
 `myqrlwallet-frontend` React app, reused as-is), a broker main process, and an
-isolated signer `utilityProcess` that holds the decrypted keys and signs. Once
-an account exists, a compromised renderer yields no key material: seed
-decryption and signing stay in the signer. Account setup is the exception: the
-renderer shows a new account's recovery phrase once for backup, and the import
-forms read the recovery phrase, hex seed or wallet file you enter before
-handing it to the signer.
+isolated signer `utilityProcess` that holds the decrypted keys and signs.
 
-This implements the decision document in
-[`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md). Read that first
-for the "why"; this README is the "how to run/build" companion. The honest
+Once an account exists, the signer holds decrypted keys and performs signing.
+During account setup, the renderer shows a new account's recovery phrase once
+for backup. Import forms read typed recovery phrases and hex seeds, and encrypted
+wallet files are decrypted in the renderer or its worker. Main brokers these
+secrets between the renderer and the signer. A compromised renderer during setup
+or import can recover that account.
+
+The design rationale and future proposals are in
+[`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md). This README
+describes the implemented behavior and how to run/build it. The honest
 security tradeoffs are in [`THREAT_MODEL.md`](THREAT_MODEL.md) and the
 renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
@@ -20,7 +22,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 - **Stack:** Electron 44 (locked to 44.9.3; bundled Node 24.22.0 + Chromium 152.0.7977.167) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded over `file://`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
-- **Key isolation:** every key-touching operation (wallet generation, seed encrypt/decrypt, ML-DSA-87 signing) runs in the isolated signer. The renderer routes those through `window.qrlWallet`; its in-page seed/signing primitives are neutered (throw) under desktop, as defense-in-depth.
+- **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
 - **Key at rest:** Argon2id (`@node-rs/argon2`) password-derived KEK + AES-256-GCM, with the macOS Keychain (Designated Requirement + Touch ID) as defense-in-depth. No PIN: the desktop unlock secret is a password.
 - **Environment:** production build by default. The bundled renderer targets `qrlwallet.com`; export `VITE_NODE_ENV=development` plus the dev vars for a staging (`dev.qrlwallet.com`) build. Repoint with env vars (see "Renderer reuse").
@@ -142,26 +144,35 @@ URL path is gated on `!app.isPackaged`.
 
 ## What works today
 
-End-to-end, with every key-touching step performed in the signer:
+The supported flows have the following process boundaries:
 
-- **Create a wallet:** the signer generates the seed, encrypts and persists it,
-  and returns the recovery mnemonic ONCE for backup. The hex seed and secret key
-  never leave the signer.
-- **Import a wallet:** from a recovery mnemonic, a raw 51-byte hex extended seed,
-  or an encrypted wallet file. The mnemonic and hex seed encode the same key, so
-  the signer regenerates the canonical mnemonic and stores an identical envelope
-  either way; the signer derives, encrypts, persists.
-- **Multiple wallets:** any number of accounts on one device, each encrypted
-  under its own password (one envelope per address at
+- **Create a wallet:** the signer generates the seed and encrypts the desktop
+  wallet envelopes; main persists them. The recovery phrase passes through main
+  to the renderer, which shows it once for backup. This phrase can recover the
+  account and is exposed to a renderer compromised during setup.
+- **Import a wallet:** from a recovery phrase, a raw 51-byte hex extended seed,
+  or an encrypted wallet file. The recovery phrase and hex seed encode the same
+  key; the signer reconstructs the canonical recovery phrase from a hex seed.
+  Import forms read typed recovery phrases and hex seeds, and
+  encrypted wallet files are decrypted in the renderer or its worker. Main
+  brokers the recovered secrets to the signer, which derives the account and
+  encrypts the desktop wallet envelopes for main to persist. A compromised
+  renderer during import can recover that account.
+- **Multiple wallets:** the renderer blocks imports at ten accounts. Remove
+  an existing account before importing another. Each account is encrypted under
+  its own password (one envelope per address at
   `userData/wallet/seeds/<address>.json`, plus an `active.json` pointer). Add,
   switch, and remove accounts individually. The signer holds at most one unlocked
   session at a time, so switching to another account requires unlocking it (the
   isolation tradeoff, see [`THREAT_MODEL.md`](THREAT_MODEL.md)). A legacy
   single-wallet `seed.json` migrates into this layout once at boot.
-- **Unlock / lock:** a native, app-drawn unlock window (`src/unlock/`, not the
-  web renderer) collects the password; it shows an account picker when more than
+- **Unlock / lock:** a separate app-owned native unlock window (`src/unlock/`)
+  collects the password; it shows an account picker when more than
   one wallet exists. Password unlock (Argon2id KEK), macOS Touch-ID / keychain
   unlock, and a sliding auto-lock that zeroizes and notifies the renderer.
+  The genuine input stays isolated from the wallet renderer. A compromised
+  renderer can still draw a lookalike prompt and read input supplied to it;
+  see the [unlock cues and phishing limits](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
 - **Remove a wallet:** deletes one account's encrypted seed and clears its
   keychain entry, ONLY after a trusted main-drawn confirmation that names the
   address; other accounts are untouched.
@@ -171,8 +182,8 @@ End-to-end, with every key-touching step performed in the signer:
   and NFT transfers, plus dApp-connect `qrl_sendTransaction` /
   `qrl_signTransaction` / `qrl_signMessage` / `qrl_signTypedData`. Each signature is gated by the trusted
   main-drawn confirmation modal and is byte-faithful to the web wallet, so
-  signatures verify identically. Signing is fully offline, and the confirmed
-  chain id is exactly the one signed.
+  signatures verify identically. The wallet checks its network over RPC before
+  signing, and the confirmed transaction chain ID is exactly the one signed.
 
 Typed-data signing supports QRL-SIGN-TYPED v1 and v2 with byte-identical web
 wallet and Connect SDK digests. An address field, including an address array or
@@ -185,9 +196,12 @@ reviews above 10 pages are refused. Message signing receives the same complete
 paginated review: every byte appears once as escaped text or full hex, with a
 visible `| ` gutter on every body row. Main validates every resource bound
 before confirmation; the signer checks them again and binds the request to its
-unlocked account. Message signing, and typed data without a domain chain ID,
-work offline. Typed data that names a chain ID in its domain waits for a
-successful chain lookup over RPC; if the lookup fails, approval stays disabled.
+unlocked account. Message and typed-data signing first call `assertNetworkReady`,
+which checks `qrl_chainId` and genesis over RPC; signing is refused while RPC is
+unavailable, including typed data without a domain chain ID. Typed data with a
+domain chain ID also waits for a successful RPC lookup to compare it with the
+wallet chain. Approval stays disabled while that lookup is pending or failed;
+a domain mismatch is shown as a warning.
 
 ## Native languages
 
@@ -240,25 +254,30 @@ configurable with `QRL_I18N_EVIDENCE`. No installer is needed.
 
 ## Architecture: four processes, one trust gradient
 
-Trust runs lowest to highest. Key material never moves down the gradient.
+Trust runs lowest to highest. Setup and import recovery material crosses these
+boundaries; ordinary desktop unlock and signing decrypt keys in the signer.
 
 | Process | Trust | Has Node? | Holds keys? | Responsibility |
 |---|---|---|---|---|
-| Renderer | Lowest (treated as fully untrusted) | No (`sandbox: true`, `nodeIntegration: false`) | No | The real `myqrlwallet-frontend` UI. Talks only through `window.qrlWallet`. A full renderer RCE yields no key material because none lives here; in-page seed/signing primitives throw under desktop. |
-| Preload | Bridge | No (tiny allowlist) | No | Mounts the narrow `window.qrlWallet` API over `contextBridge`. No raw `ipcRenderer`, no `require`. |
-| Main (broker) | Mid | Yes | No (plaintext) | Window lifecycle, IPC sender + schema validation, the trusted confirmation modal, the RPC proxy, and the encrypted seed file on disk. |
-| Signer (`utilityProcess`) | Highest, most isolated | Yes | Yes, transiently | The ONLY place the mnemonic, hex seed, and ML-DSA-87 secret key are ever materialised. Wallet generation, Argon2id KDF, AES-256-GCM decrypt, sign, zeroize. Speaks only to main over `parentPort`; the renderer has no handle to it. |
+| Renderer | Lowest (treated as fully untrusted) | No (`sandbox: true`, `nodeIntegration: false`) | Recovery material during setup/import | Shows a new account's recovery phrase once for backup; import forms read typed recovery phrases and hex seeds, and decrypt encrypted wallet files in the renderer or its worker. Routes desktop signing through `window.qrlWallet`. A compromised renderer during setup or import can recover that account. |
+| Preload | Bridge | No (tiny allowlist) | Recovery material transits the bridge | Mounts the narrow `window.qrlWallet` API over `contextBridge`, including setup/import arguments and responses. No raw `ipcRenderer`, no `require`. |
+| Main (broker) | Mid | Yes | Setup/import recovery material and keychain KEKs in transit | Brokers recovery material between renderer and signer, and KEKs between signer and OS keychain. Owns window lifecycle, IPC sender + schema validation, trusted confirmations, RPC and encrypted wallet files on disk. |
+| Signer (`utilityProcess`) | Highest, most isolated | Yes | Decrypted keys per operation; KEK while unlocked | Generates accounts, encrypts desktop wallet envelopes, decrypts keys for unlock/signing, signs and wipes secret buffers. Speaks only to main over `parentPort`; the renderer has no direct handle to it. |
 
-The renderer can at most ask for a signature over a specific, user-confirmed
-payload and get the result back. It cannot reach the signer, the disk, or the
-network beyond the CSP `connect-src` allowlist.
+Signing requests require a specific payload and trusted user confirmation.
+The renderer has no direct signer handle or unrestricted filesystem API.
+`connect-src` restricts the request types it governs to the configured origins.
+`img-src 'self' data: https:` permits data to be sent to any HTTPS image URL,
+and `worker-src 'self' blob:` permits generated worker code. The CSP does not
+stop a compromised renderer from sending secrets it can read, including setup
+or import recovery material, to an outside host.
 
 ### Data flow for a spend
 
 1. Renderer calls `window.qrlWallet.requestSignature({ kind: 'transaction', tx })`.
 2. Preload forwards it on the `wallet:requestSignature` IPC channel.
 3. Main validates the sender (top frame, `file:` origin) and zod-parses the payload.
-4. Main draws a trusted confirmation modal ("you are signing X to Y"). The renderer cannot spoof it.
+4. Main draws a trusted confirmation modal ("you are signing X to Y"). The renderer cannot alter that native modal or bypass its approval gate.
 5. On approval, main asks the signer to sign. The signer unwraps the seed, signs with `@theqrl/mldsa87`, zeroizes, and returns the raw signed tx.
 6. Renderer broadcasts it via `window.qrlWallet.sendRawTransaction`.
 
@@ -276,8 +295,10 @@ It needs only a handful of adaptations, all web-safe and runtime-gated by
 - **Asset base** `VITE_DESKTOP=1` -> Vite `base: './'` for `file://`.
 - **Routing** `createBrowserRouter` -> `createHashRouter`, switched at runtime
   when `window.qrlWallet` is present (no build flag, no HTML surgery).
-- **Key ops** every seed/sign call site delegates to `window.qrlWallet` under
-  desktop; the in-page crypto primitives throw if reached.
+- **Key ops** desktop account generation, envelope encryption, unlock and
+  signing delegate through the native bridges. In-page PIN storage and signing
+  entry points throw. Setup displays recovery phrases and import reads recovery
+  material, including renderer-side encrypted-wallet-file decryption.
 - **No PIN** the desktop unlock secret is a password; PIN UI is hidden under
   desktop and unlock prompts are replaced by the signer session.
 
@@ -409,23 +430,29 @@ signing). Verify the result on a built app with `npm run fuses:read`.
 
 ## Security model at a glance
 
-- The mandatory Argon2id-derived password is the load-bearing control. Even if
-  every OS app-binding layer is defeated by same-user malware, the attacker
-  still only gets an Argon2id-hardened, AES-256-GCM-sealed blob.
-- OS app-binding (macOS Keychain bound to the Designated Requirement + Touch ID;
-  Windows/Linux `safeStorage`) is defense-in-depth: it raises attacker cost and
-  generates detection signal. It is NOT a guarantee. Same-context code execution
-  defeats it (see the Chrome ABE bypass history in the threat model).
-- The renderer is fully sandboxed and key-free. Containment controls:
+- The password-derived Argon2id KEK protects stolen AES-256-GCM wallet envelopes
+  when the attacker lacks the KEK. Whoever obtains the KEK can decrypt both
+  recovery envelopes without knowing or cracking the password.
+- OS keychain storage protects access to a saved KEK according to its platform
+  policy: macOS Designated Requirement + user presence, or opt-in Windows/Linux
+  `safeStorage`. It adds an access control around the saved KEK. It provides no
+  additional password barrier after that KEK is recovered, including from main
+  during provisioning or keychain unlock.
+- The renderer is sandboxed and handles recovery material during setup/import
+  as described above. Containment controls:
   `contextIsolation`, `sandbox`, `nodeIntegration: false`, a strict CSP
   (`default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'` with no
   inline/eval of JS) delivered as a
   real `file://` response header, the file handler contained to the app bundle,
   IPC sender + schema validation, navigation lockdown with a trusted-host
   allowlist for external links, deny-by-default renderer permissions,
-  `@electron/fuses`, and ASAR integrity.
-- The signer is the sole key holder, runs in an isolated `utilityProcess`, and
-  zeroizes every secret buffer on its way out.
+  `@electron/fuses`, and ASAR integrity enforcement on macOS and Windows.
+  Linux runs modified JavaScript inside the ASAR with these fuses enabled.
+  The CSP permits HTTPS images to any host and generated blob workers, so a
+  compromised renderer can send readable secrets to an outside host.
+- Once an account exists, the isolated signer holds decrypted keys for unlock
+  and signing and wipes its secret buffers. Setup/import recovery material also
+  passes through the renderer and main. V8 strings cannot be reliably zeroized.
 
 Full detail: [`SECURITY.md`](SECURITY.md) and [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
@@ -437,9 +464,10 @@ no network). The suites exercise the load-bearing signer logic directly:
 - `signer.crypto.test.ts` - Argon2id KDF determinism, AES-256-GCM round-trip +
   tamper rejection, `signMessage` -> ML-DSA-87 verify, and the create op
   (a generated wallet signs and verifies).
-- `signer.tx.test.ts` - `signTransaction` produces a type-2 raw tx fully offline
-  (proves the `networkId`-offline path so signing needs no provider), binds the
-  signature to `chainId`, and refuses a tx whose `from` is not the unlocked account.
+- `signer.tx.test.ts` - the signature primitive produces a type-2 raw tx with a
+  supplied `networkId` and no provider, binds the signature to `chainId`, and
+  refuses a tx whose `from` is not the unlocked account. This unit test bypasses
+  the wallet UI's RPC prerequisites.
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted
