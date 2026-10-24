@@ -1,15 +1,11 @@
 # Reusing myqrlwallet-frontend as the renderer
 
-The bundled `src/renderer/` is a minimal demo. The intended renderer is the real
-`myqrlwallet-frontend` React app. The primary reuse win is the UI; the only
-non-negotiable refactor is moving the in-page crypto call sites to delegate to
-`window.qrlWallet`, so that NO key material lives in the renderer. This document
-is the step-by-step.
-
-The goal state: the frontend renders unchanged, but every place it would have
-decrypted a seed or signed bytes in-page now calls `window.qrlWallet.*`, which
-routes to the isolated signer. The renderer never sees a mnemonic, a hex seed, or
-an ML-DSA-87 key again.
+The bundled renderer is the `myqrlwallet-frontend` React app, built into
+`out/renderer/` by `scripts/build-renderer.sh`. Desktop signing and unlock
+operations call `window.qrlWallet.*`, which routes to the isolated signer.
+Import forms can handle recovery material while provisioning an account;
+ongoing seed decryption and signing stay in the signer process. This document
+describes the integration and its bridge contract.
 
 ## Two required source changes (frontend repo)
 
@@ -209,12 +205,18 @@ drive the UI via `onLockStateChanged`.
 
 ## Build the bundled renderer
 
-`scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) is the
-hook that pulls the frontend in as the renderer source. Use it instead of the
-demo `src/renderer/`. The script is the single place that resolves the frontend
-checkout, applies the build, and stages the output for `electron-vite` /
-`loadFile`. Keep the two source changes above in the frontend branch the script
-builds from.
+Desktop 1.4.4 uses frontend main revision
+`683d0642f2b91b9e70c61e56989bddc4ff4b1ab0`, the web wallet released on 2026-10-24.
+This includes English, German, Spanish, Russian and Simplified Chinese catalogs,
+the dApp approval visibility gate, the typed-data chain check and the frontend
+zod fix. `.github/workflows/ci.yml` pins the same full revision.
+
+`scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
+the frontend checkout, installs its locked dependencies, builds it and stages
+the output for `loadFile`. For a release build, set `QRL_FRONTEND_DIR` to a
+detached checkout of the revision above. The script also supports the sibling
+frontend checkout for development. The pinned source includes the asset and
+routing adaptations described above.
 
 After swapping the renderer, re-run the validation gates from the README
 (`format:check`, `lint`, `typecheck`, `test`, `build`) before packaging.

@@ -357,9 +357,11 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.3, use frontend revision
-`c63534ab08620897280f26f3bd3927f5102331b2`, the renderer source shipped in 1.4.2.
-CI pins that same revision for this release.
+For Desktop 1.4.4, use frontend main revision
+`683d0642f2b91b9e70c61e56989bddc4ff4b1ab0`, the web wallet released on 2026-10-24.
+CI pins that same revision for this release. It includes the five wallet
+languages, dApp approval visibility gate, typed-data chain check and frontend
+zod fix. See the [1.4.4 release notes](CHANGELOG.md#144---2026-10-24).
 
 ## Packaging and signing
 
