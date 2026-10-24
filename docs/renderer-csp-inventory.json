@@ -1,0 +1,1475 @@
+{
+  "frontendRevision": "683d0642f2b91b9e70c61e56989bddc4ff4b1ab0",
+  "desktopBaseline": "14f6bfdc471fb49d07b49483c504183d5f2ba5d3",
+  "runtime": {
+    "electron": "44.9.3",
+    "chromium": "152.0.7977.167",
+    "platform": "Linux, isolated Xvfb"
+  },
+  "network": "Synthetic responses; request entries include CSP-blocked attempts. Local file requests are observed in the file handler. Remote image responses are intercepted.",
+  "baseline": {
+    "result": "PASS",
+    "screens": [
+      {
+        "name": "home-empty",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15
+      },
+      {
+        "name": "create-form",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14
+      },
+      {
+        "name": "create-backup",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14
+      },
+      {
+        "name": "home-account",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 27
+      },
+      {
+        "name": "tokens-picker",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 29
+      },
+      {
+        "name": "tokens",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 31
+      },
+      {
+        "name": "nft-picker",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "ipfs://bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 0
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 33
+      },
+      {
+        "name": "nft-collections",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 30
+      },
+      {
+        "name": "nft-gallery",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          },
+          {
+            "src": "https://art.example/nft.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 32
+      },
+      {
+        "name": "nft-ipfs",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17
+      },
+      {
+        "name": "nft-https",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://art.example/nft.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17
+      },
+      {
+        "name": "accounts",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 21
+      },
+      {
+        "name": "transfer",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 20
+      },
+      {
+        "name": "history",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 13
+      },
+      {
+        "name": "contacts",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15
+      },
+      {
+        "name": "dapps",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15
+      },
+      {
+        "name": "settings",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 23
+      },
+      {
+        "name": "accounts-qr",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 21
+      },
+      {
+        "name": "address-qr",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 25
+      },
+      {
+        "name": "address-qr-copy",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 24
+      },
+      {
+        "name": "import-mnemonic",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14
+      },
+      {
+        "name": "import-hex",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14
+      },
+      {
+        "name": "import-encrypted",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15
+      },
+      {
+        "name": "import-decrypted",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 13
+      },
+      {
+        "name": "import-success",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17
+      },
+      {
+        "name": "channel-probes",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17
+      }
+    ],
+    "resourceRequests": [
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/icons/theqrlwallet/192.png",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/icons/theqrlwallet/192.png",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/instrument-sans-latin-wght-normal-BbzFLZTg.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/sora-latin-wght-normal-DdqRvwsR.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-account",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4"
+      },
+      {
+        "screen": "home-account",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-account",
+        "type": "font",
+        "url": "bundle:/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "nft-picker",
+        "type": "image",
+        "url": "ipfs://bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "type": "image",
+        "url": "ipfs://bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-gallery",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-gallery",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-ipfs",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-https",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      }
+    ],
+    "workers": [
+      {
+        "screen": "import-encrypted",
+        "url": "bundle:/assets/cryptoWorker-B-s8DXu7.js"
+      },
+      {
+        "screen": "channel-probes",
+        "url": "blob: (generated probe)"
+      }
+    ],
+    "responsePolicy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://qrlwallet.com wss://qrlwallet.com https://zondscan.com; img-src 'self' data: https:; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:, default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://qrlwallet.com wss://qrlwallet.com https://zondscan.com; img-src 'self' data: https:; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:",
+    "dnsPrefetchControl": null,
+    "violations": [
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "ipfs"
+      }
+    ],
+    "consoleErrorsPerScreen": {
+      "nft-picker": 6
+    },
+    "webRtc": {
+      "policy": "default",
+      "packets": 4
+    },
+    "blobWorker": "ran",
+    "externalOpenerCalls": [
+      "https://github.com/synthetic?probe=public-fixture"
+    ],
+    "geolocationPermission": "denied",
+    "checks": [
+      "IPFS artwork and plain HTTPS NFT detail",
+      "Encrypted extension wallet imported through bundled file worker and signer",
+      "Navigation and window creation blocked; allowed external URL handed to intercepted OS opener"
+    ]
+  },
+  "tightened": {
+    "result": "PASS",
+    "screens": [
+      {
+        "name": "home-empty",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15,
+        "cssDataImage": true
+      },
+      {
+        "name": "create-form",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14,
+        "cssDataImage": true
+      },
+      {
+        "name": "create-backup",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      },
+      {
+        "name": "home-account",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 27,
+        "cssDataImage": true
+      },
+      {
+        "name": "tokens-picker",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 29,
+        "cssDataImage": true
+      },
+      {
+        "name": "tokens",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 31,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-picker",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [
+          {
+            "label": "HTTPS collection (image unavailable)",
+            "width": 40,
+            "height": 40
+          }
+        ],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 34,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-collections",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [
+          {
+            "label": " (image unavailable)",
+            "width": 48,
+            "height": 48
+          }
+        ],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 32,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-gallery",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 31,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-ipfs",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          },
+          {
+            "src": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+            "complete": true,
+            "width": 120
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-https",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [
+          {
+            "label": "HTTPS artwork (image unavailable)",
+            "width": 327,
+            "height": 327
+          }
+        ],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 18,
+        "cssDataImage": true
+      },
+      {
+        "name": "nft-https-compact",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [
+          {
+            "label": "HTTPS artwork (image unavailable)",
+            "width": 295.5,
+            "height": 295.5
+          }
+        ],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 18,
+        "cssDataImage": true
+      },
+      {
+        "name": "accounts",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 21,
+        "cssDataImage": true
+      },
+      {
+        "name": "transfer",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 20,
+        "cssDataImage": true
+      },
+      {
+        "name": "history",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 13,
+        "cssDataImage": true
+      },
+      {
+        "name": "contacts",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15,
+        "cssDataImage": true
+      },
+      {
+        "name": "dapps",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15,
+        "cssDataImage": true
+      },
+      {
+        "name": "settings",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 23,
+        "cssDataImage": true
+      },
+      {
+        "name": "accounts-qr",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 21,
+        "cssDataImage": true
+      },
+      {
+        "name": "address-qr",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 25,
+        "cssDataImage": true
+      },
+      {
+        "name": "address-qr-copy",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 24,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-mnemonic",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-mnemonic-success",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      },
+      {
+        "name": "home-after-mnemonic",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 27,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-hex-form",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-hex",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-hex-success",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      },
+      {
+        "name": "home-after-hex",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [
+          "bundle:/qrl-video-dark.mp4"
+        ],
+        "inlineSvg": 27,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-encrypted-form",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 14,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-encrypted",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 15,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-decrypted",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 13,
+        "cssDataImage": true
+      },
+      {
+        "name": "import-success",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      },
+      {
+        "name": "channel-probes",
+        "images": [
+          {
+            "src": "bundle:/tree.svg",
+            "complete": true,
+            "width": 143
+          }
+        ],
+        "placeholders": [],
+        "overflow": false,
+        "media": [],
+        "inlineSvg": 17,
+        "cssDataImage": true
+      }
+    ],
+    "resourceRequests": [
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/icons/theqrlwallet/192.png",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/icons/theqrlwallet/192.png",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "image",
+        "url": "bundle:/tree.svg",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/instrument-sans-latin-wght-normal-BbzFLZTg.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/sora-latin-wght-normal-DdqRvwsR.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-empty",
+        "type": "font",
+        "url": "bundle:/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-account",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4"
+      },
+      {
+        "screen": "home-account",
+        "type": "font",
+        "url": "bundle:/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-account",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "nft-picker",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-gallery",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-ipfs",
+        "type": "image",
+        "url": "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+      },
+      {
+        "screen": "nft-https",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "type": "image",
+        "url": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "address-qr-copy",
+        "type": "image",
+        "url": "data:image/svg+xml (QR copy)",
+        "observer": "image-load"
+      },
+      {
+        "screen": "home-after-mnemonic",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4"
+      },
+      {
+        "screen": "home-after-mnemonic",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "home-after-hex",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4"
+      },
+      {
+        "screen": "home-after-hex",
+        "type": "media",
+        "url": "bundle:/qrl-video-dark.mp4",
+        "observer": "file-handler"
+      },
+      {
+        "screen": "import-encrypted",
+        "url": "bundle:/assets/cryptoWorker-B-s8DXu7.js",
+        "type": "worker"
+      },
+      {
+        "screen": "channel-probes",
+        "type": "image",
+        "url": "https://css.example/synthetic.svg"
+      }
+    ],
+    "workers": [
+      {
+        "screen": "import-encrypted",
+        "url": "bundle:/assets/cryptoWorker-B-s8DXu7.js"
+      }
+    ],
+    "responsePolicy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://qrlwallet.com wss://qrlwallet.com https://zondscan.com; img-src 'self' data: https://qrlwallet.com; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self', default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://qrlwallet.com wss://qrlwallet.com https://zondscan.com; img-src 'self' data: https://qrlwallet.com; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'",
+    "dnsPrefetchControl": "off, off",
+    "violations": [
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-picker",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-collections",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "nft-https",
+        "directive": "img-src",
+        "blocked": "https://art.example/nft.svg"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "worker-src",
+        "blocked": "blob"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "worker-src",
+        "blocked": "blob"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "worker-src",
+        "blocked": "blob"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "img-src",
+        "blocked": "https://css.example/synthetic.svg"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "img-src",
+        "blocked": "https://css.example/synthetic.svg"
+      },
+      {
+        "screen": "channel-probes",
+        "directive": "img-src",
+        "blocked": "https://css.example/synthetic.svg"
+      }
+    ],
+    "consoleErrorsPerScreen": {
+      "nft-picker": 6,
+      "nft-collections": 6,
+      "nft-https": 9,
+      "channel-probes": 6
+    },
+    "webRtc": {
+      "policy": "disable_non_proxied_udp",
+      "packets": 0
+    },
+    "blobWorker": "blocked",
+    "externalOpenerCalls": [
+      "https://github.com/synthetic?probe=public-fixture"
+    ],
+    "geolocationPermission": "denied",
+    "servedImages": [
+      "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+      "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+      "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg",
+      "https://qrlwallet.com/api/ipfs/bafybeicspfixture/art.svg"
+    ],
+    "checks": [
+      "IPFS artwork and plain HTTPS NFT detail",
+      "Encrypted extension wallet imported through bundled file worker and signer",
+      "Navigation and window creation blocked; allowed external URL handed to intercepted OS opener"
+    ]
+  }
+}

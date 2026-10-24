@@ -136,7 +136,7 @@ SERVER_HOST="$(printf '%s' "${CSP_SERVER_URL}" | sed -E 's#^https?://##; s#/.*$#
 EXPLORER_HOST="$(printf '%s' "${CSP_EXPLORER_URL}" | sed -E 's#^https?://##; s#/.*$##')"
 # qrlwallet.com https+wss is the dApp-connect relay, reached directly even by
 # the dev/staging frontend (keep in sync with src/main/config.ts frontendOrigins).
-DESKTOP_CSP="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${SERVER_HOST} wss://${SERVER_HOST} https://qrlwallet.com wss://qrlwallet.com https://${EXPLORER_HOST}; img-src 'self' data: https:; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:"
+DESKTOP_CSP="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${SERVER_HOST} wss://${SERVER_HOST} https://qrlwallet.com wss://qrlwallet.com https://${EXPLORER_HOST}; img-src 'self' data: https://${SERVER_HOST}; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'"
 if [[ -z "${SERVER_HOST}" || -z "${EXPLORER_HOST}" ]]; then
   echo "[build-renderer] ERROR: could not resolve the CSP server and explorer hosts" >&2
   exit 1
@@ -154,7 +154,8 @@ if (!htmlPath || !csp) throw new Error('renderer CSP rewrite arguments are missi
 
 let html = fs.readFileSync(htmlPath, 'utf8');
 const escapedCsp = csp.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
-const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${escapedCsp}">`;
+const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${escapedCsp}">\n    <meta http-equiv="X-DNS-Prefetch-Control" content="off">`;
+html = html.replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(["'])X-DNS-Prefetch-Control\1)[^>]*>/gi, '');
 const cspMetaPattern =
   /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(["'])Content-Security-Policy\1)[^>]*>/i;
 

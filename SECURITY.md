@@ -59,14 +59,14 @@ default-src 'self';
 script-src 'self' 'wasm-unsafe-eval';
 style-src 'self' 'unsafe-inline';
 connect-src 'self' <configured RPC/backend origins>;
-img-src 'self' data: https:;
+img-src 'self' data: https://<SERVER_HOST>;
 media-src 'self' blob:;
 font-src 'self' data:;
 object-src 'none';
 frame-ancestors 'none';
 base-uri 'self';
 form-action 'self';
-worker-src 'self' blob:
+worker-src 'self'
 ```
 
 `script-src 'self' 'wasm-unsafe-eval'` restricts document scripts to the local
@@ -79,19 +79,49 @@ framing, and `base-uri`/`form-action` are restricted to `'self'`.
 `connect-src` restricts the request types it governs, including fetch, XHR and
 WebSockets, to `'self'` and the configured RPC/backend origins from
 `src/main/config.ts` (`connectSrcOrigins()`). It does not govern image loads.
-`img-src 'self' data: https:` permits data to be sent to any HTTPS image URL,
-including hosts outside that allowlist. `worker-src 'self' blob:` permits
-generated worker code. The CSP does not stop a compromised renderer from
-sending secrets it can read, including setup or import recovery material, to
-an outside host. The Electron renderer probes loaded an intercepted synthetic
-HTTPS image outside `connect-src` without a CSP violation and executed a
-generated blob worker.
+`img-src` permits bundled files, inline data images and the configured backend
+origin (`SERVER_HOST`, production `qrlwallet.com`), including `/api/ipfs/`.
+The main bundle freezes that origin from the same build inputs as the renderer
+meta policy. The pinned frontend has no executable `ipfs.io` fallback and loads
+no explorer-host images, so neither host is an image source. Image blobs are
+unneeded. External NFT and token artwork outside this list uses a placeholder;
+the Add NFT picker shows the gallery's `NftImage` placeholder as well since
+myqrlwallet-frontend #421. `worker-src 'self'` allows the bundled crypto worker
+used by encrypted extension-wallet imports; generated blob workers are blocked.
+Other directives retain their values.
+
+The [request inventory](docs/RENDERER_CSP_INVENTORY.md) records the pinned
+frontend, source producers, synthetic holdings, Xvfb checks and policy limits.
+`test/buildRendererScript.test.ts` compares all meta directives with the header
+builder for production, staging and custom hosts. The comparison supplies the
+same connection origins; main retains its existing RPC failover/HMR additions,
+and `frame-ancestors` remains header-only because meta policies ignore it.
+
+### Remaining outbound channels
+
+These controls reduce exfiltration paths. Setup/import recovery material remains
+readable by a compromised wallet renderer.
+
+| Channel | Control and remaining exposure |
+|---|---|
+| Images, CSS backgrounds and masks | `img-src` restricts destinations to the exact backend origin plus local/data images. Paths and queries on allowed servers can carry data. The backend/IPFS proxy remains a trust dependency. |
+| Fetch, XHR, WebSocket, beacon, link ping | Existing `connect-src` applies. Allowed RPC/backend/explorer/relay endpoints can still receive renderer-readable data. A relay or other writable service may make that data available to another party. |
+| CSS imports, fonts, audio/video, frames, objects and forms | Existing `style-src`, `font-src`, `media-src`, `default-src`, `object-src` and `form-action` restrict these loads. Inline styles remain enabled; their image URLs still pass through `img-src`. Local/data/blob resources provide no remote destination by themselves. |
+| DNS and speculative hints | Response headers and the renderer meta tag set `X-DNS-Prefetch-Control: off` to suppress automatic DNS prefetch. Explicit `dns-prefetch` and `preconnect` hints have separate Chromium paths and remain a residual risk. CSP and HTTP request capture alone do not establish their absence. |
+| WebRTC | Every new web contents uses `disable_non_proxied_udp`. The local STUN probe verifies direct UDP suppression. Media permissions remain denied, but data channels need no camera/microphone grant. TCP and proxy-mediated WebRTC remain possible; this setting is an IP/transport restriction. |
+| Navigation and `window.open` | Existing handlers cancel navigation, redirects, new Electron windows and webviews. Allowed HTTPS ecosystem URLs, including permitted subdomains and arbitrary paths/queries, are handed to `shell.openExternal` without a user-gesture requirement. The OS browser's traffic and redirects are outside this CSP. The inventory intercepts that opener during verification. |
+| Native bridge | Existing sender/schema checks and trusted signing/removal confirmations apply. The bridge and main's RPC calls have their own authorization boundaries; renderer CSP does not govern main-process traffic. |
+
+Explicit resource hints, complete WebRTC isolation and narrower external-link
+authorization need separate design and compatibility work. This policy provides
+no general guarantee that a compromised renderer cannot send data out.
 
 In `npm run dev` the Vite dev-server origin and its HMR websocket are appended
 to `connect-src` only (see `src/main/index.ts`); production retains the policy
 above.
 
-`X-Content-Type-Options: nosniff` is set on the same response.
+`X-Content-Type-Options: nosniff` and `X-DNS-Prefetch-Control: off` are set on
+the same response.
 
 ### 3. IPC sender + schema validation
 

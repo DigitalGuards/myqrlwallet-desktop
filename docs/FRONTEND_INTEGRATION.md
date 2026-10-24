@@ -79,11 +79,31 @@ execute code.)
 Any RPC / relay / backend origins the frontend needs at runtime must be added to
 `connect-src` in `src/main/config.ts` (`connectSrcOrigins()`), which restricts
 the request types it governs, including fetch, XHR and WebSockets. The policy
-also includes `img-src 'self' data: https:`, permitting data to be sent to any
-HTTPS image URL, and `worker-src 'self' blob:`, permitting generated worker
-code. The CSP does not stop a compromised renderer from sending secrets it can
-read, including setup or import recovery material, to an outside host. See the
-[complete policy](../SECURITY.md#2-strict-content-security-policy).
+also includes `img-src 'self' data: https://<SERVER_HOST>` and
+`worker-src 'self'`. The image host is selected from
+`VITE_NODE_ENV` and the matching `VITE_SERVER_URL_PRODUCTION` or
+`VITE_SERVER_URL_DEVELOPMENT` during both builds; electron-vite freezes it into
+main, and `build-renderer.sh` uses it in the meta policy. Production defaults
+to `https://qrlwallet.com`. Existing connection-origin configuration still
+applies independently.
+
+The [pinned-renderer inventory](RENDERER_CSP_INVENTORY.md) found local images,
+inline data images, backend IPFS artwork, local fonts/video and a separate
+`cryptoWorker-*.js` file for encrypted extension-wallet imports. It found no
+image blob dependency, explorer-host images or executable `ipfs.io` fallback;
+that public gateway appears only in frontend privacy copy. NFT and token
+artwork hosted elsewhere uses the placeholder. The Add NFT picker shows covers
+through the frontend's `NftImage` component since myqrlwallet-frontend #421, so
+the desktop builds the web wallet unmodified.
+
+`test/buildRendererScript.test.ts` compares all directives for matching inputs
+under production, staging and custom hosts, excluding header-only
+`frame-ancestors`. Existing main-only connection additions remain intact.
+`X-DNS-Prefetch-Control: off` is delivered by header and meta; the main process
+also restricts direct WebRTC UDP. Allowed service URLs, external-browser
+links, explicit DNS/preconnect hints and WebRTC TCP/proxy paths remain possible
+outbound channels for setup/import secrets. See the
+[complete policy and residual review](../SECURITY.md#2-strict-content-security-policy).
 
 ## Refactor the in-renderer crypto call sites
 

@@ -2,6 +2,19 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Restrict wallet-window images to bundled/data sources and the configured
+  backend/IPFS gateway; block generated blob workers while retaining the
+  bundled encrypted-import worker. External NFT and token artwork uses the
+  placeholder, the Add NFT picker included.
+- Disable automatic DNS prefetch and restrict direct WebRTC UDP. Document
+  allowed-service, external-browser, explicit resource-hint and WebRTC TCP/proxy
+  channels that remain available to compromised renderer code. Add header/meta
+  policy parity tests and a reproducible Xvfb request inventory.
+
 ## 1.4.4 - 2026-10-24
 
 ### Added
