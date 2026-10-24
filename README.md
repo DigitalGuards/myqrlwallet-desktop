@@ -267,10 +267,15 @@ boundaries; ordinary desktop unlock and signing decrypt keys in the signer.
 Signing requests require a specific payload and trusted user confirmation.
 The renderer has no direct signer handle or unrestricted filesystem API.
 `connect-src` restricts the request types it governs to the configured origins.
-`img-src 'self' data: https:` permits data to be sent to any HTTPS image URL,
-and `worker-src 'self' blob:` permits generated worker code. The CSP does not
-stop a compromised renderer from sending secrets it can read, including setup
-or import recovery material, to an outside host.
+`img-src 'self' data: https://<SERVER_HOST>` permits local/data images and the
+configured backend's artwork/IPFS gateway. Other NFT and token artwork uses a
+placeholder. `worker-src 'self'` permits bundled worker files and blocks blob
+workers. The pinned frontend needs no explorer images or public IPFS fallback.
+Allowed service requests, external-browser links, explicit resource hints and
+WebRTC TCP/proxy paths remain possible outbound channels. Automatic DNS
+prefetch and direct WebRTC UDP receive additional restrictions. See the
+[request inventory](docs/RENDERER_CSP_INVENTORY.md) and
+[remaining channels](SECURITY.md#remaining-outbound-channels).
 
 ### Data flow for a spend
 
@@ -383,11 +388,11 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.4, use frontend main revision
-`683d0642f2b91b9e70c61e56989bddc4ff4b1ab0`, the web wallet released on 2026-10-24.
-CI pins that same revision for this release. It includes the five wallet
-languages, dApp approval visibility gate, typed-data chain check and frontend
-zod fix. See the [1.4.4 release notes](CHANGELOG.md#144---2026-10-24).
+For Desktop 1.4.5, use frontend main revision
+`1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
+CI pins that same revision for this release. It adds the desktop language choice
+and the Add NFT picker fix to the 1.4.4 renderer. See the
+[1.4.5 release notes](CHANGELOG.md#145---2026-10-24).
 
 ## Packaging and signing
 
@@ -448,8 +453,10 @@ signing). Verify the result on a built app with `npm run fuses:read`.
   allowlist for external links, deny-by-default renderer permissions,
   `@electron/fuses`, and ASAR integrity enforcement on macOS and Windows.
   Linux runs modified JavaScript inside the ASAR with these fuses enabled.
-  The CSP permits HTTPS images to any host and generated blob workers, so a
-  compromised renderer can send readable secrets to an outside host.
+  Images are limited to bundled/data sources and the configured backend;
+  other artwork uses a placeholder. Workers are restricted to bundled files.
+  Allowed services, external-browser links, explicit resource hints and
+  WebRTC TCP/proxy paths remain outbound channels for readable secrets.
 - Once an account exists, the isolated signer holds decrypted keys for unlock
   and signing and wipes its secret buffers. Setup/import recovery material also
   passes through the renderer and main. V8 strings cannot be reliably zeroized.

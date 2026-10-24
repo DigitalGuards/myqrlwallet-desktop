@@ -4,12 +4,20 @@
  * or a stray edit cannot silently weaken the wallet's containment.
  *
  * Source of truth: ARCHITECTURE_RESEARCH.md "Renderer hardening checklist" and
- * the Electron security tutorial. The cardinal property is that even a fully
- * compromised renderer yields NO key material, because keys never live there;
- * these controls keep the renderer from escalating beyond its sandbox.
+ * the Electron security tutorial. Setup and import expose recovery material
+ * to the renderer. These controls restrict its privileges and outbound paths.
  */
 import { app, type BrowserWindow, type Session, shell, type WebPreferences } from 'electron';
 import { isAllowedExternalUrl } from './externalLinks';
+import { rendererServerOrigin } from './config';
+
+// Replaced by electron-vite using the renderer's build-time backend setting.
+// The fallback supports source-level tests and development tooling.
+declare const __QRL_RENDERER_SERVER_ORIGIN__: string;
+const SERVER_ORIGIN =
+  typeof __QRL_RENDERER_SERVER_ORIGIN__ === 'string'
+    ? __QRL_RENDERER_SERVER_ORIGIN__
+    : rendererServerOrigin();
 
 /** webPreferences for the single wallet window. */
 export function hardenedWebPreferences(preloadPath: string): WebPreferences {
@@ -33,11 +41,9 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  * origins the renderer may reach (self + RPC + the frontend's backend/relay/
  * explorer).
  *
- * The renderer is the real myqrlwallet-frontend, so the policy is tuned to what
- * that app needs while preserving the property that matters most:
- *   - script-src 'self' 'wasm-unsafe-eval': NO 'unsafe-inline', NO
- *     'unsafe-eval'. A renderer RCE cannot inject or eval script. This is the
- *     load-bearing control. 'wasm-unsafe-eval' permits WebAssembly compilation
+ * The renderer is the real myqrlwallet-frontend, with these resource needs:
+ *   - script-src 'self' 'wasm-unsafe-eval': document inline JavaScript and JS
+ *     eval are blocked. 'wasm-unsafe-eval' permits WebAssembly compilation
  *     ONLY (not JS eval); the frontend's hash-wasm argon2id needs it to import
  *     extension keystore backups at full speed (the pure-JS fallback works
  *     without it but takes ~20s per attempt at production KDF params). The
@@ -46,10 +52,11 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  *   - style-src 'self' 'unsafe-inline': Radix UI sets inline style attributes
  *     at runtime; inline STYLE cannot execute code, so this is an accepted,
  *     much-lower-risk relaxation than inline script would be.
- *   - img/media/font widened for token art, QR, data: assets.
- *   - worker-src 'self' blob:: the frontend's MLDSA worker is a Vite worker.
- * Keys never live in the renderer regardless, so even a CSP slip cannot leak
- * key material (that invariant is enforced by the signer, not the CSP).
+ *   - img-src allows local assets, data images and the configured backend,
+ *     including its IPFS proxy. Other artwork uses the frontend's placeholder.
+ *   - worker-src 'self': the desktop crypto worker is a bundled Vite file.
+ *     The mobile embedded build's inline worker is a separate build target.
+ * Allowed servers and external links remain possible outbound channels.
  *
  * DELIVERY (both paths are needed; see the file-protocol handler in
  * src/main/index.ts): webRequest.onHeadersReceived does NOT reliably fire for
@@ -66,14 +73,14 @@ export function buildContentSecurityPolicy(connectSrc: string[]): string {
     "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     `connect-src ${connect}`,
-    "img-src 'self' data: https:",
+    `img-src 'self' data: ${SERVER_ORIGIN}`,
     "media-src 'self' blob:",
     "font-src 'self' data:",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "worker-src 'self' blob:",
+    "worker-src 'self'",
   ].join('; ');
 }
 
@@ -87,6 +94,7 @@ export function installContentSecurityPolicy(session: Session, connectSrc: strin
         ...details.responseHeaders,
         'Content-Security-Policy': [csp],
         'X-Content-Type-Options': ['nosniff'],
+        'X-DNS-Prefetch-Control': ['off'],
       },
     });
   });
@@ -133,13 +141,16 @@ export function isTrustedSender(
  */
 export function lockDownNavigation(app: Electron.App): void {
   app.on('web-contents-created', (_e, contents) => {
+    // The wallet uses HTTPS/WebSockets. Limit WebRTC's direct UDP path;
+    // TCP and proxy-mediated WebRTC remain residual channels.
+    contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
     // A file:// SPA with hash routing never legitimately navigates the top
     // document: route changes are hash-only and do not fire will-navigate, and
     // the initial load goes through loadFile/loadURL (also not will-navigate).
     // So the renderer is never steered to new in-app content. But an external
     // link (the explorer, theqrl.org, a token's site) clicked as a plain
-    // <a href> DOES fire will-navigate; rather than dead-ending it (the links
-    // would appear broken), hand an allowlisted external link to the OS browser.
+    // <a href> DOES fire will-navigate; hand an allowlisted external link to
+    // the OS browser.
     contents.on('will-navigate', (event, url) => {
       event.preventDefault();
       if (isAllowedExternalUrl(url)) {

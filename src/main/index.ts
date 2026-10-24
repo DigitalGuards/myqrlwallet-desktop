@@ -7,7 +7,7 @@
  * proxies RPC, and owns the encrypted seed file on disk.
  */
 import { applyLanguage, onLanguageChanged, t } from './language';
-import { resolveLanguage } from '../shared/language';
+import { startupLanguage } from '../shared/language';
 import { installApplicationMenu } from './applicationMenu';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -276,6 +276,9 @@ function installFileProtocolHandler(): void {
     const headers = new Headers(served.headers);
     headers.set('Content-Security-Policy', csp);
     headers.set('X-Content-Type-Options', 'nosniff');
+    // Suppress automatic hostname lookups. Explicit resource hints retain
+    // separate Chromium behavior; see SECURITY.md for the remaining channels.
+    headers.set('X-DNS-Prefetch-Control', 'off');
     return new Response(served.body, {
       status: served.status,
       statusText: served.statusText,
@@ -338,7 +341,12 @@ function createWindow(startLocked = false): void {
 app
   .whenReady()
   .then(async () => {
-    applyLanguage(resolveLanguage(app.getPreferredSystemLanguages(), app.getLocale()));
+    // Native windows and menus open before the wallet window reports its
+    // language, so start in the saved choice.
+    const { language: savedLanguage } = await readSettings();
+    applyLanguage(
+      startupLanguage(savedLanguage, app.getPreferredSystemLanguages(), app.getLocale()),
+    );
     logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);

@@ -1,7 +1,7 @@
 # MyQRLWallet Desktop: Post-Quantum Architecture Decision Document
 
 This document records the architecture rationale and staged proposals. The
-Desktop 1.4.4 boundaries below reflect the implementation; later-stage features
+Desktop 1.4.5 boundaries below reflect the implementation; later-stage features
 remain proposals. See [SECURITY.md](../SECURITY.md) and
 [THREAT_MODEL.md](../THREAT_MODEL.md) for the current controls and limits.
 
@@ -78,7 +78,7 @@ The desktop wallet envelopes are encrypted on disk and ordinary unlock/signing d
 
 ### Renderer hardening checklist (the RCE-in-renderer class)
 - `webPreferences`: `contextIsolation: true`, `nodeIntegration: false`, `nodeIntegrationInWorker: false`, `sandbox: true`, `webSecurity: true`, `allowRunningInsecureContent: false`, a dedicated `preload`.
-- **CSP** delivered via header/meta: `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' <configured RPC/backend origins>; img-src 'self' data: https:; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:`. Document inline JavaScript and JS `eval` are blocked. `connect-src` restricts the request types it governs; `img-src https:` permits data to be sent to any HTTPS image URL, and `worker-src blob:` permits generated worker code. A compromised renderer can send readable secrets, including setup/import recovery material, to an outside host.
+- **CSP** delivered via header/meta: `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' <configured RPC/backend origins>; img-src 'self' data: https://<SERVER_HOST>; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'`. Document inline JavaScript, JS `eval` and generated blob workers are blocked. Images use local/data sources or the configured backend/IPFS gateway; other artwork uses a placeholder. The pinned frontend has no executable public IPFS fallback or explorer image dependency. Allowed services, external-browser links, explicit resource hints and WebRTC TCP/proxy paths remain outbound channels. Automatic DNS prefetch and direct WebRTC UDP receive additional restrictions. See the [current policy](../SECURITY.md#2-strict-content-security-policy) and [inventory](RENDERER_CSP_INVENTORY.md).
 - **Preload discipline:** expose only high-level parameterized actions; no `exec`/`spawn`/`fs`/`require`/`eval`; no raw `ipcRenderer`.
 - **IPC defense-in-depth:** in every `ipcMain.handle`, validate `event.senderFrame`/origin against an allowlist and validate arguments against a schema; re-validate in the signer process.
 - **Navigation lockdown:** `will-navigate` → `preventDefault` for external; `setWindowOpenHandler` → deny by default; guard `shell.openExternal` to https + allowlisted hosts.

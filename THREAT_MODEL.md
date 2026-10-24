@@ -160,13 +160,23 @@ design).
   wallet files in the renderer or its worker. Main brokers these secrets to or
   from the signer. A compromised renderer during setup or import can recover
   that account.
-- CSP limit: `connect-src` restricts fetch, XHR, WebSockets and other request
-  types it governs. `img-src 'self' data: https:` permits data to be sent to any
-  HTTPS image URL, and `worker-src 'self' blob:` permits generated worker code.
-  The CSP does not stop a compromised renderer from sending secrets it can read,
-  including setup or import recovery material, to an outside host. Both image
-  loading outside `connect-src` and generated blob-worker execution succeeded
-  in the Electron renderer probes.
+- CSP limit: `img-src 'self' data: https://<SERVER_HOST>` restricts artwork to
+  bundled/data images and the configured backend, including its IPFS gateway.
+  The pinned renderer has no executable public IPFS fallback or explorer-host
+  image dependency. Artwork from other hosts uses the existing placeholder,
+  including in the Add NFT picker. `worker-src 'self'` permits the
+  bundled crypto worker and blocks generated blob workers. Other directives
+  retain their values. Allowed backend/RPC/explorer/relay URLs can still carry
+  secrets in requests, including CSS image requests to allowed destinations.
+  Automatic DNS prefetch is disabled by header/meta; explicit DNS/preconnect
+  hints remain a residual risk. WebRTC's direct UDP path is restricted with
+  `disable_non_proxied_udp`; TCP/proxy paths remain. Denied media permissions
+  do not gate WebRTC data channels. Navigation and window-open handlers block
+  new Electron documents, but allowed external URLs can send data through the
+  OS browser, including their paths, queries, subdomains and redirects. The
+  CSP supplies no general exfiltration guarantee. See the
+  [channel review](SECURITY.md#remaining-outbound-channels) and
+  [Xvfb request inventory](docs/RENDERER_CSP_INVENTORY.md).
 - Unlock phishing limit: compromised renderer code can draw a lookalike
   password prompt in the wallet surface and read what is typed into it. The
   genuine native unlock window stays isolated. Its English OS-window title is
@@ -795,8 +805,9 @@ that Electron recommends disabling in favor of a registered custom scheme.
   load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'
   'wasm-unsafe-eval'` with no inline/eval of JS, navigation lockdown,
   deny-by-default permissions) retain their scope. Setup/import secrets remain
-  readable by the renderer, HTTPS images can send them to outside hosts, and
-  generated blob workers are allowed.
+  readable by the renderer. Images are limited to bundled/data sources and the
+  configured backend; workers are bundled files. The remaining outbound
+  channels are documented in [SECURITY.md](SECURITY.md#remaining-outbound-channels).
 - Residual risk: an in-origin renderer RCE has the additional `file://`
   capabilities described above.
 - Hardening follow-up: migrate the renderer to a registered privileged custom

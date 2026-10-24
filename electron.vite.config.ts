@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
+import { rendererServerOrigin } from './src/main/config';
 
 /**
  * electron-vite builds three targets into `out/`:
@@ -15,6 +16,11 @@ import react from '@vitejs/plugin-react';
  */
 export default defineConfig({
   main: {
+    // Keep the image host fixed to the bundled renderer's backend, including
+    // staging builds. Launch-time environment changes cannot widen this list.
+    define: {
+      __QRL_RENDERER_SERVER_ORIGIN__: JSON.stringify(rendererServerOrigin()),
+    },
     build: {
       externalizeDeps: true,
       outDir: 'out/main',

@@ -17,3 +17,12 @@ export function resolveLanguage(preferred: readonly string[], locale?: string): 
   }
   return 'en';
 }
+
+/** The language saved from the wallet's picker wins; otherwise follow the system. */
+export function startupLanguage(
+  saved: Language | undefined,
+  preferred: readonly string[],
+  locale?: string,
+): Language {
+  return saved ?? resolveLanguage(preferred, locale);
+}
