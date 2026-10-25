@@ -249,7 +249,16 @@ try {
         );
         snap(`${language}-settings`);
       }
-      await settings.getByRole('button', { name: t('settings.back'), exact: true }).click();
+      // The back button closes this view, so the page can go away while the
+      // click is still settling; only a click that left it open is a failure.
+      const closed = settings.isClosed() ? Promise.resolve() : settings.waitForEvent('close');
+      await settings
+        .getByRole('button', { name: t('settings.back'), exact: true })
+        .click()
+        .catch((error) => {
+          if (!settings.isClosed()) throw error;
+        });
+      await closed;
       await wallet.evaluate(() => globalThis.window.qrlWallet.lock());
       const unlock = await nativePage('unlock');
       await unlock.locator('.unlock-phrase').getByText(phrase, { exact: true }).waitFor();
