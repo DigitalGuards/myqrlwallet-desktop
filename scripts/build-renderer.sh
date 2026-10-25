@@ -78,6 +78,9 @@ export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://z
 export VITE_WALLET_PROFILE=v3-private
 export VITE_V3_CHAIN_ID=0x301825
 export VITE_V3_GENESIS_HASH=0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4
+# QNS registry on the v3 testnet, the same one qrlwallet.com uses: Send resolves
+# names ending in .qrl. Leave it empty to build without name resolution.
+export VITE_V3_QNS_REGISTRY="${VITE_V3_QNS_REGISTRY-Qcfc5f3242cE7d413F308D4181fd45D441d535298d78fd2d26833c2650408f636B46590dc10D23221480eFac958705Ba6C266eEB16B5aeafA64202715Adc84424}"
 if [[ "${VITE_NODE_ENV}" == "production" ]]; then
   export VITE_V3_RPC_URL="${VITE_RPC_URL_PRODUCTION}/testnet"
   export VITE_V3_SERVER_URL="${VITE_SERVER_URL_PRODUCTION}"
