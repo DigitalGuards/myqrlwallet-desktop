@@ -82,6 +82,9 @@ if [[ "$3" == "run" && "$4" == "build" ]]; then
   if [[ -n "\${NPM_ENV_LOG:-}" ]]; then
     printf '%s\\n' "$VITE_SERVER_URL_PRODUCTION" "$VITE_SERVER_URL_DEVELOPMENT" > "$NPM_ENV_LOG"
   fi
+  if [[ -n "\${NPM_QNS_LOG:-}" ]]; then
+    printf '%s\\n' "\${VITE_V3_QNS_REGISTRY-unset}" > "$NPM_QNS_LOG"
+  fi
   mkdir -p "$2/dist"
   printf '%s\\n' '${html}' > "$2/dist/index.html"
 fi
@@ -292,6 +295,25 @@ for (const mode of ['production', 'development']) {
     ]);
   });
 }
+
+test('renderer build resolves QNS names unless the registry is set empty', (t) => {
+  const fixture = makeFixture(t);
+  const binDir = join(fixture.root, 'bin');
+  const qnsLog = join(fixture.root, 'npm-qns.log');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+  const env = { NPM_CALL_LOG: join(fixture.root, 'npm-calls.log'), NPM_QNS_LOG: qnsLog };
+
+  const defaults = runScript(fixture.scriptPath, binDir, env);
+  assert.equal(defaults.status, 0, defaults.stderr);
+  assert.match(readFileSync(qnsLog, 'utf8').trim(), /^Q[0-9a-fA-F]{128}$/);
+
+  const disabled = runScript(fixture.scriptPath, binDir, { ...env, VITE_V3_QNS_REGISTRY: '' });
+  assert.equal(disabled.status, 0, disabled.stderr);
+  assert.equal(readFileSync(qnsLog, 'utf8').trim(), '');
+});
 
 test('renderer build fails when copying does not stage index.html', (t) => {
   const fixture = makeFixture(t);
