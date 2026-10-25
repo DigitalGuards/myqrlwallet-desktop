@@ -31,7 +31,7 @@ for (const key of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_RU
 env.QRL_RPC_URL_SECONDARY = 'none';
 env.QRL_AUTOLOCK_MS = '300000';
 env.LANG = 'en_US.UTF-8';
-const password = 'PublicNativePhraseFixture123';
+const password = 'PublicNativeUnlockFixture123';
 const results = [];
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function poll(fn, name) {
@@ -193,134 +193,122 @@ try {
       (language) => globalThis.window.qrlWallet.setLanguage(language),
       language,
     );
-    for (const [fixture, phrase] of [
-      ['personal', 'Public blue river'],
-      ['wide', 'W'.repeat(64)],
-      ['cjk', '蓝'.repeat(64)],
-    ]) {
-      await wallet.evaluate(() => globalThis.window.qrlWallet.openDesktopSettings());
-      const settings = await nativePage('settings');
-      await settings.getByLabel(t('settings.phraseCustom'), { exact: true }).waitFor();
-      if (fixture === 'personal') {
-        const before = await settings.locator('.settings-phrase').innerText();
-        await settings
-          .getByRole('button', { name: t('settings.phraseRandom'), exact: true })
-          .click();
-        await poll(
-          async () => (await settings.locator('.settings-phrase').innerText()) !== before,
-          'random phrase rotation',
-        );
-      }
-      await settings.getByLabel(t('settings.phraseCustom'), { exact: true }).fill(phrase);
-      await settings.getByRole('button', { name: t('settings.phraseSave'), exact: true }).click();
-      await poll(
-        async () => (await settings.locator('.settings-phrase').innerText()) === phrase,
-        'saved phrase',
-      );
-      assert.equal(
-        JSON.parse(await readFile(path.join(userData, 'settings.json'), 'utf8')).unlockPhrase,
-        phrase,
-      );
-      // The actual wallet file loader must deny the settings file.
-      const fileProbe = await wallet.evaluate(
-        async (url) => {
-          try {
-            const response = await fetch(url);
-            return { status: response.status, body: await response.text() };
-          } catch {
-            return { status: 0, body: '' };
-          }
-        },
-        pathToFileURL(path.join(userData, 'settings.json')).href,
-      );
-      assert.notEqual(fileProbe.status, 200);
-      assert.ok(!fileProbe.body.includes(phrase));
-      assert.equal(
-        await wallet.evaluate(
-          () => 'unlockBridge' in globalThis.window || 'settingsBridge' in globalThis.window,
-        ),
-        false,
-      );
-      await scaleText(settings);
-      if (fixture === 'personal') {
+    await wallet.evaluate(() => globalThis.window.qrlWallet.openDesktopSettings());
+    const settings = await nativePage('settings');
+    await settings.getByLabel(t('settings.autolock'), { exact: true }).waitFor();
+    // The actual wallet file loader must deny the settings file.
+    const fileProbe = await wallet.evaluate(
+      async (url) => {
+        try {
+          const response = await fetch(url);
+          return { status: response.status, body: await response.text() };
+        } catch {
+          return { status: 0, body: '' };
+        }
+      },
+      pathToFileURL(path.join(userData, 'settings.json')).href,
+    );
+    assert.notEqual(fileProbe.status, 200);
+    assert.notEqual(fileProbe.body, await readFile(path.join(userData, 'settings.json'), 'utf8'));
+    assert.equal(
+      await wallet.evaluate(
+        () => 'unlockBridge' in globalThis.window || 'settingsBridge' in globalThis.window,
+      ),
+      false,
+    );
+    await scaleText(settings);
+    const settingsMetrics = [];
+    await checkLayout(settings, '.settings-back, .settings-title, .settings-version');
+    snap(`${language}-settings`);
+    const cards = settings.locator('.settings-card');
+    assert.ok((await cards.count()) > 0);
+    for (let index = 0; index < (await cards.count()); index += 1) {
+      await cards.nth(index).scrollIntoViewIfNeeded();
+      settingsMetrics.push(
         await checkLayout(
           settings,
-          '.settings-phrase, .settings-phrase-input, .settings-phrase-form button, .settings-back',
-        );
-        snap(`${language}-settings`);
-      }
-      // The back button closes this view, so the page can go away while the
-      // click is still settling; only a click that left it open is a failure.
-      const closed = settings.isClosed() ? Promise.resolve() : settings.waitForEvent('close');
-      await settings
-        .getByRole('button', { name: t('settings.back'), exact: true })
-        .click()
-        .catch((error) => {
-          if (!settings.isClosed()) throw error;
-        });
-      await closed;
-      await wallet.evaluate(() => globalThis.window.qrlWallet.lock());
-      const unlock = await nativePage('unlock');
-      await unlock.locator('.unlock-phrase').getByText(phrase, { exact: true }).waitFor();
-      assert.equal(
-        await unlock
-          .getByPlaceholder(t('unlock.password'))
-          .evaluate((element) => element === globalThis.document.activeElement),
-        true,
-        'password retains initial keyboard focus after the phrase loads',
-      );
-      assert.equal(
-        await app.evaluate(({ BrowserWindow }) =>
-          BrowserWindow.getAllWindows()
-            .find((win) => win.webContents.getURL().startsWith('app://wallet/'))
-            .isVisible(),
+          `.settings-card:nth-of-type(${index + 1}), .settings-card:nth-of-type(${index + 1}) :is(p, button, select, input, span, label)`,
         ),
-        false,
       );
-      await unlock.getByLabel(t('unlock.account'), { exact: true }).selectOption(accounts[0]);
-      await unlock.getByPlaceholder(t('unlock.password')).fill('wrong');
-      await unlock.getByRole('button', { name: t('unlock.submit'), exact: true }).click();
-      await unlock.getByText(t('unlock.incorrect'), { exact: true }).waitFor();
-      await scaleText(unlock);
-      const metrics = await checkLayout(
-        unlock,
-        '.unlock-logo, .unlock-wordmark, .unlock-mark, .unlock-account-select, .unlock-input, .unlock-eye, .unlock-button, .unlock-biometric, .unlock-error, .unlock-hint',
-      );
-      snap(`${language}-unlock-${fixture}`);
-      results.push({ language, fixture, size, scale, metrics });
-      if (fixture === 'personal') {
-        await unlock.getByRole('button', { name: t('unlock.touchId'), exact: true }).click();
-        await unlock.getByText(t('unlock.biometricUnavailable'), { exact: true }).waitFor();
-        await unlock.getByPlaceholder(t('unlock.password')).fill(password);
-        await wallet.evaluate(() => globalThis.window.qrlWallet.setLanguage('es'));
-        assert.equal(
-          await unlock.getByPlaceholder(translate('es', 'unlock.password')).inputValue(),
-          password,
-        );
-        await wallet.evaluate(
-          (language) => globalThis.window.qrlWallet.setLanguage(language),
-          language,
-        );
-      }
-      await unlock.getByPlaceholder(t('unlock.password')).fill(password);
-      await unlock.getByRole('button', { name: t('unlock.submit'), exact: true }).click();
-      await poll(() => unlock.isClosed(), 'successful unlock closes window');
-      const status = await wallet.evaluate(() => globalThis.window.qrlWallet.getStatus());
-      assert.equal(status.locked, false);
-      assert.equal(status.address, accounts[0], 'account picker selects the unlocked account');
-      console.log(`PASS ${language} ${fixture} ${size} text=${scale}`);
     }
+    // The back button closes this view, so the page can go away while the
+    // click is still settling; only a click that left it open is a failure.
+    const closed = settings.isClosed() ? Promise.resolve() : settings.waitForEvent('close');
+    await settings
+      .getByRole('button', { name: t('settings.back'), exact: true })
+      .click()
+      .catch((error) => {
+        if (!settings.isClosed()) throw error;
+      });
+    await closed;
+    await wallet.evaluate(() => globalThis.window.qrlWallet.lock());
+    const unlock = await nativePage('unlock');
+    await unlock.getByPlaceholder(t('unlock.password')).waitFor();
+    assert.equal(await unlock.getByPlaceholder(t('unlock.password')).isEnabled(), true);
+    assert.equal(
+      await unlock.getByRole('button', { name: t('unlock.submit'), exact: true }).isEnabled(),
+      false,
+    );
+    assert.equal(
+      await unlock.getByRole('button', { name: t('unlock.touchId'), exact: true }).isEnabled(),
+      true,
+    );
+    assert.equal(
+      await unlock
+        .getByPlaceholder(t('unlock.password'))
+        .evaluate((element) => element === globalThis.document.activeElement),
+      true,
+      'password has initial keyboard focus',
+    );
+    assert.equal(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((win) => win.webContents.getURL().startsWith('app://wallet/'))
+          .isVisible(),
+      ),
+      false,
+    );
+    await unlock.getByLabel(t('unlock.account'), { exact: true }).selectOption(accounts[0]);
+    await unlock.getByPlaceholder(t('unlock.password')).fill('wrong');
+    await unlock.getByRole('button', { name: t('unlock.submit'), exact: true }).click();
+    await unlock.getByText(t('unlock.incorrect'), { exact: true }).waitFor();
+    await scaleText(unlock);
+    const metrics = await checkLayout(
+      unlock,
+      '.unlock-logo, .unlock-wordmark, .unlock-account-select, .unlock-input, .unlock-eye, .unlock-button, .unlock-biometric, .unlock-error, .unlock-hint',
+    );
+    snap(`${language}-unlock`);
+    results.push({ language, size, scale, metrics, settingsMetrics });
+    await unlock.getByRole('button', { name: t('unlock.touchId'), exact: true }).click();
+    await unlock.getByText(t('unlock.biometricUnavailable'), { exact: true }).waitFor();
+    await unlock.getByPlaceholder(t('unlock.password')).fill(password);
+    await wallet.evaluate(() => globalThis.window.qrlWallet.setLanguage('es'));
+    assert.equal(
+      await unlock.getByPlaceholder(translate('es', 'unlock.password')).inputValue(),
+      password,
+    );
+    await wallet.evaluate(
+      (language) => globalThis.window.qrlWallet.setLanguage(language),
+      language,
+    );
+    await unlock.getByPlaceholder(t('unlock.password')).fill(password);
+    await unlock.getByRole('button', { name: t('unlock.submit'), exact: true }).click();
+    await poll(() => unlock.isClosed(), 'successful unlock closes window');
+    const status = await wallet.evaluate(() => globalThis.window.qrlWallet.getStatus());
+    assert.equal(status.locked, false);
+    assert.equal(status.address, accounts[0], 'account picker selects the unlocked account');
+    console.log(`PASS ${language} ${size} text=${scale}`);
   }
   // Exercise the production autolock timer with a short, test-owned override.
   await wallet.evaluate(() => globalThis.window.qrlWallet.openDesktopSettings());
   const settings = await nativePage('settings');
-  await settings.locator('.settings-phrase').waitFor();
+  await settings.locator('.settings-select').waitFor();
   await app.evaluate(() => {
     process.env.QRL_AUTOLOCK_MS = '1000';
   });
   await settings.evaluate(() => globalThis.window.settingsBridge.set({ autolockMs: 60000 }));
   const autolock = await nativePage('unlock');
-  await autolock.locator('.unlock-phrase').waitFor();
+  await autolock.locator('.unlock-input').waitFor();
   assert.equal(settings.isClosed(), true, 'autolock destroys settings');
   assert.equal((await wallet.evaluate(() => globalThis.window.qrlWallet.getStatus())).locked, true);
   const closed = app.waitForEvent('close');
@@ -333,16 +321,12 @@ try {
     .catch(() => undefined);
   await closed;
   app = null;
-  // Relaunch checks the mark on disk, with a fresh main process and native window.
+  // Relaunch opens the native unlock window with the saved language and accounts.
   app = await launch();
   const restarted = await nativePage('unlock');
-  await restarted.locator('.unlock-phrase').getByText('蓝'.repeat(64), { exact: true }).waitFor();
-  const log = await readFile(path.join(userData, 'logs/main.log'), 'utf8');
-  assert.ok(
-    !log.includes('Public blue river') &&
-      !log.includes('W'.repeat(64)) &&
-      !log.includes('蓝'.repeat(64)),
-  );
+  await restarted.getByPlaceholder(translate('zh-CN', 'unlock.password')).waitFor();
+  assert.equal(await restarted.locator('.unlock-input').isEnabled(), true);
+  assert.equal(await restarted.locator('.unlock-account-select').inputValue(), accounts[0]);
   await writeFile(
     path.join(evidence, 'results.json'),
     JSON.stringify(

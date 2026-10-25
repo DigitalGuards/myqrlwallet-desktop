@@ -1,15 +1,4 @@
 const catalog = {
-  'unlock.phraseLabel': 'Personal phrase',
-  'unlock.phraseHelp':
-    'MyQRLWallet asks for your password only in a window that shows this phrase.',
-  'unlock.phraseLoading': 'Loading personal phrase...',
-  'unlock.phraseUnavailable': 'Could not load your personal phrase. Close and reopen MyQRLWallet.',
-  'settings.phraseHelp': 'Look for this phrase in the unlock window before entering your password.',
-  'settings.phraseRandom': 'Pick a new random phrase',
-  'settings.phraseCustom': 'Your own phrase',
-  'settings.phraseRules':
-    'Use 3 to 64 characters: letters or numbers, separated by single spaces or hyphens.',
-  'settings.phraseSave': 'Save phrase',
   'unlock.keychainReason': 'Unlock your QRL wallet',
   'common.continue': 'Continue',
   'unlock.title': 'Unlock MyQRLWallet',
