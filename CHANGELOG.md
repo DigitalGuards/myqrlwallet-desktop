@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.4.6 - 2026-10-25
 
 ### Security
 
@@ -21,6 +21,20 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   The wallet renderer has no access to it. Checking the phrase helps users
   recognize fake password prompts drawn by a compromised wallet window.
   Malware that can read the settings file or the screen can copy the phrase.
+- Update build tooling dependencies (undici, fast-uri, http-cache-semantics).
+  The shipped app does not include them.
+- Retain Electron 44.9.3 with Chromium 152.0.7977.167 and Node 24.22.0. As of
+  2026-10-25, no stable Electron release bundles Node 24.22.1, including 45.0.0.
+
+### Release scope
+
+- Bundle frontend main revision
+  `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, unchanged since 1.4.5, built by
+  `scripts/build-renderer.sh`. CI uses the same pinned source revision.
+
+<!-- discord -->
+**MyQRLWallet Desktop 1.4.6** is a security update. The unlock window now shows your own personal phrase: type your password only where you see it, so a fake prompt drawn inside the wallet stands out. You can view the phrase, pick a new one or write your own in Settings. The wallet's windows now run from the app's own private address, with no access to files on your computer, and your stored preferences move over automatically on first start. Downloads for Windows and Linux are on GitHub.
+<!-- /discord -->
 
 ## 1.4.5 - 2026-10-24
 
