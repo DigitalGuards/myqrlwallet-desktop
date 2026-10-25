@@ -2,6 +2,26 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Security
+
+- Serve the wallet, unlock and settings windows from a privileged `app`
+  scheme, one origin per window, as Electron's security checklist recommends.
+  The app denies `file://` requests and turns off the
+  `GrantFileProtocolExtraPrivileges` fuse. Native window IPC accepts only each
+  window's own main document.
+- Move the wallet's stored preferences to the new origin once, before the
+  wallet opens: every stored entry is copied, entries already present are
+  kept, and the old copy stays in place. If the move fails, the app still opens
+  and tries again on the next start.
+- Add a personal phrase to the native unlock window, with native Settings
+  controls to view, regenerate or customize it in all five supported languages.
+  Main generates and saves the phrase while preserving existing preferences.
+  The wallet renderer has no access to it. Checking the phrase helps users
+  recognize fake password prompts drawn by a compromised wallet window.
+  Malware that can read the settings file or the screen can copy the phrase.
+
 ## 1.4.5 - 2026-10-24
 
 ### Added

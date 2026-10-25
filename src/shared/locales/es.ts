@@ -1,6 +1,19 @@
 import type en from './en';
 
 const catalog = {
+  'unlock.phraseLabel': 'Frase personal',
+  'unlock.phraseHelp':
+    'MyQRLWallet solo te pide la contraseña en una ventana que muestra esta frase.',
+  'unlock.phraseLoading': 'Cargando frase personal...',
+  'unlock.phraseUnavailable':
+    'No se pudo cargar tu frase personal. Cierra MyQRLWallet y vuelve a abrirlo.',
+  'settings.phraseHelp':
+    'Busca esta frase en la ventana de desbloqueo antes de introducir tu contraseña.',
+  'settings.phraseRandom': 'Elegir una nueva frase aleatoria',
+  'settings.phraseCustom': 'Tu propia frase',
+  'settings.phraseRules':
+    'Usa de 3 a 64 caracteres: letras o números, separados por un solo espacio o guion.',
+  'settings.phraseSave': 'Guardar frase',
   'unlock.keychainReason': 'Desbloquea tu billetera QRL',
   'common.continue': 'Continuar',
   'unlock.title': 'Desbloquear MyQRLWallet',

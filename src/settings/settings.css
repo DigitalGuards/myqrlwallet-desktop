@@ -171,6 +171,37 @@ body {
   gap: 10px;
 }
 
+.settings-phrase {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--brand);
+  margin: 0;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+}
+
+.settings-phrase-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-phrase-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings-phrase-input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;
