@@ -4,6 +4,12 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ## 1.4.6 - 2026-10-25
 
+### Added
+
+- Send resolves names ending in `.qrl` through the QNS registry on the v3
+  testnet, the same one qrlwallet.com uses. The desktop build now carries the
+  registry address; an empty `VITE_V3_QNS_REGISTRY` builds without it.
+
 ### Security
 
 - Serve the wallet, unlock and settings windows from a privileged `app`
