@@ -341,6 +341,27 @@ the hex seed during a signature, and the KEK transiting main during keychain
 provisioning and unlock). Whoever obtains the KEK can decrypt the wallet's
 recovery envelopes without the password.
 
+## Native unlock phrase
+
+The native unlock window shows a personal phrase above its password input.
+Main generates it with its CSPRNG on first use and saves it as an optional
+`unlockPhrase` in the versioned `userData/settings.json`. Existing 1.4.4 settings
+retain every preference, and the envelope continues to reject unknown keys.
+The native Settings panel shows the phrase and can generate another or accept
+a custom phrase. Main validates custom text with a 3-to-64 UTF-16-unit limit
+and visible letter/number, space and hyphen rules.
+
+Check this phrase before typing a password. The wallet renderer cannot obtain
+it through its preload, IPC replies, events or logs, and its `app://wallet`
+origin has no `file://` access from any document, frame or worker. Only
+the native unlock and settings surfaces receive it through their sender-checked
+bridges. This helps a user recognize a fake prompt drawn by compromised code
+in the wallet window. It only helps users who look for their phrase. Malware
+on the computer that can read the settings file or the screen can copy it.
+The phrase provides no protection against that malware and has no role in
+account recovery or key derivation. See the
+[unlock phishing limit](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
+
 ## Reporting a vulnerability
 
 Please report security issues privately. Do not open a public issue for an

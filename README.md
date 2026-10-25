@@ -172,9 +172,15 @@ The supported flows have the following process boundaries:
   collects the password; it shows an account picker when more than
   one wallet exists. Password unlock (Argon2id KEK), macOS Touch-ID / keychain
   unlock, and a sliding auto-lock that zeroizes and notifies the renderer.
-  The genuine input stays isolated from the wallet renderer. A compromised
-  renderer can still draw a lookalike prompt and read input supplied to it;
-  see the [unlock cues and phishing limits](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
+  The genuine input stays isolated from the wallet renderer and shows your
+  personal phrase above the password field. Check for that phrase before typing.
+  Main generates and saves it on first use. View it in native Settings, pick a
+  new random phrase, or enter your own. It is separate from your recovery phrase.
+  The wallet renderer cannot read it, so this helps you recognize a fake prompt
+  drawn by compromised code in the wallet window. It only helps users who look
+  for it. Malware on the computer that can read the settings file or the screen
+  can copy it; the phrase provides no protection against that malware.
+  See the [unlock cues and phishing limits](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
 - **Remove a wallet:** deletes one account's encrypted seed and clears its
   keychain entry, ONLY after a trusted main-drawn confirmation that names the
   address; other accounts are untouched.

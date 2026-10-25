@@ -180,13 +180,33 @@ design).
   [Xvfb request inventory](docs/RENDERER_CSP_INVENTORY.md).
 - Unlock phishing limit: compromised renderer code can draw a lookalike
   password prompt in the wallet surface and read what is typed into it. The
-  genuine native unlock window stays isolated. Its English OS-window title is
+  genuine native unlock window shows a personal phrase above the password input:
+  "MyQRLWallet asks for your password only in a window that shows this phrase."
+  Main creates the phrase on first use using its CSPRNG: four independent words
+  from a fixed 64-word bundled list (24 random bits). It persists the phrase as
+  the optional `unlockPhrase` in `userData/settings.json`, using the existing
+  serialized atomic writes. A 1.4.4 envelope without this field preserves all
+  preferences; unknown fields still invalidate the strict envelope. The native
+  settings panel lets users view it, generate another, or save their own
+  3-to-64 UTF-16-unit phrase with visible letters/numbers and single space or
+  hyphen separators. Main validates every change. This mark has no role in key
+  derivation or account recovery.
+  Only the native unlock and settings bridges receive it, behind live sender
+  and top-frame checks. Wallet IPC replies, events, preload methods and logs
+  contain no personal phrase; the settings file lives outside every `app://`
+  surface directory, and the wallet origin has no `file://` access from any
+  document, frame or worker. The unlock form waits for the persisted mark
+  before accepting input.
+  A compromised wallet window cannot read the mark to reproduce it in a fake
+  password prompt. This protection only helps users who look for their phrase
+  before typing. Malware on the computer that can read the settings file or
+  the screen can copy the phrase; the mark provides no protection against that
+  attacker. A custom phrase's unpredictability depends on the user's choice.
+  The genuine window's English OS-window title is
   `Unlock MyQRLWallet` (localized in other supported languages); main hides the
   wallet window, and the unlock window is configured to disable resizing,
   minimizing, maximizing and fullscreen. Closing it while locked exits the app.
-  These title and behavior cues help distinguish the genuine flow, but the app provides no
-  unforgeable authentication indicator for a password form. A matching title
-  or appearance alone cannot establish authenticity.
+  A matching title or appearance alone cannot establish authenticity.
 - Limit: the renderer can still ask for signatures. The trusted confirmation
   modal is the backstop. If the user blindly approves a malicious payload, the
   signature is produced. Also, context isolation can be defeated by an unpatched
