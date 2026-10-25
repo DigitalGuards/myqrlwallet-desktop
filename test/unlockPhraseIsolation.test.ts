@@ -230,14 +230,25 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
 
   // The inventory includes ALL handlers under src/main. A new registration
   // location requires extending this test before the isolation gate passes.
+  const reviewed = ['ipc.ts', 'settingsView.ts', 'unlockWindow.ts', 'storageMigration.ts'];
   for (const name of await readdir(new URL('../src/main/', import.meta.url))) {
-    if (!name.endsWith('.ts') || ['ipc.ts', 'settingsView.ts', 'unlockWindow.ts'].includes(name))
-      continue;
+    if (!name.endsWith('.ts') || reviewed.includes(name)) continue;
     assert.doesNotMatch(
       await readFile(new URL(`../src/main/${name}`, import.meta.url), 'utf8'),
       /ipcMain\s*\.\s*(?:handle|on)\s*\(/u,
     );
   }
+  // The startup storage move registers one channel for its own helper windows,
+  // removes it before the wallet opens, and never touches the phrase.
+  const migration = await readFile(
+    new URL('../src/main/storageMigration.ts', import.meta.url),
+    'utf8',
+  );
+  assert.equal(migration.match(/ipcMain\s*\.\s*(?:handle|on)\s*\(/gu)?.length, 1);
+  assert.match(migration, /ipcMain\.handle\(STORAGE_MIGRATION_CHANNEL,/u);
+  assert.match(migration, /event\.sender !== helper\.webContents/u);
+  assert.match(migration, /ipcMain\.removeHandler\(STORAGE_MIGRATION_CHANNEL\)/u);
+  assert.doesNotMatch(migration, /unlockPhrase/u);
   const nativeChannels = [...handlers.keys()].filter((channel) => !invoked.has(channel));
   assert.deepEqual(
     nativeChannels.sort(),
