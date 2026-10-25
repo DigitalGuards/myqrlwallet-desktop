@@ -16,19 +16,56 @@ secrets between the renderer and the signer. A compromised renderer during setup
 or import can recover that account. This document describes the integration
 and its bridge contract.
 
+The scheme is registered before readiness with standard, secure, fetch/CORS,
+streaming and code-cache support. Wallet, unlock and settings use separate
+`app://wallet`, `app://unlock` and `app://settings` origins. The handler rejects
+encoded separators, NUL and dot segments and resolves symlinks with realpath
+containment inside each surface's bundled directory. Native assets are copied
+into each native surface directory. `worker-src 'self'` admits the bundled
+wallet crypto worker; file URLs are denied from UI documents and workers.
+`GrantFileProtocolExtraPrivileges` is false. This is the move recommended by
+[Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security#18-avoid-usage-of-the-file-protocol-and-prefer-usage-of-custom-protocols).
+
+Before the wallet UI loads, a hidden inert helper with its own preload copies
+every legacy localStorage entry with no key filter, preserving strings including
+empty keys and values. Existing destination keys are never overwritten. The
+reader uses the constant `file:///qrlwallet-storage-migration.html` URL, served
+from memory independently of the install path. Its temporary IPC channel checks
+the helper's live web contents, main frame, document and phase. Verification
+checks that every legacy key exists and every key written by this run holds its
+legacy value. After a storage flush, main persists `walletOriginMigrationV1`
+through the existing atomic settings queue. The field is optional, so 1.4.5
+settings remain valid. The source stays untouched. Failures are non-fatal:
+startup continues on the new origin, completion stays unset and the next launch
+retries while preserving existing destination values. The helpers retain a
+30-second bound. Failure logs contain one fixed line without stored keys, values
+or error details. Every attempt revokes the helper's sole file exception. Later
+launches skip a completed copy.
+Electron 44 blocks file-origin localStorage when the file fuse is off. The
+legacy reader alone uses `webSecurity: false`, with sandboxing, context
+isolation, disabled Node integration and disabled insecure content retained.
+Its response adds a `default-src 'none'` policy and the request filter permits
+only its exact main-frame helper document. Main destroys this reader before
+creating the destination helper with `webSecurity: true`. The wallet, unlock
+and settings surfaces always retain `webSecurity: true`. This temporary
+compatibility exception has no frontend scripts or public bridge.
+
+See [the storage design](../SECURITY.md#one-time-wallet-storage-move).
+
 ## Two required source changes (frontend repo)
 
-These two changes make the SPA load and route correctly from `file://` under
-`loadFile`. They are small and self-contained.
+The existing frontend adaptations load and route correctly at
+`app://wallet/index.html`. The scheme move requires no frontend source change.
 
 ### 1. `config/vite.config.ts`: add `base: './'`
 
-Assets must resolve relative to the loaded `file://` document, not from `/`.
+Relative assets resolve against the wallet document. Root-absolute assets also
+resolve within `app://wallet` and map into its bundled directory.
 
 ```ts
 // config/vite.config.ts
 export default defineConfig({
-  base: './',          // ADD: relative asset base for file:// (loadFile)
+  base: './',          // relative asset base within app://wallet
   // ...existing config
 });
 ```
@@ -38,8 +75,8 @@ export default defineConfig({
 
 ### 2. `src/router/router.tsx`: `createBrowserRouter` -> `createHashRouter`
 
-`createBrowserRouter` relies on the History API and clean URL paths, which do not
-work under `file://`. Hash routing does.
+The desktop keeps hash routing, selected by the presence of `window.qrlWallet`.
+Routes stay within the bundled wallet entry point.
 
 ```ts
 // src/router/router.tsx
@@ -59,12 +96,10 @@ The route table itself does not change.
 The frontend's `index.html` ships a meta CSP tuned for its web hosting
 (`script-src` includes `'unsafe-inline'`, `connect-src` allows
 `http://localhost:*`); on the web, nginx's strict header is the real control.
-On the desktop, `webRequest.onHeadersReceived` does not reliably fire for
-`file://` document loads, so the strict policy is delivered as a REAL response
-header by the file-protocol handler (`protocol.handle('file')` in
-`src/main/index.ts`, policy built by `src/main/security.ts`
-`buildContentSecurityPolicy`) with NO script `unsafe-inline` and NO
-`unsafe-eval`. As defense-in-depth, `scripts/build-renderer.sh` rewrites the
+On the desktop, the app-protocol handler (`src/main/appProtocol.ts`) delivers the strict
+policy from `buildContentSecurityPolicy` as a real response header on documents,
+assets, workers and errors, alongside nosniff and DNS-prefetch headers. There
+is no script `unsafe-inline` or JS `unsafe-eval`. As defense-in-depth, `scripts/build-renderer.sh` rewrites the
 staged renderer's meta CSP to the same desktop policy, so both the header and
 the meta tag enforce `script-src 'self' 'wasm-unsafe-eval'` (WebAssembly
 compilation only, for the frontend's hash-wasm argon2id keystore import; JS
@@ -249,7 +284,7 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 
 ## Build the bundled renderer
 
-Desktop 1.4.5 uses frontend main revision
+Desktop 1.4.6 uses frontend main revision
 `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
 This includes English, German, Spanish, Russian and Simplified Chinese catalogs,
 the desktop language choice on the Settings page, the Add NFT picker fix, the
@@ -258,7 +293,7 @@ fix. `.github/workflows/ci.yml` pins the same full revision.
 
 `scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
 the frontend checkout, installs its locked dependencies, builds it and stages
-the output for `loadFile`. For a release build, set `QRL_FRONTEND_DIR` to a
+the output for `app://wallet/index.html`. For a release build, set `QRL_FRONTEND_DIR` to a
 detached checkout of the revision above. The script also supports the sibling
 frontend checkout for development. The pinned source includes the asset and
 routing adaptations described above.

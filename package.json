@@ -1,6 +1,6 @@
 {
   "name": "myqrlwallet-desktop",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "Post-quantum QRL desktop wallet: hardened Electron shell whose isolated signer process is the sole holder of plaintext keys.",
   "author": "DigitalGuards",
   "license": "MIT",
@@ -34,6 +34,7 @@
     "fuses:read": "electron-fuses read --app",
     "predist:win": "node scripts/ensure-win-napi.cjs",
     "test:e2e:i18n": "node --import tsx scripts/e2e-i18n.mjs",
+    "test:native:unlock": "node scripts/test-unlock-phrase.mjs",
     "test:native:confirm": "node --import tsx scripts/test-confirmation-visibility.mjs",
     "test:confirm:inventory": "node --import tsx scripts/confirmation-pagination-inventory.mjs"
   },
@@ -47,7 +48,7 @@
     "brace-expansion@1": "1.1.21",
     "brace-expansion@2": "2.1.7",
     "brace-expansion@5": "5.0.12",
-    "fast-uri@>=3.0.0 <3.1.8": "3.1.8"
+    "fast-uri@>=3.0.0 <3.1.9": "3.1.9"
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",

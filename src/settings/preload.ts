@@ -3,8 +3,8 @@
  * stacks over the wallet renderer (src/main/settingsView.ts). Runs sandboxed +
  * context-isolated like every other preload, exposing ONLY the narrow
  * `window.settingsBridge` surface over contextBridge. Raw ipcRenderer is never
- * exposed, and no secret ever crosses here: the settings are a timeout
- * preference, a biometric toggle, data-free maintenance actions, closing the
+ * exposed. The native-only personal mark joins a timeout preference,
+ * a biometric toggle, data-free maintenance actions, closing the
  * panel, and the trusted-confirmed removal of the active wallet (main draws
  * the gate).
  */
@@ -15,6 +15,7 @@ import type { MessageKey } from '../shared/i18n';
 export type SettingsAction = 'reregister-protocol' | 'open-logs';
 
 export interface DesktopSettings {
+  unlockPhrase: string;
   autolockMs: number;
   biometricUnlock: boolean;
 }
@@ -62,6 +63,8 @@ const api = {
   },
   /** Current settings + wallet info + platform capability flags. */
   get: (): Promise<SettingsInfo> => ipcRenderer.invoke('settings:get'),
+  randomizeUnlockPhrase: (): Promise<string> =>
+    ipcRenderer.invoke('settings:randomizeUnlockPhrase'),
   /** Persist a partial update; returns the stored (clamped) result. */
   set: (patch: Partial<DesktopSettings>): Promise<{ settings: DesktopSettings }> =>
     ipcRenderer.invoke('settings:set', patch),

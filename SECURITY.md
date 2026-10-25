@@ -44,13 +44,27 @@ Applied at window creation in `src/main/index.ts` (`createWindow`).
 
 ### 2. Strict Content-Security-Policy
 
-Delivered as a real response header on every `file://` response by the
-file-protocol handler in `src/main/index.ts` (`protocol.handle('file')`).
-`webRequest.onHeadersReceived` does not reliably fire for `file://` document
-loads, so the same policy is additionally installed there
-(`installContentSecurityPolicy()`) only to cover http(s) responses (the dev
-server), and `scripts/build-renderer.sh` rewrites the built renderer's meta CSP
-to the same policy as defense-in-depth.
+Production UI loads from `app://wallet/index.html`, `app://unlock/index.html`
+and `app://settings/index.html`. The scheme is registered before app readiness
+with `standard`, `secure`, `supportFetchAPI`, `corsEnabled`, `stream` and
+`codeCache`; CSP bypass and service workers remain disabled. This implements
+the custom-protocol move recommended by
+[Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security#18-avoid-usage-of-the-file-protocol-and-prefer-usage-of-custom-protocols).
+
+Each surface has a separate origin, localStorage, BroadcastChannel namespace
+and worker scope. `src/main/appProtocol.ts` maps root-absolute wallet assets
+(`/tree.svg`, `/icons/`, `/assets/`) into `out/renderer`. Unlock and settings
+have complete bundles under their own directories. Raw encoded separators,
+NUL, dot segments and ambiguous authorities are refused before path resolution.
+`fs.realpath` resolves both root and target, then containment rejects symlinks
+outside the selected surface. Main uses a private loader session for the
+contained filesystem read; that session is never assigned to web contents.
+
+Every app response, including worker scripts and errors, carries
+`buildContentSecurityPolicy`, `X-Content-Type-Options: nosniff` and
+`X-DNS-Prefetch-Control: off`. The renderer meta CSP is kept in parity by
+`scripts/build-renderer.sh`. `webRequest.onHeadersReceived` also covers the
+unpackaged `QRL_RENDERER_DEV_URL` development server.
 
 `src/main/security.ts`:
 
@@ -88,7 +102,8 @@ unneeded. External NFT and token artwork outside this list uses a placeholder;
 the Add NFT picker shows the gallery's `NftImage` placeholder as well since
 myqrlwallet-frontend #421. `worker-src 'self'` allows the bundled crypto worker
 used by encrypted extension-wallet imports; generated blob workers are blocked.
-Other directives retain their values.
+Here `'self'` is the wallet origin, so worker scripts must come from the
+wallet bundle. File URLs are denied for documents, frames and workers.
 
 The [request inventory](docs/RENDERER_CSP_INVENTORY.md) records the pinned
 frontend, source producers, synthetic holdings, Xvfb checks and policy limits.
@@ -123,16 +138,70 @@ above.
 `X-Content-Type-Options: nosniff` and `X-DNS-Prefetch-Control: off` are set on
 the same response.
 
+### One-time wallet storage move
+
+Before opening the wallet UI, `src/main/storageMigration.ts` reads every
+localStorage entry at the legacy file origin, with no key filter. It copies
+strings unchanged, including empty keys and values, into absent destination
+keys. Existing destination keys are never overwritten. The old store stays
+untouched. A hidden, sandboxed helper uses an inert bundled page and its own
+preload, with no
+frontend scripts or public bridge. Its single temporary IPC channel requires
+that helper's live web contents, main frame, exact URL and current migration
+phase. All other file requests, including worker requests, are denied by the
+session request filter and file handler. The sole temporary exception serves
+the inert page from memory at the constant URL
+`file:///qrlwallet-storage-migration.html` to that helper's main frame. This
+reader accesses the shared file-origin storage independently of the install path.
+
+Electron 44 blocks file-origin localStorage when the file fuse is off. The
+legacy reader alone uses `webSecurity: false`, with sandboxing, context
+isolation, disabled Node integration and disabled insecure content retained.
+Its response adds a `default-src 'none'` policy and the request filter permits
+only its exact main-frame helper document. Main destroys this reader before
+creating the destination helper with `webSecurity: true`. The wallet, unlock
+and settings surfaces always retain `webSecurity: true`. This temporary
+compatibility exception has no frontend scripts or public bridge.
+
+The helper verifies that every legacy key exists at the destination and every
+key written by this run holds its legacy value. Main flushes Chromium storage
+and records `walletOriginMigrationV1: true` using the settings store's existing
+atomic write queue. This optional field keeps 1.4.5 settings valid. Completion
+closes the helper, removes its IPC handler and revokes the file exception before
+any wallet UI loads. A completed migration is skipped on later launches.
+Failures are non-fatal: the wallet opens on the new origin, completion stays
+unset and the copy retries on the next launch. The 30-second helper bound
+remains in place. Retries preserve values already at the destination, including
+edits made after a failed launch. Failure logs contain one fixed line:
+`[storage] wallet origin migration failed; will retry next launch`. Stored keys,
+values and error details are excluded.
+The migration uses localStorage only; there are no IndexedDB, cookie or cache
+stores to move. Development-server mode retains its existing storage origin.
+
+`scripts/test-file-access.mjs` checks documents, inherited-origin iframes,
+classic/module dedicated workers and shared workers, including static imports,
+file document navigation, native sender gates and encrypted extension-wallet
+import through the real bundled crypto worker. The isolated-profile
+`scripts/test-storage-migration.mjs` checks every legacy entry, including
+unprefixed keys and empty strings, existing destination values, fresh startup,
+repeat launch, unchanged source, non-fatal completion failure and retry, and
+development-server startup without a bundled frontend. It requires the compiled
+1.4.5 app via `QRL_LEGACY_APP`. `QRL_MIGRATION_ELECTRON` and
+`QRL_FILE_ACCESS_ELECTRON` select a copied test runtime with the file fuse off.
+The packaged boot check retains every release fuse. Playwright tests load its
+startup loader explicitly to attach before app readiness and avoid racing the
+private migration preloads.
+
 ### 3. IPC sender + schema validation
 
 Every `ipcMain.handle` enforces, in order: (1) sender validation, (2) zod parse,
 (3) the action. The signer re-validates the subset it receives.
 
 - Sender validation: `isTrustedSender()` in `src/main/security.ts`. Requires the
-  event to come from the top frame (`webContents.mainFrame`) of the wallet
-  window, loaded from a `file:` origin. Sub-frames / iframes and any non-`file:`
-  origin are rejected, so a malicious embedded frame cannot invoke signing
-  channels.
+  event sender to equal the wallet's live web contents and `senderFrame` to
+  equal its main frame, loaded at `app://wallet/index.html` (hash routing is
+  allowed). Unlock and settings require their own live web contents, main frame
+  and entry point. Subframes and other documents are rejected.
 - Schema parse: the `handle()` wrapper in `src/main/ipc.ts` `safeParse`s each
   argument against the zod schemas in `src/shared/schemas.ts`. Parsing (not
   type-asserting) rejects malformed, oversized, or extra-keyed inputs at the
@@ -152,15 +221,15 @@ compromised renderer cannot address an arbitrary IPC channel.
 `lockDownNavigation()` in `src/main/security.ts`, attached to every
 `web-contents-created`:
 
-- `will-navigate`: `preventDefault` always (a `file://` SPA never legitimately
+- `will-navigate`: `preventDefault` always (the hash-routed app SPA never legitimately
   navigates the top document away); an allowlisted external link is handed to the
-  OS browser instead of dead-ending.
+  OS browser.
 - `setWindowOpenHandler`: deny the Electron window unconditionally; an allowlisted
   external link is opened in the user's REAL browser via `shell.openExternal`. The
   allowlist (`EXTERNAL_ALLOWLIST` in `src/main/externalLinks.ts`; https-only,
   exact host or subdomain on a dot boundary) is: qrlwallet.com, zondscan.com,
   theqrl.org, github.com, t.me. Arbitrary token / NFT / dApp-supplied URLs are NOT
-  allowlisted and are intentionally dropped (a no-op) rather than launched. Unit
+  allowlisted and are dropped. Unit
   tested in `test/externalLinks.test.ts`.
 - `will-attach-webview`: deny outright, and strip `preload` / force
   `nodeIntegration: false` + `contextIsolation: true` defensively. There is no
@@ -198,8 +267,7 @@ they are covered by the code signature. Intended settings:
 - `OnlyLoadAppFromAsar`: on.
 - `EnableCookieEncryption`: on.
 - `LoadBrowserProcessSpecificV8Snapshot`: off (stock Electron snapshot).
-- `GrantFileProtocolExtraPrivileges`: on (the renderer uses `file://`; see the
-  accepted limitation in `THREAT_MODEL.md`).
+- `GrantFileProtocolExtraPrivileges`: off (UI and worker documents use app origins).
 - `WasmTrapHandlers`: on (preserves V8 WebAssembly bounds-checking behavior).
 
 All nine Electron 44 fuses are explicit. `strictlyRequireAllFuses: true` makes
@@ -272,6 +340,27 @@ isolation (including setup/import exposure, the un-zeroizable V8 string holding
 the hex seed during a signature, and the KEK transiting main during keychain
 provisioning and unlock). Whoever obtains the KEK can decrypt the wallet's
 recovery envelopes without the password.
+
+## Native unlock phrase
+
+The native unlock window shows a personal phrase above its password input.
+Main generates it with its CSPRNG on first use and saves it as an optional
+`unlockPhrase` in the versioned `userData/settings.json`. Existing 1.4.4 settings
+retain every preference, and the envelope continues to reject unknown keys.
+The native Settings panel shows the phrase and can generate another or accept
+a custom phrase. Main validates custom text with a 3-to-64 UTF-16-unit limit
+and visible letter/number, space and hyphen rules.
+
+Check this phrase before typing a password. The wallet renderer cannot obtain
+it through its preload, IPC replies, events or logs, and its `app://wallet`
+origin has no `file://` access from any document, frame or worker. Only
+the native unlock and settings surfaces receive it through their sender-checked
+bridges. This helps a user recognize a fake prompt drawn by compromised code
+in the wallet window. It only helps users who look for their phrase. Malware
+on the computer that can read the settings file or the screen can copy it.
+The phrase provides no protection against that malware and has no role in
+account recovery or key derivation. See the
+[unlock phishing limit](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
 
 ## Reporting a vulnerability
 

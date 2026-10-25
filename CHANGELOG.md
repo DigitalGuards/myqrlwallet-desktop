@@ -2,6 +2,40 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.6 - 2026-10-25
+
+### Security
+
+- Serve the wallet, unlock and settings windows from a privileged `app`
+  scheme, one origin per window, as Electron's security checklist recommends.
+  The app denies `file://` requests and turns off the
+  `GrantFileProtocolExtraPrivileges` fuse. Native window IPC accepts only each
+  window's own main document.
+- Move the wallet's stored preferences to the new origin once, before the
+  wallet opens: every stored entry is copied, entries already present are
+  kept, and the old copy stays in place. If the move fails, the app still opens
+  and tries again on the next start.
+- Add a personal phrase to the native unlock window, with native Settings
+  controls to view, regenerate or customize it in all five supported languages.
+  Main generates and saves the phrase while preserving existing preferences.
+  The wallet renderer has no access to it. Checking the phrase helps users
+  recognize fake password prompts drawn by a compromised wallet window.
+  Malware that can read the settings file or the screen can copy the phrase.
+- Update build tooling dependencies (undici, fast-uri, http-cache-semantics).
+  The shipped app does not include them.
+- Retain Electron 44.9.3 with Chromium 152.0.7977.167 and Node 24.22.0. As of
+  2026-10-25, no stable Electron release bundles Node 24.22.1, including 45.0.0.
+
+### Release scope
+
+- Bundle frontend main revision
+  `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, unchanged since 1.4.5, built by
+  `scripts/build-renderer.sh`. CI uses the same pinned source revision.
+
+<!-- discord -->
+**MyQRLWallet Desktop 1.4.6** is a security update. The unlock window now shows your own personal phrase: type your password only where you see it, so a fake prompt drawn inside the wallet stands out. You can view the phrase, pick a new one or write your own in Settings. The wallet's windows now run from the app's own private address, with no access to files on your computer, and your stored preferences move over automatically on first start. Downloads for Windows and Linux are on GitHub.
+<!-- /discord -->
+
 ## 1.4.5 - 2026-10-24
 
 ### Added

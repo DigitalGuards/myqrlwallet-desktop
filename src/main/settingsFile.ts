@@ -6,8 +6,9 @@
  * to defaults, never throws at startup).
  *
  * File: userData/settings.json. Versioned zod-strict envelope
- * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1? }`. NO SECRETS, EVER: same-user
- * malware can read this file; it learns only non-secret preferences.
+ * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1?, walletOriginMigrationV1?, unlockPhrase? }`.
+ * The personal mark is private to native surfaces. Same-user malware can read
+ * this file, so the mark provides no protection against host compromise.
  *
  * Autolock resolution order (getEffectiveAutolockMs):
  *   env QRL_AUTOLOCK_MS (explicit operator override, pre-existing behavior)
@@ -22,7 +23,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { LanguageSchema } from '../shared/schemas';
+import { LanguageSchema, UnlockPhraseSchema } from '../shared/schemas';
+import { generateUnlockPhrase } from './unlockPhrase';
 import type { Language } from '../shared/language';
 import { DEFAULT_AUTOLOCK_MS } from '../shared/constants';
 
@@ -36,20 +38,25 @@ export const AUTOLOCK_MAX_MS = 3_600_000;
 const StoredSettingsSchema = z.strictObject({
   v: z.literal(1),
   language: LanguageSchema.optional(),
+  unlockPhrase: UnlockPhraseSchema.optional(),
   autolockMs: z.number().int().optional(),
   biometricUnlock: z.boolean().optional(),
   /** The one-time v3 storage notice has been shown and dismissed. */
   legacyNoticeAckV1: z.boolean().optional(),
+  /** The file-origin preferences were copied and verified before opening the UI. */
+  walletOriginMigrationV1: z.boolean().optional(),
 });
 
 export type StoredSettings = z.infer<typeof StoredSettingsSchema>;
 
 /** Main-owned settings store patch. Native security settings use a separate IPC schema. */
 export interface SettingsPatch {
+  unlockPhrase?: string | undefined;
   language?: Language | undefined;
   autolockMs?: number | undefined;
   biometricUnlock?: boolean | undefined;
   legacyNoticeAckV1?: boolean | undefined;
+  walletOriginMigrationV1?: boolean | undefined;
 }
 
 export const SETTINGS_DEFAULTS: StoredSettings = { v: 1 };
@@ -63,9 +70,12 @@ export function clampAutolockMs(ms: number): number {
 function normalise(s: StoredSettings): StoredSettings {
   const out: StoredSettings = { v: 1 };
   if (s.language !== undefined) out.language = s.language;
+  if (s.unlockPhrase !== undefined) out.unlockPhrase = s.unlockPhrase;
   if (s.autolockMs !== undefined) out.autolockMs = clampAutolockMs(s.autolockMs);
   if (s.biometricUnlock !== undefined) out.biometricUnlock = s.biometricUnlock;
   if (s.legacyNoticeAckV1 !== undefined) out.legacyNoticeAckV1 = s.legacyNoticeAckV1;
+  if (s.walletOriginMigrationV1 !== undefined)
+    out.walletOriginMigrationV1 = s.walletOriginMigrationV1;
   return out;
 }
 
@@ -149,13 +159,23 @@ export async function writeSettingsFile(filePath: string, next: StoredSettings):
 
 /** Read-merge-write a partial update; returns the stored result. Undefined
  * patch fields leave the existing values untouched. */
-async function mergeSettingsFile(filePath: string, patch: SettingsPatch): Promise<StoredSettings> {
+type SettingsChange = SettingsPatch | ((current: StoredSettings) => SettingsPatch);
+
+async function mergeSettingsFile(
+  filePath: string,
+  change: SettingsChange,
+): Promise<StoredSettings> {
   const current = await readSettingsFile(filePath);
+  const patch = typeof change === 'function' ? change(current) : change;
+  if (Object.keys(patch).length === 0) return current;
   const next: StoredSettings = { ...current };
+  if (patch.unlockPhrase !== undefined) next.unlockPhrase = patch.unlockPhrase;
   if (patch.language !== undefined) next.language = patch.language;
   if (patch.autolockMs !== undefined) next.autolockMs = patch.autolockMs;
   if (patch.biometricUnlock !== undefined) next.biometricUnlock = patch.biometricUnlock;
   if (patch.legacyNoticeAckV1 !== undefined) next.legacyNoticeAckV1 = patch.legacyNoticeAckV1;
+  if (patch.walletOriginMigrationV1 !== undefined)
+    next.walletOriginMigrationV1 = patch.walletOriginMigrationV1;
   const validated = normalise(StoredSettingsSchema.parse(next));
   await atomicWrite(filePath, JSON.stringify(validated, null, 2));
   return validated;
@@ -163,14 +183,11 @@ async function mergeSettingsFile(filePath: string, patch: SettingsPatch): Promis
 
 // Each file has its own write queue; failed writes leave later updates usable.
 const updates = new Map<string, Promise<StoredSettings>>();
-export function updateSettingsFile(
-  filePath: string,
-  patch: SettingsPatch,
-): Promise<StoredSettings> {
+function queueSettingsChange(filePath: string, change: SettingsChange): Promise<StoredSettings> {
   const previous = updates.get(filePath) ?? Promise.resolve(SETTINGS_DEFAULTS);
   const result = previous
     .catch(() => SETTINGS_DEFAULTS)
-    .then(() => mergeSettingsFile(filePath, patch));
+    .then(() => mergeSettingsFile(filePath, change));
   updates.set(filePath, result);
   void result
     .finally(() => {
@@ -178,6 +195,28 @@ export function updateSettingsFile(
     })
     .catch(() => undefined);
   return result;
+}
+
+export function updateSettingsFile(
+  filePath: string,
+  patch: SettingsPatch,
+): Promise<StoredSettings> {
+  return queueSettingsChange(filePath, patch);
+}
+
+/** Creation and rotation share the preference-write queue. Return only after
+ * persistence succeeds, so concurrent native reads see the same saved mark. */
+export async function unlockPhraseForFile(filePath: string, renew = false): Promise<string> {
+  const stored = await queueSettingsChange(filePath, (current) => {
+    if (current.unlockPhrase !== undefined && !renew) return {};
+    let unlockPhrase: string;
+    do {
+      unlockPhrase = generateUnlockPhrase();
+    } while (unlockPhrase === current.unlockPhrase);
+    return { unlockPhrase };
+  });
+  if (stored.unlockPhrase === undefined) throw new Error('personal phrase unavailable');
+  return stored.unlockPhrase;
 }
 
 // ---- app-bound wrappers (Electron main process only) ------------------------
@@ -194,6 +233,11 @@ export async function readSettings(): Promise<StoredSettings> {
 
 export async function updateSettings(patch: SettingsPatch): Promise<StoredSettings> {
   return updateSettingsFile(await settingsPath(), patch);
+}
+
+/** Only the native unlock and settings IPC may return this value. */
+export async function getUnlockPhrase(renew = false): Promise<string> {
+  return unlockPhraseForFile(await settingsPath(), renew);
 }
 
 /** The autolock bound to pass on every signer.unlock / setAutolock. */

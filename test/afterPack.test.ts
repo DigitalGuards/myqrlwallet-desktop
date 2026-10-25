@@ -101,7 +101,7 @@ test('afterPack enforces all nine Electron 44 fuses on the packaged binary', asy
     [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: FuseState.ENABLE,
     [FuseV1Options.OnlyLoadAppFromAsar]: FuseState.ENABLE,
     [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: FuseState.DISABLE,
-    [FuseV1Options.GrantFileProtocolExtraPrivileges]: FuseState.ENABLE,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: FuseState.DISABLE,
     [FuseV1Options.WasmTrapHandlers]: FuseState.ENABLE,
   });
 });

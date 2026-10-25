@@ -12,12 +12,14 @@
  */
 import { getLanguage, onLanguageChanged, t } from './language';
 import path from 'node:path';
+import { APP_URLS, isAppDocument } from '../shared/appUrls';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { logConsole } from './log';
 import {
   getBiometricUnlockEnabled,
   getEffectiveAutolockMs,
   isBiometricUnlockExplicitlyEnabled,
+  getUnlockPhrase,
 } from './settingsFile';
 import {
   getActiveAddress,
@@ -134,7 +136,11 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
   ipcRegistered = true;
 
   const fromUnlockWindow = (event: IpcMainInvokeEvent): boolean =>
-    unlockWin !== null && !unlockWin.isDestroyed() && event.sender === unlockWin.webContents;
+    unlockWin !== null &&
+    !unlockWin.isDestroyed() &&
+    event.sender === unlockWin.webContents &&
+    event.senderFrame === unlockWin.webContents.mainFrame &&
+    isAppDocument(event.senderFrame.url, APP_URLS.unlock);
 
   onLanguageChanged((language) => {
     if (unlockWin && !unlockWin.isDestroyed()) {
@@ -149,10 +155,11 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
-    const [seeds, active, biometricEnabled] = await Promise.all([
+    const [seeds, active, biometricEnabled, unlockPhrase] = await Promise.all([
       listSeeds(),
       getActiveAddress(),
       getBiometricUnlockEnabled(),
+      getUnlockPhrase(),
     ]);
     // Resolve keychain backing for all wallets concurrently (keyVault.has
     // shells out to the OS helper on macOS). A stored KEK counts only while
@@ -164,7 +171,7 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
         keychainBacked: biometricEnabled && (await deps.keyVault.has(s.address)),
       })),
     );
-    return { wallets, active };
+    return { wallets, active, unlockPhrase };
   });
 
   ipcMain.handle('unlock:submit', async (event, arg: unknown) => {
@@ -331,5 +338,5 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     if (unlockWin === win) unlockWin = null;
   });
 
-  void win.loadFile(path.join(__dirname, '../unlock/index.html'));
+  void win.loadURL(APP_URLS.unlock);
 }

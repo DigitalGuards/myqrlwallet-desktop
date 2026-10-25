@@ -1,6 +1,6 @@
 import { useNativeLanguage, type NativeLanguageBridge } from '../shared/useNativeLanguage';
 import type { MessageKey } from '../shared/i18n';
-import { StrictMode, useEffect, useState, type SyntheticEvent } from 'react';
+import { StrictMode, useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 // Self-hosted variable fonts, the same faces the wallet renderer uses
 // (myqrlwallet-frontend): Sora = display, Instrument Sans = body, JetBrains
@@ -25,7 +25,7 @@ interface UnlockWalletInfo {
 }
 
 interface UnlockBridge extends NativeLanguageBridge {
-  getInfo(): Promise<{ wallets: UnlockWalletInfo[]; active: string | null }>;
+  getInfo(): Promise<{ wallets: UnlockWalletInfo[]; active: string | null; unlockPhrase: string }>;
   submit(password: string, address?: string): Promise<UnlockResult>;
   biometric(address?: string): Promise<UnlockResult>;
 }
@@ -44,6 +44,12 @@ function UnlockApp() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unlockPhrase, setUnlockPhrase] = useState<string | null>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (unlockPhrase) passwordInput.current?.focus();
+  }, [unlockPhrase]);
 
   const selectedWallet = wallets.find((w) => w.address === selected) ?? null;
   const keychain = selectedWallet?.keychainBacked ?? false;
@@ -55,10 +61,11 @@ function UnlockApp() {
       .then((info) => {
         if (cancelled) return;
         setWallets(info.wallets);
+        setUnlockPhrase(info.unlockPhrase);
         setSelected(info.active ?? info.wallets[0]?.address ?? null);
       })
       .catch(() => {
-        /* best-effort: the password field still works without the account chip */
+        if (!cancelled) setError('unlock.phraseUnavailable');
       });
     return () => {
       cancelled = true;
@@ -67,7 +74,7 @@ function UnlockApp() {
 
   async function submit(event?: SyntheticEvent) {
     event?.preventDefault();
-    if (!password || busy) return;
+    if (!password || busy || !unlockPhrase) return;
     setBusy(true);
     setError(null);
     try {
@@ -85,7 +92,7 @@ function UnlockApp() {
   }
 
   async function biometric() {
-    if (busy) return;
+    if (busy || !unlockPhrase) return;
     setBusy(true);
     setError(null);
     try {
@@ -105,6 +112,13 @@ function UnlockApp() {
       <main className="unlock-card">
         <img className="unlock-logo" src={logoUrl} alt="" aria-hidden="true" />
         <h1 className="unlock-wordmark">MyQRLWallet</h1>
+        <section className="unlock-mark" aria-label={t('unlock.phraseLabel')}>
+          <p className="unlock-mark-label">{t('unlock.phraseLabel')}</p>
+          <p className="unlock-phrase" dir="auto">
+            {unlockPhrase ?? t('unlock.phraseLoading')}
+          </p>
+          <p className="unlock-mark-help">{t('unlock.phraseHelp')}</p>
+        </section>
         {wallets.length > 1 ? (
           <select
             className="unlock-account-select"
@@ -128,12 +142,13 @@ function UnlockApp() {
           <div className="unlock-input-wrap">
             <input
               autoFocus
+              ref={passwordInput}
               className="unlock-input"
               type={show ? 'text' : 'password'}
               placeholder={t('unlock.password')}
               aria-label={t('unlock.password')}
               value={password}
-              disabled={busy}
+              disabled={busy || !unlockPhrase}
               onChange={(event) => {
                 setPassword(event.target.value);
                 if (error) setError(null);
@@ -149,14 +164,18 @@ function UnlockApp() {
             </button>
           </div>
           {error && <p className="unlock-error">{t(error)}</p>}
-          <button className="unlock-button" type="submit" disabled={busy || password.length === 0}>
+          <button
+            className="unlock-button"
+            type="submit"
+            disabled={busy || !unlockPhrase || password.length === 0}
+          >
             {t(busy ? 'unlock.busy' : 'unlock.submit')}
           </button>
           {keychain && (
             <button
               className="unlock-biometric"
               type="button"
-              disabled={busy}
+              disabled={busy || !unlockPhrase}
               onClick={() => void biometric()}
             >
               {t('unlock.touchId')}

@@ -34,8 +34,11 @@ const api = {
     };
   },
   /** Every wallet on this device + the active one (drives the account picker). */
-  getInfo: (): Promise<{ wallets: UnlockWalletInfo[]; active: string | null }> =>
-    ipcRenderer.invoke('unlock:getInfo'),
+  getInfo: (): Promise<{
+    wallets: UnlockWalletInfo[];
+    active: string | null;
+    unlockPhrase: string;
+  }> => ipcRenderer.invoke('unlock:getInfo'),
   /** Attempt a password unlock of `address` (or the active wallet when omitted).
    * Resolves `{ ok }` so the UI shows errors inline. */
   submit: (

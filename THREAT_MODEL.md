@@ -66,8 +66,9 @@ English in every language for now. Language selection leaves their page
 boundaries, acceptance limits and approval behavior unchanged. Confirmation translation is deferred
 to a separate change after the page-visibility fix.
 
-Before the renderer reports on each launch, main resolves the OS preferred
-languages (or OS locale), with English as the fallback. Accepted choices are
+Before any window opens on each launch, main reads the saved language. If no
+choice is saved, main resolves the OS preferred languages (or OS locale), with
+English as the fallback. Accepted choices are
 persisted as the optional `language` field of `userData/settings.json`. Store
 updates are serialized so concurrent language and security-setting writes
 preserve each other's fields. The wallet renderer gains no access to auto-lock,
@@ -179,13 +180,33 @@ design).
   [Xvfb request inventory](docs/RENDERER_CSP_INVENTORY.md).
 - Unlock phishing limit: compromised renderer code can draw a lookalike
   password prompt in the wallet surface and read what is typed into it. The
-  genuine native unlock window stays isolated. Its English OS-window title is
+  genuine native unlock window shows a personal phrase above the password input:
+  "MyQRLWallet asks for your password only in a window that shows this phrase."
+  Main creates the phrase on first use using its CSPRNG: four independent words
+  from a fixed 64-word bundled list (24 random bits). It persists the phrase as
+  the optional `unlockPhrase` in `userData/settings.json`, using the existing
+  serialized atomic writes. A 1.4.4 envelope without this field preserves all
+  preferences; unknown fields still invalidate the strict envelope. The native
+  settings panel lets users view it, generate another, or save their own
+  3-to-64 UTF-16-unit phrase with visible letters/numbers and single space or
+  hyphen separators. Main validates every change. This mark has no role in key
+  derivation or account recovery.
+  Only the native unlock and settings bridges receive it, behind live sender
+  and top-frame checks. Wallet IPC replies, events, preload methods and logs
+  contain no personal phrase; the settings file lives outside every `app://`
+  surface directory, and the wallet origin has no `file://` access from any
+  document, frame or worker. The unlock form waits for the persisted mark
+  before accepting input.
+  A compromised wallet window cannot read the mark to reproduce it in a fake
+  password prompt. This protection only helps users who look for their phrase
+  before typing. Malware on the computer that can read the settings file or
+  the screen can copy the phrase; the mark provides no protection against that
+  attacker. A custom phrase's unpredictability depends on the user's choice.
+  The genuine window's English OS-window title is
   `Unlock MyQRLWallet` (localized in other supported languages); main hides the
   wallet window, and the unlock window is configured to disable resizing,
   minimizing, maximizing and fullscreen. Closing it while locked exits the app.
-  These title and behavior cues help distinguish the genuine flow, but the app provides no
-  unforgeable authentication indicator for a password form. A matching title
-  or appearance alone cannot establish authenticity.
+  A matching title or appearance alone cannot establish authenticity.
 - Limit: the renderer can still ask for signatures. The trusted confirmation
   modal is the backstop. If the user blindly approves a malicious payload, the
   signature is produced. Also, context isolation can be defeated by an unpatched
@@ -647,7 +668,8 @@ had, and none of it depends on being a window:
   only `window.settingsBridge` (`get`/`set`/`action`/`removeWallet`/`close`, plus
   `getLanguage`/`onLanguageChanged`), a
   no-network meta CSP, and every IPC handler gated by a live-sender check
-  (`fromSettingsView`: the event sender must BE this view's web contents) plus
+  (`fromSettingsView`: the event sender must be this view's live web contents,
+  with its main frame at the settings app entry point) plus
   a zod-strict argument parse. The wallet renderer is a different web contents
   underneath: it cannot draw into the panel, script it, read its DOM, or
   read/write its security settings. It can select a bundled language through
@@ -684,7 +706,8 @@ had, and none of it depends on being a window:
   trusted to clean up after a removal it did not perform.
 - **Settings store holds no secrets** (`src/main/settingsFile.ts`,
   `userData/settings.json`): a versioned, zod-strict envelope
-  (`autolockMs`, `biometricUnlock`, `language`, `legacyNoticeAckV1`) written
+  (`autolockMs`, `biometricUnlock`, `language`, `legacyNoticeAckV1`,
+  `walletOriginMigrationV1`) written
   atomically at mode `0600` like the
   seed store, self-healing on corruption (any unparsable content degrades to
   defaults; startup never throws). Same-user malware reading it learns only a
@@ -753,16 +776,15 @@ and no KEK is stored where another app could read it.
 
 Covered under attacker model A above. `MacKeychainVault.isAvailable()` gates on
 `app.isPackaged`, so dev/unsigned builds transparently fall back to
-password-only unlock rather than offering a Touch ID prompt that the OS would not
-actually bind to our code identity.
+password-only unlock there.
 
 `app.isPackaged` is a COARSE proxy: an ad-hoc-signed packaged build would also
 pass it without a stable Developer ID Designated Requirement. This does not
 create a leak, because the macOS Keychain enforces the DR binding at access time
 (items created without a stable DR fail to round-trip; another identity cannot
 read them). A hardening follow-up is to verify the running code signature
-(SecCode / `codesign`) before declaring the vault available, instead of trusting
-`app.isPackaged` alone (`src/keyvault/factory.ts`).
+(SecCode / `codesign`) before declaring the vault available
+(`src/keyvault/factory.ts`).
 
 ### (e) OS app-binding is defeatable by same-context code execution
 
@@ -786,31 +808,49 @@ to hardware binding (TPM / Secure Enclave, DBSC).
   hardware wallet; hardware-wallet / air-gapped signing is a planned stage for
   all platforms.
 
-### (f) The renderer is served from `file://`, so the file-protocol fuse stays enabled
+### (f) Resolved: app origins and disabled file-protocol privileges
 
-The packaged renderer loads via `loadFile` (`src/main/index.ts`), and a
-`file`-scheme handler remaps the frontend's root-absolute asset paths and
-attaches the strict CSP header (`installFileProtocolHandler`). Because the app
-legitimately depends on
-`file://`, the `afterPack` hook explicitly sets `GrantFileProtocolExtraPrivileges`
-to `true`. All nine Electron 44 fuse values are explicit, and
-`strictlyRequireAllFuses: true` rejects unreviewed fuses in future binaries.
-The enabled file-protocol fuse grants `file://` pages extra powers
-(fetch over `file://`, service-worker registration, broad child-frame access)
-that Electron recommends disabling in favor of a registered custom scheme.
+The production UI uses the privileged `app` scheme registered before readiness:
+`app://wallet`, `app://unlock` and `app://settings` have independent origin
+storage, BroadcastChannel namespaces and worker scopes. The handler serves
+only realpath-contained files from the selected surface's bundled directory,
+with CSP, nosniff and DNS-prefetch headers on successes and errors. Wallet
+root-absolute assets stay under the wallet origin. `worker-src 'self'` admits
+only bundled wallet workers. `GrantFileProtocolExtraPrivileges` is now false;
+all nine Electron 44 fuse choices remain explicit and strictly checked.
+This is the move recommended by
+[Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security#18-avoid-usage-of-the-file-protocol-and-prefer-usage-of-custom-protocols).
 
-- Why it is accepted for now: Electron 44 retains the existing `file://` loading
-  architecture and its enabled fuse. Disabling the fuse requires a coordinated
-  custom-scheme migration and renderer validation. The
-  load-bearing renderer controls (sandbox, `contextIsolation`, `script-src 'self'
-  'wasm-unsafe-eval'` with no inline/eval of JS, navigation lockdown,
-  deny-by-default permissions) retain their scope. Setup/import secrets remain
-  readable by the renderer. Images are limited to bundled/data sources and the
-  configured backend; workers are bundled files. The remaining outbound
-  channels are documented in [SECURITY.md](SECURITY.md#remaining-outbound-channels).
-- Residual risk: an in-origin renderer RCE has the additional `file://`
-  capabilities described above.
-- Hardening follow-up: migrate the renderer to a registered privileged custom
-  scheme (`protocol.handle` / `registerSchemesAsPrivileged`), then flip
-  `GrantFileProtocolExtraPrivileges: false` in `scripts/afterPack.cjs` (the two
-  must land together).
+The default session denies file loads from UI documents, frames and workers.
+A one-time startup helper reads legacy file-origin localStorage before any UI
+exists. It serves only an inert bundled page, has a dedicated preload with no
+public bridge, and its sole IPC channel checks the live helper's web contents,
+main frame, exact document and migration phase. The reader uses the constant
+`file:///qrlwallet-storage-migration.html` URL, served from memory, independently
+of the install path. It copies every localStorage entry with no key filter,
+preserving strings including empty keys and values. Existing destination keys
+are never overwritten. It verifies that every legacy key exists and each key
+written by this run holds its legacy value, flushes storage and records the
+optional `walletOriginMigrationV1` setting through the serialized atomic queue.
+The file exception and IPC channel are revoked when the helper closes. The
+legacy source remains intact. Failures are non-fatal: startup continues on the
+new origin, completion stays unset and the next launch retries while preserving
+existing destination values. The helpers retain a 30-second bound, and failures
+log one fixed line without stored keys, values or error details. A completed
+migration never recopies.
+Electron 44 blocks file-origin localStorage when the file fuse is off. The
+legacy reader alone uses `webSecurity: false`, with sandboxing, context
+isolation, disabled Node integration and disabled insecure content retained.
+Its response adds a `default-src 'none'` policy and the request filter permits
+only its exact main-frame helper document. Main destroys this reader before
+creating the destination helper with `webSecurity: true`. The wallet, unlock
+and settings surfaces always retain `webSecurity: true`. This temporary
+compatibility exception has no frontend scripts or public bridge.
+
+Stored values and keys are excluded from logs. See the
+[storage move](SECURITY.md#one-time-wallet-storage-move) and its runtime tests.
+
+The existing setup/import exposure, allowed outbound destinations and
+platform-specific ASAR limitations retain their scope. Same-user filesystem
+mutation remains outside the renderer containment boundary, including races
+between realpath validation and opening a bundled file.
