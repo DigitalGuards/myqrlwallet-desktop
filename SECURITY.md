@@ -352,7 +352,8 @@ a custom phrase. Main validates custom text with a 3-to-64 UTF-16-unit limit
 and visible letter/number, space and hyphen rules.
 
 Check this phrase before typing a password. The wallet renderer cannot obtain
-it through its preload, IPC replies, events, logs or the file protocol. Only
+it through its preload, IPC replies, events or logs, and its `app://wallet`
+origin has no `file://` access from any document, frame or worker. Only
 the native unlock and settings surfaces receive it through their sender-checked
 bridges. This helps a user recognize a fake prompt drawn by compromised code
 in the wallet window. It only helps users who look for their phrase. Malware

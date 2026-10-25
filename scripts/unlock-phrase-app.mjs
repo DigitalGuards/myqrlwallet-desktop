@@ -6,6 +6,7 @@ import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { translate } from '../src/shared/i18n.ts';
+import { electronTestArgs, waitForAppPage } from './electron-test-utils.mjs';
 
 assert.match(process.env.DISPLAY ?? '', /^:(?!0(?:\.|$))\d+/u);
 assert.ok(!process.env.WAYLAND_DISPLAY);
@@ -46,7 +47,7 @@ let app;
 async function launch() {
   const instance = await _electron.launch({
     executablePath: path.join(root, 'node_modules/electron/dist/electron'),
-    args: [root, `--user-data-dir=${path.join(evidence, 'user-data')}`],
+    args: [...electronTestArgs(root), `--user-data-dir=${path.join(evidence, 'user-data')}`],
     cwd: root,
     env,
     timeout: 60000,
@@ -140,10 +141,14 @@ const snap = (name) =>
   });
 try {
   app = await launch();
-  const wallet = await app.firstWindow();
+  // A fresh profile opens the startup storage helpers before the wallet.
+  const wallet = await waitForAppPage(app);
   await wallet.waitForFunction(() => Boolean(globalThis.window.qrlWallet));
   await app.evaluate(
-    ({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds),
+    ({ BrowserWindow }, bounds) =>
+      BrowserWindow.getAllWindows()
+        .find((win) => win.webContents.getURL().startsWith('app://wallet/'))
+        ?.setBounds(bounds),
     { x: 0, y: 0, width, height },
   );
   const actualWorkArea = await app.evaluate(

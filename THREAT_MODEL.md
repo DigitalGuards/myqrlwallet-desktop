@@ -193,8 +193,10 @@ design).
   derivation or account recovery.
   Only the native unlock and settings bridges receive it, behind live sender
   and top-frame checks. Wallet IPC replies, events, preload methods and logs
-  contain no personal phrase; the settings file lives outside the served app
-  bundle. The unlock form waits for the persisted mark before accepting input.
+  contain no personal phrase; the settings file lives outside every `app://`
+  surface directory, and the wallet origin has no `file://` access from any
+  document, frame or worker. The unlock form waits for the persisted mark
+  before accepting input.
   A compromised wallet window cannot read the mark to reproduce it in a fake
   password prompt. This protection only helps users who look for their phrase
   before typing. Malware on the computer that can read the settings file or
