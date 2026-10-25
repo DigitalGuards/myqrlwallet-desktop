@@ -29,16 +29,6 @@ function maxUtf16Length(maximum: number) {
   };
 }
 
-/** Personal unlock mark: visible letters/numbers separated by spaces or hyphens.
- * Explicit UTF-16 bounds also cover supplementary-plane letters. */
-export const UNLOCK_PHRASE_MAX_LENGTH = 64;
-export const UnlockPhraseSchema = z
-  .string()
-  .refine((value) => value.length >= 3, 'personal phrase is too short')
-  .superRefine(maxUtf16Length(UNLOCK_PHRASE_MAX_LENGTH))
-  .regex(/^[\p{L}\p{N}]+(?:[ -][\p{L}\p{N}]+)*$/u, 'invalid personal phrase characters')
-  .refine((value) => !/\p{Default_Ignorable_Code_Point}/u.test(value), 'invisible characters');
-
 /** A native QIP-55 address: uppercase `Q` plus 128 hexadecimal characters.
  * This schema checks shape. Typed-data payloads also check public checksum
  * casing here; transaction addresses are checked again by the signer. */

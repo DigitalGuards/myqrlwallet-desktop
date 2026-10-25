@@ -1,17 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'unlock.phraseLabel': 'Личная фраза',
-  'unlock.phraseHelp': 'MyQRLWallet запрашивает пароль только в окне с этой фразой.',
-  'unlock.phraseLoading': 'Загрузка личной фразы...',
-  'unlock.phraseUnavailable':
-    'Не удалось загрузить личную фразу. Закройте MyQRLWallet и откройте снова.',
-  'settings.phraseHelp': 'Проверяйте эту фразу в окне разблокировки перед вводом пароля.',
-  'settings.phraseRandom': 'Выбрать новую случайную фразу',
-  'settings.phraseCustom': 'Ваша фраза',
-  'settings.phraseRules':
-    'От 3 до 64 символов: буквы или цифры, разделённые одиночными пробелами или дефисами.',
-  'settings.phraseSave': 'Сохранить фразу',
   'unlock.keychainReason': 'Разблокируйте кошелёк QRL',
   'common.continue': 'Продолжить',
   'unlock.title': 'Разблокировать MyQRLWallet',

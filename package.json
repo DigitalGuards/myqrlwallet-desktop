@@ -34,7 +34,7 @@
     "fuses:read": "electron-fuses read --app",
     "predist:win": "node scripts/ensure-win-napi.cjs",
     "test:e2e:i18n": "node --import tsx scripts/e2e-i18n.mjs",
-    "test:native:unlock": "node scripts/test-unlock-phrase.mjs",
+    "test:native:unlock": "node scripts/test-native-unlock.mjs",
     "test:native:confirm": "node --import tsx scripts/test-confirmation-visibility.mjs",
     "test:confirm:inventory": "node --import tsx scripts/confirmation-pagination-inventory.mjs"
   },

@@ -13,7 +13,7 @@ import { NullVault } from '../src/keyvault/nullVault';
 import { malformed } from './helpers/malformed';
 import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } from '../src/main/config';
 
-register(new URL('./unlockPhraseMockLoader.mjs', import.meta.url));
+register(new URL('./nativeIpcMockLoader.mjs', import.meta.url));
 const electron = await import('electron');
 const { registerIpcHandlers } = await import('../src/main/ipc');
 const { registerSettingsIpc, showSettingsView, closeSettingsView } =
@@ -39,10 +39,10 @@ function envelope(letter: string): EncryptedSeed {
 }
 
 // Every production handler is registered, every wallet method executes its real
-// handler successfully, and the response is checked for a persisted canary.
+// handler successfully. Native handlers retain their sender and schema gates.
 // Extending either surface requires an explicit fixture here.
-test('personal phrase stays outside every wallet preload method, IPC reply and event', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'phrase-isolation-'));
+test('wallet preload inventory and native IPC isolation preserve their boundaries', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'native-ipc-isolation-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   Object.defineProperty(globalThis, '__dirname', { value: '.', configurable: true });
   t.after(() => {
@@ -50,14 +50,7 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
   });
   t.mock.method(electron.app, 'getPath', () => directory);
   const file = path.join(directory, 'settings.json');
-  const canary = 'PRIVATE Personal Mark 9f73';
-  await updateSettingsFile(file, { unlockPhrase: canary, autolockMs: 900_000 });
-  const marks = [canary];
-  const assertPrivate = (value: unknown) => {
-    const serialized = JSON.stringify({ value });
-    for (const mark of marks) assert.ok(!serialized.includes(mark), 'native phrase leaked');
-    assert.ok(!serialized.includes('unlockPhrase'), 'native settings field leaked');
-  };
+  await updateSettingsFile(file, { autolockMs: 900_000 });
   const handlers = new Map<string, Parameters<typeof electron.ipcMain.handle>[1]>();
   t.mock.method(
     electron.ipcMain,
@@ -67,9 +60,6 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
     },
   );
   const win = new electron.BrowserWindow();
-  t.mock.method(win.webContents, 'send', (_channel: string, ...args: unknown[]) => {
-    assertPrivate(args);
-  });
   const signer = new SignerBridge(() => undefined);
   let unlocked = true;
   let active = envelope('a').address;
@@ -202,8 +192,8 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
     sendRawTransaction: [{ rawTx: '0x02' }],
     dappRequestAttention: [],
     openDesktopSettings: [],
-    onLockStateChanged: [assertPrivate],
-    onDAppConnectUri: [assertPrivate],
+    onLockStateChanged: [() => undefined],
+    onDAppConnectUri: [() => undefined],
     lock: [],
     removeWallet: [{ address: envelope('c').address }],
   };
@@ -215,8 +205,7 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
     const method: unknown = api[name];
     assert.equal(typeof method, 'function', name);
     if (typeof method !== 'function') throw new Error('missing wallet method');
-    const result: unknown = await Reflect.apply(method, api, args);
-    assertPrivate(result);
+    await Reflect.apply(method, api, args);
   }
   assert.deepEqual(
     [...invoked].sort(),
@@ -224,9 +213,6 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
     'every wallet handler exercised',
   );
   assert.deepEqual([...subscribed].sort(), ['wallet:dappConnectUri', 'wallet:lockStateChanged']);
-  assertPrivate(api['features']);
-  assertPrivate(api['addressScheme']);
-  assert.equal((await readSettingsFile(file)).unlockPhrase, canary);
 
   // The inventory includes ALL handlers under src/main. A new registration
   // location requires extending this test before the isolation gate passes.
@@ -239,7 +225,7 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
     );
   }
   // The startup storage move registers one channel for its own helper windows,
-  // removes it before the wallet opens, and never touches the phrase.
+  // and removes it before the wallet opens.
   const migration = await readFile(
     new URL('../src/main/storageMigration.ts', import.meta.url),
     'utf8',
@@ -248,7 +234,6 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
   assert.match(migration, /ipcMain\.handle\(STORAGE_MIGRATION_CHANNEL,/u);
   assert.match(migration, /event\.sender !== helper\.webContents/u);
   assert.match(migration, /ipcMain\.removeHandler\(STORAGE_MIGRATION_CHANNEL\)/u);
-  assert.doesNotMatch(migration, /unlockPhrase/u);
   const nativeChannels = [...handlers.keys()].filter((channel) => !invoked.has(channel));
   assert.deepEqual(
     nativeChannels.sort(),
@@ -257,7 +242,6 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
       'settings:close',
       'settings:get',
       'settings:getLanguage',
-      'settings:randomizeUnlockPhrase',
       'settings:removeWallet',
       'settings:set',
       'unlock:biometric',
@@ -274,28 +258,21 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
   const settingsEvent = eventFor(settings);
   const settingsInfo = await invoke('settings:get', settingsEvent);
   assert.ok(isRecord(settingsInfo) && isRecord(settingsInfo['settings']));
-  assert.equal(settingsInfo['settings']['unlockPhrase'], canary);
+  assert.deepEqual(settingsInfo['settings'], { autolockMs: 900_000, biometricUnlock: true });
   for (const raw of [
-    { unlockPhrase: '<script>' },
-    { unlockPhrase: '𐐀'.repeat(33) },
-    { unlockPhrase: 'new phrase', extra: true },
+    { unlockPhrase: 'Legacy value' },
+    { autolockMs: 'soon' },
+    { biometricUnlock: false, extra: true },
   ]) {
     await assert.rejects(invoke('settings:set', settingsEvent, raw), /invalid settings payload/);
-    assert.equal((await readSettingsFile(file)).unlockPhrase, canary);
+    assert.deepEqual(await readSettingsFile(file), { v: 1, language: 'de', autolockMs: 900_000 });
   }
   await invoke('settings:set', settingsEvent, {
-    unlockPhrase: 'Meine blaue Wiese',
     autolockMs: 60_000,
     biometricUnlock: false,
   });
-  marks.push('Meine blaue Wiese');
   assert.equal(rearm.mock.callCount(), 1);
   assert.ok(deletion.mock.callCount() >= 2);
-  const rotated = await invoke('settings:randomizeUnlockPhrase', settingsEvent);
-  assert.equal(typeof rotated, 'string');
-  if (typeof rotated !== 'string') throw new Error('missing rotated mark');
-  marks.push(rotated);
-  assert.notEqual(rotated, 'Meine blaue Wiese');
   await invoke('settings:set', settingsEvent, { biometricUnlock: true });
   showUnlockWindow(deps);
   const unlockWindow = electron.BrowserWindow.getAllWindows().find((window) => window !== win);
@@ -303,7 +280,7 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
   const unlockEvent = eventFor(unlockWindow.webContents);
   const info = await invoke('unlock:getInfo', unlockEvent);
   assert.ok(isRecord(info));
-  assert.equal(info['unlockPhrase'], rotated);
+  assert.deepEqual(Object.keys(info).sort(), ['active', 'wallets']);
   for (const channel of nativeChannels) {
     for (const event of [
       walletEvent,
@@ -311,10 +288,7 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
       { ...unlockEvent, senderFrame: null },
       settingsEvent,
     ]) {
-      await assert.rejects(
-        invoke(channel, event, { unlockPhrase: 'stolen mark', password: 'correct' }),
-        /unauthorized/,
-      );
+      await assert.rejects(invoke(channel, event, { password: 'correct' }), /unauthorized/);
     }
   }
   assert.deepEqual(await invoke('unlock:submit', unlockEvent, { password: 'wrong' }), {
@@ -343,6 +317,4 @@ test('personal phrase stays outside every wallet preload method, IPC reply and e
   const quit = t.mock.method(electron.app, 'quit', () => undefined);
   closing.close();
   assert.equal(quit.mock.callCount(), 1, 'closing a locked window exits');
-  const log = await readFile(path.join(directory, 'logs/main.log'), 'utf8');
-  assertPrivate(log);
 });

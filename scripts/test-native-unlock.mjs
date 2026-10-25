@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
   throw new Error('Run with env -u DISPLAY -u WAYLAND_DISPLAY npm run test:native:unlock.');
 const root = fileURLToPath(new URL('../', import.meta.url));
-const evidence = await mkdtemp(path.join(tmpdir(), 'unlock-phrase-layout-'));
-console.log('Unlock phrase evidence:', evidence);
+const evidence = await mkdtemp(path.join(tmpdir(), 'native-unlock-layout-'));
+console.log('Native unlock evidence:', evidence);
 const results = [];
 for (const size of ['1024x768', '1280x720']) {
   for (const scale of [1, 1.25]) {
@@ -24,7 +24,7 @@ for (const size of ['1024x768', '1280x720']) {
           process.execPath,
           '--import',
           'tsx',
-          'scripts/unlock-phrase-app.mjs',
+          'scripts/native-unlock-app.mjs',
         ],
         {
           cwd: root,
@@ -57,4 +57,4 @@ for (const size of ['1024x768', '1280x720']) {
     if (result.code !== 0) throw new Error(`${name} failed (${result.code}): ${result.stderr}`);
   }
 }
-console.log('PASS: five languages, two work areas, 100% and 125% text, with maximum-length marks.');
+console.log('PASS: unlock and settings in five languages, two work areas, 100% and 125% text.');

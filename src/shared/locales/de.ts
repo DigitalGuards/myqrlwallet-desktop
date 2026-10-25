@@ -1,17 +1,6 @@
 import type en from './en';
 
 const catalog = {
-  'unlock.phraseLabel': 'Persönlicher Erkennungssatz',
-  'unlock.phraseHelp': 'MyQRLWallet fragt nur in einem Fenster mit diesem Satz nach dem Passwort.',
-  'unlock.phraseLoading': 'Erkennungssatz wird geladen...',
-  'unlock.phraseUnavailable':
-    'Der Erkennungssatz konnte nicht geladen werden. MyQRLWallet schließen und erneut öffnen.',
-  'settings.phraseHelp': 'Vor der Passworteingabe im Entsperrfenster auf diesen Satz achten.',
-  'settings.phraseRandom': 'Neuen zufälligen Satz wählen',
-  'settings.phraseCustom': 'Eigener Satz',
-  'settings.phraseRules':
-    '3 bis 64 Zeichen verwenden: Buchstaben oder Zahlen, getrennt durch einzelne Leerzeichen oder Bindestriche.',
-  'settings.phraseSave': 'Satz speichern',
   'unlock.keychainReason': 'QRL-Wallet entsperren',
   'common.continue': 'Fortfahren',
   'unlock.title': 'MyQRLWallet entsperren',

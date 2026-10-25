@@ -2,6 +2,13 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## Unreleased
+
+### Removed
+
+- The personal phrase in the unlock window and Settings. Settings files from
+  1.4.6 keep every preference, including the completed storage move.
+
 ## 1.4.6 - 2026-10-25
 
 ### Added
