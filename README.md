@@ -21,7 +21,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 ## At a glance
 
 - **Stack:** Electron 44 (locked to 44.9.3; bundled Node 24.22.0 + Chromium 152.0.7977.167) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
-- **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded over `file://`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
+- **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded at `app://wallet/index.html`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
 - **Key at rest:** Argon2id (`@node-rs/argon2`) password-derived KEK + AES-256-GCM, with the macOS Keychain (Designated Requirement + Touch ID) as defense-in-depth. No PIN: the desktop unlock secret is a password.
@@ -139,8 +139,10 @@ VITE_DESKTOP=1 npm run dev      # e.g. http://localhost:5173
 QRL_RENDERER_DEV_URL=http://localhost:5173 npm run dev
 ```
 
-Production ALWAYS uses `loadFile` over `file://`, never a remote URL; the dev
-URL path is gated on `!app.isPackaged`.
+Production UI uses `app://wallet/index.html`, `app://unlock/index.html` and
+`app://settings/index.html`, with separate origins. The unpackaged development
+URL path stays gated on `!app.isPackaged`. This is the custom-protocol move
+recommended by [Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security#18-avoid-usage-of-the-file-protocol-and-prefer-usage-of-custom-protocols).
 
 ## What works today
 
@@ -281,7 +283,7 @@ prefetch and direct WebRTC UDP receive additional restrictions. See the
 
 1. Renderer calls `window.qrlWallet.requestSignature({ kind: 'transaction', tx })`.
 2. Preload forwards it on the `wallet:requestSignature` IPC channel.
-3. Main validates the sender (top frame, `file:` origin) and zod-parses the payload.
+3. Main validates the sender (live web contents and top frame, wallet app entry point) and zod-parses the payload.
 4. Main draws a trusted confirmation modal ("you are signing X to Y"). The renderer cannot alter that native modal or bypass its approval gate.
 5. On approval, main asks the signer to sign. The signer unwraps the seed, signs with `@theqrl/mldsa87`, zeroizes, and returns the raw signed tx.
 6. Renderer broadcasts it via `window.qrlWallet.sendRawTransaction`.
@@ -297,7 +299,7 @@ checkout.
 It needs only a handful of adaptations, all web-safe and runtime-gated by
 `isDesktop = Boolean(window.qrlWallet)` so the web build is byte-identical:
 
-- **Asset base** `VITE_DESKTOP=1` -> Vite `base: './'` for `file://`.
+- **Asset base** `VITE_DESKTOP=1` -> Vite `base: './'` within `app://wallet`.
 - **Routing** `createBrowserRouter` -> `createHashRouter`, switched at runtime
   when `window.qrlWallet` is present (no build flag, no HTML surgery).
 - **Key ops** desktop account generation, envelope encryption, unlock and
@@ -307,14 +309,39 @@ It needs only a handful of adaptations, all web-safe and runtime-gated by
 - **No PIN** the desktop unlock secret is a password; PIN UI is hidden under
   desktop and unlock prompts are replaced by the signer session.
 
-Two main-process shims keep the unmodified web bundle working under `file://`:
-a `protocol.handle('file')` handler (`installFileProtocolHandler`) remaps the
-frontend's root-absolute asset paths (logo, `/tree.svg`), attaches the strict
-CSP as a real response header (`webRequest` does not reliably fire for `file://`
-document loads), and contains every served path to the app bundle so a
-compromised renderer cannot read arbitrary host files; and
-`app.userAgentFallback` strips the `MyQRLWallet` / `Electron` tokens so the
-frontend runs as the desktop/web build, not its mobile webview.
+The app-protocol handler contains files to each surface's real bundled
+directory, including symlink resolution, and attaches the existing CSP plus
+nosniff and DNS-prefetch headers to every response. Root-absolute wallet assets
+stay under `app://wallet`. `worker-src 'self'` permits bundled wallet workers;
+file loads are denied in UI documents, frames and workers. Packaged builds set
+`GrantFileProtocolExtraPrivileges` to false. `app.userAgentFallback` still
+strips the `MyQRLWallet` / `Electron` tokens for desktop frontend detection.
+
+On first launch after upgrade, a hidden inert helper copies every legacy
+localStorage entry with no key filter, preserving strings including empty keys
+and values. Existing destination keys are never overwritten. The reader uses
+the constant `file:///qrlwallet-storage-migration.html` URL served from memory,
+independently of the install path. Its dedicated preload and temporary IPC
+channel accept only that helper's main frame. Verification checks that every
+legacy key exists and every key written by this run holds its legacy value. A
+storage flush precedes the queued settings write of `walletOriginMigrationV1`.
+The optional field preserves compatibility with 1.4.5 settings. Subsequent
+launches skip a completed copy. Failures are non-fatal: the wallet opens on the
+new origin, completion stays unset and the next launch retries, preserving
+existing destination values and the untouched legacy source. The helpers retain
+a 30-second bound. Failure logs contain one fixed line without stored keys,
+values or error details.
+Electron 44 blocks file-origin localStorage when the file fuse is off. The
+legacy reader alone uses `webSecurity: false`, with sandboxing, context
+isolation, disabled Node integration and disabled insecure content retained.
+Its response adds a `default-src 'none'` policy and the request filter permits
+only its exact main-frame helper document. Main destroys this reader before
+creating the destination helper with `webSecurity: true`. The wallet, unlock
+and settings surfaces always retain `webSecurity: true`. This temporary
+compatibility exception has no frontend scripts or public bridge.
+
+See [the storage move](SECURITY.md#one-time-wallet-storage-move) for the exact
+file exception and failure behavior.
 
 ### Pointing at an environment
 
@@ -448,7 +475,7 @@ signing). Verify the result on a built app with `npm run fuses:read`.
   `contextIsolation`, `sandbox`, `nodeIntegration: false`, a strict CSP
   (`default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'` with no
   inline/eval of JS) delivered as a
-  real `file://` response header, the file handler contained to the app bundle,
+  real `app://` response header, realpath containment per surface,
   IPC sender + schema validation, navigation lockdown with a trusted-host
   allowlist for external links, deny-by-default renderer permissions,
   `@electron/fuses`, and ASAR integrity enforcement on macOS and Windows.
@@ -522,6 +549,20 @@ line and both buttons, and writes JSON evidence under a temporary directory.
 It refuses inherited X11/Wayland displays. Both checks remain local scripts;
 the complete native sweep exceeds the roughly two-minute CI budget and adds
 no required check name.
+
+The origin and storage checks use isolated profiles and private Xvfb displays.
+Set `QRL_FRONTEND_DIR` to the frontend checkout used for the build, and
+`QRL_LEGACY_APP` to the extracted, compiled 1.4.5 app for the upgrade fixture.
+The packaged check uses `release/linux-unpacked/myqrlwallet-desktop` and keeps
+the release fuses intact. `QRL_FILE_ACCESS_ELECTRON` and
+`QRL_MIGRATION_ELECTRON` optionally select a copied test runtime with file
+privileges disabled for the full access and upgrade tests.
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY xvfb-run -a node scripts/test-file-access.mjs
+env -u DISPLAY -u WAYLAND_DISPLAY xvfb-run -a node scripts/test-storage-migration.mjs
+env -u DISPLAY -u WAYLAND_DISPLAY xvfb-run -a node scripts/test-packaged-boot.mjs
+```
 
 ## Validation gates
 

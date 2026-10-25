@@ -20,6 +20,35 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+test('origin migration completion preserves old settings and concurrent preference updates', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'settings-origin-migration-'));
+  const file = path.join(directory, 'settings.json');
+  await writeFile(
+    file,
+    JSON.stringify({
+      v: 1,
+      autolockMs: 120000,
+      biometricUnlock: false,
+      language: 'de',
+      legacyNoticeAckV1: true,
+    }),
+  );
+  assert.equal((await readSettingsFile(file)).walletOriginMigrationV1, undefined);
+  await Promise.all([
+    updateSettingsFile(file, { walletOriginMigrationV1: true }),
+    updateSettingsFile(file, { language: 'zh-CN' }),
+    updateSettingsFile(file, { autolockMs: 300000 }),
+  ]);
+  assert.deepEqual(await readSettingsFile(file), {
+    v: 1,
+    walletOriginMigrationV1: true,
+    autolockMs: 300000,
+    biometricUnlock: false,
+    language: 'zh-CN',
+    legacyNoticeAckV1: true,
+  });
+});
+
 import {
   AUTOLOCK_MAX_MS,
   AUTOLOCK_MIN_MS,

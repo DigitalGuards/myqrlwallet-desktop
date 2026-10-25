@@ -32,6 +32,7 @@
  */
 import { getLanguage, onLanguageChanged } from './language';
 import path from 'node:path';
+import { APP_URLS, isAppDocument } from '../shared/appUrls';
 import {
   app,
   type BrowserWindow,
@@ -118,7 +119,9 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
   const fromSettingsView = (event: IpcMainInvokeEvent): boolean =>
     settingsView !== null &&
     !settingsView.webContents.isDestroyed() &&
-    event.sender === settingsView.webContents;
+    event.sender === settingsView.webContents &&
+    event.senderFrame === settingsView.webContents.mainFrame &&
+    isAppDocument(event.senderFrame.url, APP_URLS.settings);
 
   onLanguageChanged((language) => {
     if (settingsView && !settingsView.webContents.isDestroyed()) {
@@ -465,5 +468,5 @@ export function showSettingsView(deps: SettingsDeps): void {
   win.once('closed', onWindowClosed);
   hostTeardown = [() => win.off('closed', onWindowClosed)];
 
-  void view.webContents.loadFile(path.join(__dirname, '../settings/index.html'));
+  void view.webContents.loadURL(APP_URLS.settings);
 }

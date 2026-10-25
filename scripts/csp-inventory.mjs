@@ -1,6 +1,8 @@
 // Run the pinned desktop renderer with synthetic holdings and an isolated Xvfb profile.
 // Usage: env -u DISPLAY -u WAYLAND_DISPLAY xvfb-run -a node scripts/csp-inventory.mjs
 import assert from 'node:assert/strict';
+import { electronTestArgs, waitForAppPage } from './electron-test-utils.mjs';
+import { keystore } from './extension-wallet-fixture.mjs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -22,26 +24,6 @@ await mkdir(evidence, { recursive: true });
 const profile = await mkdtemp(path.join(tmpdir(), 'desktop-csp-profile-'));
 const tight = process.env.QRL_CSP_EXPECT_TIGHT !== '0';
 const password = 'CspFixture!123';
-// Public encrypted vector from the pinned frontend's keystoreBackup.test.ts.
-const keystore = {
-  version: 1,
-  id: '1e198746-9ccd-4815-b1bc-dabe655a3271',
-  address: 'Qcfec0cbee560cbd6ed89580204af71448f1fb8c5',
-  crypto: {
-    ciphertext:
-      '8a4d7e503009e1ea9161d1a95472f1b5aa1e217a2c499869d9b9b3cf0ea77e2710cfc30c313917532111a66ceae0f4b6580ddae333664bcc687c2e1feb73874f220c19',
-    cipherparams: { iv: '4e0b9d062b34e456c3996646' },
-    cipher: 'aes-256-gcm',
-    kdf: 'argon2id',
-    kdfparams: {
-      m: 8192,
-      t: 2,
-      p: 1,
-      dklen: 32,
-      salt: '6f02765040f3e6b2fdee34a2c06ecbc9cd31debb52ba75b620023dc7a6b1b7e4',
-    },
-  },
-};
 const contract = `Q${'12'.repeat(64)}`;
 const httpsContract = `Q${'34'.repeat(64)}`;
 const imageUrl = 'https://art.example/nft.svg';
@@ -133,7 +115,7 @@ async function snapshot(name, screenshot = true) {
             ? 'worker'
             : 'other';
     if (type !== 'other')
-      report.requests.push({ screen, type, url: cleanUrl(url), observer: 'file-handler' });
+      report.requests.push({ screen, type, url: cleanUrl(url), observer: 'bundle-reader' });
   }
   const view = await wallet.evaluate(() => ({
     images: [...globalThis.document.images].map((img) => ({
@@ -185,7 +167,7 @@ try {
     chromiumSandbox: true,
     executablePath: path.join(root, 'node_modules/electron/dist/electron'),
     args: [
-      root,
+      ...electronTestArgs(root),
       `--user-data-dir=${path.join(profile, 'user-data')}`,
       '--host-resolver-rules=MAP * ~NOTFOUND',
     ],
@@ -200,11 +182,12 @@ try {
     electron: process.versions.electron,
     chromium: process.versions.chrome,
   }));
-  await app.evaluate(({ net, shell }) => {
+  await app.evaluate(({ session, shell }) => {
     globalThis.cspFiles = [];
     globalThis.cspExternal = [];
-    const originalFetch = net.fetch.bind(net);
-    net.fetch = (url, options) => {
+    const reader = session.fromPartition('bundle-reader');
+    const originalFetch = reader.fetch.bind(reader);
+    reader.fetch = (url, options) => {
       if (String(url).startsWith('file:')) globalThis.cspFiles.push(String(url));
       return originalFetch(url, options);
     };
@@ -212,6 +195,7 @@ try {
       globalThis.cspExternal.push(url);
     };
   });
+  wallet = await waitForAppPage(app);
   await context.route(/^https?:/, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -264,7 +248,6 @@ try {
       await route.fulfill({ json: { transactions: [], data: [], success: true } });
     }
   });
-  wallet = await app.firstWindow();
   wallet.on('pageerror', (error) => report.consoleErrors.push({ screen, text: error.message }));
   context.on('request', (request) => {
     report.requests.push({ screen, type: request.resourceType(), url: cleanUrl(request.url()) });
@@ -450,11 +433,13 @@ try {
   await wallet.getByRole('heading', { name: 'Set Wallet Password', exact: true }).waitFor();
   await snapshot('import-decrypted');
   assert.ok(report.workers.some((worker) => worker.url.includes('cryptoWorker-')));
-  assert.ok(report.workers.every((worker) => worker.url.startsWith('bundle:')));
+  assert.ok(report.workers.every((worker) => worker.url.startsWith('app://wallet/')));
   await finishImport('import-success');
   const wallets = await wallet.evaluate(() => globalThis.qrlWallet.listWallets());
   assert.equal(wallets.wallets.length, 4, 'Creation and all three import modes persist accounts');
-  report.checks.push('Encrypted extension wallet imported through bundled file worker and signer');
+  report.checks.push(
+    'Encrypted extension wallet imported through bundled app-origin worker and signer',
+  );
   screen = 'channel-probes';
   const policy = await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].webContents.getWebRTCIPHandlingPolicy(),

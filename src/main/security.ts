@@ -10,6 +10,7 @@
 import { app, type BrowserWindow, type Session, shell, type WebPreferences } from 'electron';
 import { isAllowedExternalUrl } from './externalLinks';
 import { rendererServerOrigin } from './config';
+import { APP_URLS, isAppDocument } from '../shared/appUrls';
 
 // Replaced by electron-vite using the renderer's build-time backend setting.
 // The fallback supports source-level tests and development tooling.
@@ -58,13 +59,9 @@ export function hardenedWebPreferences(preloadPath: string): WebPreferences {
  *     The mobile embedded build's inline worker is a separate build target.
  * Allowed servers and external links remain possible outbound channels.
  *
- * DELIVERY (both paths are needed; see the file-protocol handler in
- * src/main/index.ts): webRequest.onHeadersReceived does NOT reliably fire for
- * file:// document loads, so for the packaged file:// renderer this policy is
- * attached as a real response header by the protocol.handle('file') handler.
- * The webRequest install below still covers http(s) responses (the dev-server
- * case) and is harmless where both apply (identical policies intersect to
- * themselves).
+ * DELIVERY: the app protocol attaches this policy to every response, including
+ * workers and errors. webRequest covers HTTP(S) development-server responses.
+ * The bundled renderer also carries the matching meta policy.
  */
 export function buildContentSecurityPolicy(connectSrc: string[]): string {
   const connect = ["'self'", ...connectSrc].join(' ');
@@ -84,35 +81,39 @@ export function buildContentSecurityPolicy(connectSrc: string[]): string {
   ].join('; ');
 }
 
-/** Install the CSP as a response header on every webRequest-visible response. */
+/** Cover development HTTP(S); app responses already have authoritative headers. */
 export function installContentSecurityPolicy(session: Session, connectSrc: string[]): void {
   const csp = buildContentSecurityPolicy(connectSrc);
 
-  session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [csp],
-        'X-Content-Type-Options': ['nosniff'],
-        'X-DNS-Prefetch-Control': ['off'],
-      },
-    });
-  });
+  session.webRequest.onHeadersReceived(
+    { urls: ['http://*/*', 'https://*/*'] },
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [csp],
+          'X-Content-Type-Options': ['nosniff'],
+          'X-DNS-Prefetch-Control': ['off'],
+        },
+      });
+    },
+  );
 }
 
 /**
  * Validate that an IPC event originated from the top frame of the wallet
  * window loaded from the local app bundle. Rejects sub-frames/iframes (so a
- * malicious embedded frame cannot invoke signing channels) and any non-file:
- * origin. Returns false (not throws) so callers decide the error shape.
+ * malicious embedded frame cannot invoke signing channels) and unexpected
+ * documents. Returns a boolean so callers decide the error shape.
  */
 export function isTrustedSender(
-  event: { senderFrame: Electron.WebFrameMain | null },
+  event: { sender: Electron.WebContents; senderFrame: Electron.WebFrameMain | null },
   mainWindow: BrowserWindow | null,
 ): boolean {
   const frame = event.senderFrame;
   // Fail closed on a torn-down frame or a missing/destroyed window.
   if (!frame || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (event.sender !== mainWindow.webContents) return false;
   if (frame !== mainWindow.webContents.mainFrame) return false; // reject sub-frames
   let url: URL;
   try {
@@ -120,10 +121,10 @@ export function isTrustedSender(
   } catch {
     return false;
   }
-  if (url.protocol === 'file:') return true;
+  if (isAppDocument(frame.url, APP_URLS.wallet)) return true;
   // Development only: the Vite dev server renders over http, so accept its
-  // EXACT origin. Production is strictly file:-only.
-  const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
+  // EXACT origin. Packaged builds accept only the wallet entry point.
+  const devUrl = !app.isPackaged ? process.env['QRL_RENDERER_DEV_URL'] : undefined;
   if (devUrl) {
     try {
       return url.origin === new URL(devUrl).origin;
@@ -144,9 +145,9 @@ export function lockDownNavigation(app: Electron.App): void {
     // The wallet uses HTTPS/WebSockets. Limit WebRTC's direct UDP path;
     // TCP and proxy-mediated WebRTC remain residual channels.
     contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
-    // A file:// SPA with hash routing never legitimately navigates the top
+    // The app SPA with hash routing never legitimately navigates the top
     // document: route changes are hash-only and do not fire will-navigate, and
-    // the initial load goes through loadFile/loadURL (also not will-navigate).
+    // the initial load goes through loadURL (also not will-navigate).
     // So the renderer is never steered to new in-app content. But an external
     // link (the explorer, theqrl.org, a token's site) clicked as a plain
     // <a href> DOES fire will-navigate; hand an allowlisted external link to

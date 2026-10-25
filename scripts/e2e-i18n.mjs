@@ -1,6 +1,7 @@
 // Uses the release validation approach: real Electron, isolated Xvfb/profile,
 // Playwright for app-owned unlock and settings windows.
 import assert from 'node:assert/strict';
+import { electronTestArgs, waitForAppPage } from './electron-test-utils.mjs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -55,14 +56,19 @@ for (const language of ['de', 'zh-CN']) {
   try {
     app = await _electron.launch({
       executablePath: path.join(root, 'node_modules/electron/dist/electron'),
-      args: [root, `--lang=${language}`, `--user-data-dir=${path.join(profile, 'user-data')}`],
+      args: [
+        ...electronTestArgs(root, frontend),
+        `--lang=${language}`,
+        `--user-data-dir=${path.join(profile, 'user-data')}`,
+        '--host-resolver-rules=MAP * ~NOTFOUND',
+      ],
       cwd: root,
       env,
       timeout: 60000,
     });
     // Keep the native window probe offline.
+    const wallet = await waitForAppPage(app);
     await app.context().route(/^https?:/, (route) => route.abort());
-    const wallet = await app.firstWindow();
     await wallet.waitForFunction(() => Boolean(globalThis.window.qrlWallet));
     const startupMenu = await app.evaluate(({ Menu, app }) => ({
       labels: Menu.getApplicationMenu().items.flatMap(
@@ -105,7 +111,7 @@ for (const language of ['de', 'zh-CN']) {
         app
           .context()
           .pages()
-          .find((page) => page.url().includes('/unlock/')),
+          .find((page) => page.url().startsWith('app://unlock/')),
       'unlock window',
     );
     await unlock.getByPlaceholder(t('unlock.password')).waitFor();
@@ -137,7 +143,7 @@ for (const language of ['de', 'zh-CN']) {
         app
           .context()
           .pages()
-          .find((page) => page.url().includes('/settings/')),
+          .find((page) => page.url().startsWith('app://settings/')),
       'settings view',
     );
     await settings.getByRole('heading', { name: t('settings.title'), exact: true }).waitFor();

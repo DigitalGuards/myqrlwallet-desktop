@@ -227,8 +227,8 @@ export const baseConfig = [
   },
 
   {
-    // Only the three preload entry points may import Electron's ipcRenderer.
-    files: ['src/preload/index.ts', ...rendererPreloads],
+    // Only the explicit preload entry points may import Electron's ipcRenderer.
+    files: ['src/preload/index.ts', 'src/preload/storageMigration.ts', ...rendererPreloads],
     rules: { 'no-restricted-imports': ['error', cryptoImportGuard] },
   },
 

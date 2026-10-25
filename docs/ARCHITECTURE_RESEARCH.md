@@ -55,7 +55,7 @@ The renderer has `contextIsolation: true`, `nodeIntegration: false`, `sandbox: t
 
 **Framework: Electron (high confidence).** Rationale: preserves the audited qrypto.js signing path with no FFI around the cryptography; matches the actual (Electron) architecture of your north-star Railway Wallet; gives consistent Chromium CSP/sandbox behavior across OSes (Tauri's per-OS WebView - WKWebView/WebView2/WebKitGTK - makes CSP and rendering security non-uniform); and lets you reuse the existing React frontend and Node tooling directly. Tauri's genuine advantages (smaller binary, Rust memory safety, capability-by-default) do not outweigh the cardinal requirement of keeping the audited signer intact. *Threshold that would change this recommendation:* a credibly audited Rust ML-DSA-87 (e.g., an audited RustCrypto `ml-dsa`, or a Rust qrypto port for which theQRL commissions an audit). Until then, Electron.
 
-**Topology: bundled local application.** Load the UI from local files (`loadFile`) and bundle the frontend assets, signer and main-process RPC client. Wallet envelopes are stored locally. Message and typed-data signing still require the renderer's `assertNetworkReady` check of `qrl_chainId` and genesis over RPC; signing is refused while RPC is unavailable. Typed data with a domain chain ID also waits for a successful RPC lookup to compare it with the wallet chain, with a mismatch shown as a warning. Configurable RPC and Tor remain separate design proposals.
+**Topology: bundled local application.** Serve the bundled UI from separate privileged `app` origins and bundle the frontend assets, signer and main-process RPC client. Wallet envelopes are stored locally. Message and typed-data signing still require the renderer's `assertNetworkReady` check of `qrl_chainId` and genesis over RPC; signing is refused while RPC is unavailable. Typed data with a domain chain ID also waits for a successful RPC lookup to compare it with the wallet chain, with a mismatch shown as a warning. Configurable RPC and Tor remain separate design proposals.
 
 **Four processes, strict trust gradient (lowest → highest trust):**
 1. **Renderer (untrusted):** the reused `myqrlwallet-frontend` React app, with `sandbox: true`, `contextIsolation: true` and `nodeIntegration: false`. Shows a new account's recovery phrase once for backup; import forms read typed recovery phrases and hex seeds, and decrypt encrypted wallet files in the renderer or its worker. A compromised renderer during setup or import can recover that account.
@@ -85,6 +85,45 @@ The desktop wallet envelopes are encrypted on disk and ordinary unlock/signing d
 - **Supply chain & updates:** pin/lockfile + audit dependencies, package via electron-builder, **code-sign (Windows Authenticode) and notarize (macOS)**, PGP-sign release artifacts (as Railway does), ship signed auto-updates, and keep Electron/Chromium current to close the V8 patch gap.
 - Disable DevTools and the remote module in production builds. Keep the ASAR-only and integrity fuses enabled. Electron enforces embedded ASAR integrity on macOS and Windows; Linux runs modified JavaScript inside the ASAR, reproduced on Electron 44.9.3 with the release fuse hook.
 
+### Bundled origins and storage upgrade
+
+The `app` scheme is registered before readiness as standard, secure, fetch/CORS
+capable, streaming and code-cache capable. CSP bypass and service workers stay
+disabled. Separate wallet, unlock and settings origins isolate localStorage,
+BroadcastChannel and worker scope. The handler rejects ambiguous paths and
+uses realpath containment within each surface's directory, then attaches the
+existing CSP, nosniff and DNS-prefetch headers. Wallet root-absolute assets map
+to the wallet bundle. This is the move recommended by
+[Electron's security checklist](https://www.electronjs.org/docs/latest/tutorial/security#18-avoid-usage-of-the-file-protocol-and-prefer-usage-of-custom-protocols),
+and permits `GrantFileProtocolExtraPrivileges: false`.
+
+The one-time localStorage copy runs before the UI. A hidden inert page with its
+own preload reads the legacy file origin at the constant URL
+`file:///qrlwallet-storage-migration.html`, served from memory independently of
+the install path. It copies every localStorage entry with no key filter, keeping
+strings unchanged, including empty keys and values. Existing destination keys
+are never overwritten. A temporary channel accepts only its live main frame
+and expected phase. Verification checks that every legacy key exists and every
+key written by this run holds its legacy value. A storage flush precedes the
+serialized, atomic settings completion field `walletOriginMigrationV1`.
+1.4.5 settings remain valid. The source stays intact. Failures are non-fatal:
+startup continues on the new origin, completion stays unset and the next launch
+retries while preserving existing destination values. The helpers retain a
+30-second bound. Failure logs contain one fixed line without keys, values or
+error details. Completed copies are skipped.
+Electron 44 blocks file-origin localStorage when the file fuse is off. The
+legacy reader alone uses `webSecurity: false`, with sandboxing, context
+isolation, disabled Node integration and disabled insecure content retained.
+Its response adds a `default-src 'none'` policy and the request filter permits
+only its exact main-frame helper document. Main destroys this reader before
+creating the destination helper with `webSecurity: true`. The wallet, unlock
+and settings surfaces always retain `webSecurity: true`. This temporary
+compatibility exception has no frontend scripts or public bridge.
+
+The file handler denies every request after the helper closes. It permits only
+the helper's main-frame inert page during migration. Stored values are never
+logged. See [the implementation and tests](../SECURITY.md#one-time-wallet-storage-move).
+
 ### Maximizing reuse of the existing stack
 - **`myqrlwallet-frontend` (React):** reuse as the renderer UI. Desktop generation, envelope encryption, unlock and signing call the native bridges. Setup displays the recovery phrase, and import reads recovery material and decrypts encrypted wallet files in the renderer or its worker before main brokers the secrets to the signer.
 - **`myqrlwallet-backend` (RPC proxy):** fold its logic into the bundled main-process local proxy. This is exactly the substrate for your "configurable RPC + bundled proxy + optional Tor" vision - the desktop app becomes its own backend.
@@ -104,7 +143,7 @@ updates and hardware-backed storage. The implemented boundaries are described
 above; inclusion in a stage does not establish that a feature has shipped.
 
 **Stage 1 - v1 secure foundation (ship first):**
-1. Electron app, monorepo with `desktop/` reusing `myqrlwallet-frontend`; UI loaded from local bundle (`loadFile`).
+1. Electron app, monorepo with `desktop/` reusing `myqrlwallet-frontend`; UI served from local bundles at `app://wallet`, `app://unlock` and `app://settings`.
 2. Process separation: the signer holds decrypted keys for ordinary unlock and signing. The sandboxed renderer and main handle setup/import recovery material as described above.
 3. Seed at rest: Argon2id + AES-256-GCM. A password or saved KEK opens a signer session; trusted confirmation gates each signature. KEK recovery permits envelope decryption without the password.
 4. OS keychain as defense-in-depth: macOS Keychain bound to Designated Requirement (do this properly in v1 - high-value, low-cost); Windows interim per-user DPAPI wrap of the KEK; Linux file + `0600` and clear docs.

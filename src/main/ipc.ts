@@ -2,7 +2,7 @@
  * IPC handler registration: the renderer's entire reachable surface.
  *
  * Every handler enforces, in order:
- *   1. sender validation (top frame of the wallet window, file: origin), then
+ *   1. sender validation (live wallet web contents and main frame at its app entry point), then
  *   2. zod parse of the argument (reject malformed/oversized/extra-keyed), then
  *   3. the action, with key material confined to the signer.
  *
