@@ -66,6 +66,74 @@ async function tmpSettingsPath(): Promise<string> {
   return path.join(dir, 'settings.json');
 }
 
+const preferences146 = {
+  v: 1,
+  language: 'ru',
+  autolockMs: 900_000,
+  biometricUnlock: false,
+  legacyNoticeAckV1: true,
+  walletOriginMigrationV1: true,
+} as const;
+const settings146 = { ...preferences146, unlockPhrase: 'Public blue river' };
+
+test('a complete 1.4.6 file retains every preference and discards the legacy value on read', async () => {
+  const file = await tmpSettingsPath();
+  await writeFile(file, JSON.stringify(settings146));
+  assert.deepEqual(await readSettingsFile(file), preferences146);
+  assert.deepEqual(
+    JSON.parse(await readFile(file, 'utf8')),
+    settings146,
+    'reads leave disk intact',
+  );
+
+  const updated = await updateSettingsFile(file, {});
+  assert.deepEqual(updated, preferences146);
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), preferences146);
+  assert.deepEqual(await readSettingsFile(file), preferences146);
+});
+
+test('an update to a 1.4.6 file drops the legacy field and preserves all untouched preferences', async () => {
+  const file = await tmpSettingsPath();
+  await writeFile(file, JSON.stringify(settings146));
+  const expected = { ...preferences146, language: 'es' };
+  assert.deepEqual(await updateSettingsFile(file, { language: 'es' }), expected);
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), expected);
+  assert.deepEqual(await readSettingsFile(file), expected);
+});
+
+test('a complete 1.4.5 file reads without the legacy field or storage migration flag', async () => {
+  const file = await tmpSettingsPath();
+  const settings145 = {
+    v: 1,
+    language: 'de',
+    autolockMs: 120_000,
+    biometricUnlock: false,
+    legacyNoticeAckV1: true,
+  };
+  await writeFile(file, JSON.stringify(settings145));
+  assert.deepEqual(await readSettingsFile(file), settings145);
+});
+
+test('a truly unknown key in a 1.4.6 file still self-heals to defaults', async () => {
+  const file = await tmpSettingsPath();
+  await writeFile(file, JSON.stringify({ ...settings146, unknown: true }));
+  assert.deepEqual(await readSettingsFile(file), { v: 1 });
+  assert.deepEqual(await updateSettingsFile(file, { language: 'en' }), { v: 1, language: 'en' });
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { v: 1, language: 'en' });
+});
+
+test('the ignored legacy field retains its string type and 64 UTF-16-unit bound', async () => {
+  const file = await tmpSettingsPath();
+  for (const unlockPhrase of ['W'.repeat(64), '𐐀'.repeat(32)]) {
+    await writeFile(file, JSON.stringify({ ...preferences146, unlockPhrase }));
+    assert.deepEqual(await readSettingsFile(file), preferences146);
+  }
+  for (const unlockPhrase of ['W'.repeat(65), '𐐀'.repeat(33), 42, null]) {
+    await writeFile(file, JSON.stringify({ ...preferences146, unlockPhrase }));
+    assert.deepEqual(await readSettingsFile(file), { v: 1 });
+  }
+});
+
 test('write/read round-trip preserves the settings envelope', async () => {
   const file = await tmpSettingsPath();
   await writeSettingsFile(file, { v: 1, autolockMs: 900_000, biometricUnlock: false });

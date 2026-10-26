@@ -172,14 +172,8 @@ The supported flows have the following process boundaries:
   collects the password; it shows an account picker when more than
   one wallet exists. Password unlock (Argon2id KEK), macOS Touch-ID / keychain
   unlock, and a sliding auto-lock that zeroizes and notifies the renderer.
-  The genuine input stays isolated from the wallet renderer and shows your
-  personal phrase above the password field. Check for that phrase before typing.
-  Main generates and saves it on first use. View it in native Settings, pick a
-  new random phrase, or enter your own. It is separate from your recovery phrase.
-  The wallet renderer cannot read it, so this helps you recognize a fake prompt
-  drawn by compromised code in the wallet window. It only helps users who look
-  for it. Malware on the computer that can read the settings file or the screen
-  can copy it; the phrase provides no protection against that malware.
+  The genuine password input stays isolated from the wallet renderer. Main
+  hides the wallet window while locked.
   See the [unlock cues and phishing limits](THREAT_MODEL.md#b-renderer-remote-code-execution-renderer-rce).
 - **Remove a wallet:** deletes one account's encrypted seed and clears its
   keychain entry, ONLY after a trusted main-drawn confirmation that names the
@@ -421,10 +415,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.6, use frontend main revision
+For Desktop 1.4.7, use frontend main revision
 `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
 CI pins that same revision for this release; it is unchanged since 1.4.5. See
-the [1.4.6 release notes](CHANGELOG.md#146---2026-10-25).
+the [1.4.7 release notes](CHANGELOG.md#147---2026-10-26).
 
 ## Packaging and signing
 

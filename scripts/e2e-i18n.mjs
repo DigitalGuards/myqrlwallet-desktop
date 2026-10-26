@@ -180,7 +180,15 @@ for (const language of ['de', 'zh-CN']) {
     await wallet.evaluate((code) => globalThis.window.qrlWallet.setLanguage(code), language);
     await settings.getByRole('heading', { name: t('settings.title'), exact: true }).waitFor();
     result.checks.push('external settings error matches English output without an added label');
-    await settings.getByRole('button', { name: t('settings.back'), exact: true }).click();
+    // Closing the view can finish before Playwright settles the back click.
+    const closed = settings.isClosed() ? Promise.resolve() : settings.waitForEvent('close');
+    await settings
+      .getByRole('button', { name: t('settings.back'), exact: true })
+      .click()
+      .catch((error) => {
+        if (!settings.isClosed()) throw error;
+      });
+    await closed;
     result.checks.push('settings save, live status translation, no clipped controls at 720 x 560');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 800));
 

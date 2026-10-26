@@ -13,12 +13,10 @@ import '@fontsource-variable/jetbrains-mono/index.css';
 import './settings.css';
 import logoUrl from '../unlock/logo.png';
 import { groupQrlAddress } from '../shared/address';
-import { UnlockPhraseSchema, UNLOCK_PHRASE_MAX_LENGTH } from '../shared/schemas';
 
 type SettingsAction = 'reregister-protocol' | 'open-logs';
 
 interface DesktopSettings {
-  unlockPhrase: string;
   autolockMs: number;
   biometricUnlock: boolean;
 }
@@ -43,7 +41,6 @@ interface SettingsBridge extends NativeLanguageBridge {
     capabilities: SettingsCapabilities;
   }>;
   set(patch: Partial<DesktopSettings>): Promise<{ settings: DesktopSettings }>;
-  randomizeUnlockPhrase(): Promise<string>;
   action(action: SettingsAction): Promise<{ ok: boolean; error?: string; errorKey?: MessageKey }>;
   removeWallet(): Promise<{ activeAddress: string | null }>;
 }
@@ -75,8 +72,6 @@ function SettingsApp() {
   const [busyAction, setBusyAction] = useState<SettingsAction | null>(null);
   const [removing, setRemoving] = useState(false);
   const [removeStatus, setRemoveStatus] = useState<ActionState | null>(null);
-  const [phraseDraft, setPhraseDraft] = useState('');
-  const [phraseStatus, setPhraseStatus] = useState<ActionState | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -132,28 +127,6 @@ function SettingsApp() {
       setSaveStatus({ ok: true, message: 'settings.saved' });
     } catch {
       setSaveStatus({ ok: false, message: 'settings.saveFailed' });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function savePhrase(random: boolean) {
-    if (saving) return;
-    if (!random && !UnlockPhraseSchema.safeParse(phraseDraft).success) {
-      setPhraseStatus({ ok: false, message: 'settings.phraseRules' });
-      return;
-    }
-    setSaving(true);
-    setPhraseStatus(null);
-    try {
-      const unlockPhrase = random
-        ? await window.settingsBridge.randomizeUnlockPhrase()
-        : (await window.settingsBridge.set({ unlockPhrase: phraseDraft })).settings.unlockPhrase;
-      setSettings((current) => current && { ...current, unlockPhrase });
-      setPhraseDraft('');
-      setPhraseStatus({ ok: true, message: 'settings.saved' });
-    } catch {
-      setPhraseStatus({ ok: false, message: 'settings.saveFailed' });
     } finally {
       setSaving(false);
     }
@@ -239,55 +212,6 @@ function SettingsApp() {
       ) : (
         <div className="settings-scroll">
           <div className="settings-body">
-            <section className="settings-card" aria-label={t('unlock.phraseLabel')}>
-              <span className="settings-label">{t('unlock.phraseLabel')}</span>
-              <p className="settings-phrase" dir="auto">
-                {settings.unlockPhrase}
-              </p>
-              <p className="settings-help">{t('settings.phraseHelp')}</p>
-              <button
-                className="settings-button"
-                type="button"
-                disabled={saving}
-                onClick={() => void savePhrase(true)}
-              >
-                {t('settings.phraseRandom')}
-              </button>
-              <form
-                className="settings-phrase-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void savePhrase(false);
-                }}
-              >
-                <label className="settings-label" htmlFor="personal-phrase">
-                  {t('settings.phraseCustom')}
-                </label>
-                <input
-                  id="personal-phrase"
-                  className="settings-phrase-input"
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  maxLength={UNLOCK_PHRASE_MAX_LENGTH}
-                  aria-describedby="personal-phrase-rules"
-                  value={phraseDraft}
-                  disabled={saving}
-                  onChange={(event) => setPhraseDraft(event.target.value)}
-                />
-                <p id="personal-phrase-rules" className="settings-help">
-                  {t('settings.phraseRules')}
-                </p>
-                <button className="settings-button" type="submit" disabled={saving || !phraseDraft}>
-                  {t('settings.phraseSave')}
-                </button>
-              </form>
-              {phraseStatus && (
-                <p role="status" className={`settings-status ${phraseStatus.ok ? 'ok' : 'error'}`}>
-                  {t(phraseStatus.message)}
-                </p>
-              )}
-            </section>
             <section className="settings-card">
               <div className="settings-row">
                 <span className="settings-label">{t('settings.autolock')}</span>
