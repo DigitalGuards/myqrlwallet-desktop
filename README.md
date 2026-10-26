@@ -415,10 +415,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.6, use frontend main revision
+For Desktop 1.4.7, use frontend main revision
 `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
 CI pins that same revision for this release; it is unchanged since 1.4.5. See
-the [1.4.6 release notes](CHANGELOG.md#146---2026-10-25).
+the [1.4.7 release notes](CHANGELOG.md#147---2026-10-26).
 
 ## Packaging and signing
 
