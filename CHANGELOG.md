@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## Unreleased
+## 1.4.7 - 2026-10-26
 
 ### Removed
 
