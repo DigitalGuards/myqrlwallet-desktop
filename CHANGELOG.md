@@ -2,6 +2,18 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.8 - 2026-10-28
+
+### Security
+
+- Upgrade Electron from 44.9.3 to 44.10.0 in the lockfile, keeping the
+  manifest's caret range. It bundles Node 24.22.1, which carries the October
+  2026 Node.js security fixes that 1.4.3 to 1.4.7 waited for, and Chromium
+  152.0.7977.169. The same release hardens the handling of malformed or
+  inconsistent asar archives and emits a utility process's exit event when
+  the app quits while that process is still starting. See the
+  [44.10.0 release notes](https://github.com/electron/electron/releases/tag/v44.10.0).
+
 ## 1.4.7 - 2026-10-26
 
 ### Removed

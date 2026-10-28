@@ -1,7 +1,7 @@
 # MyQRLWallet Desktop: Post-Quantum Architecture Decision Document
 
 This document records the architecture rationale and staged proposals. The
-Desktop 1.4.7 boundaries below reflect the implementation; later-stage features
+Desktop 1.4.8 boundaries below reflect the implementation; later-stage features
 remain proposals. See [SECURITY.md](../SECURITY.md) and
 [THREAT_MODEL.md](../THREAT_MODEL.md) for the current controls and limits.
 

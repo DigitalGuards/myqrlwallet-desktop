@@ -20,7 +20,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 44 (locked to 44.9.3; bundled Node 24.22.0 + Chromium 152.0.7977.167) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
+- **Stack:** Electron 44 (locked to 44.10.0; bundled Node 24.22.1 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded at `app://wallet/index.html`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -108,7 +108,7 @@ decision pending. See [the layout budget](THREAT_MODEL.md#transaction-pages-and-
   or later; Windows ia32 and Linux armv7l are unsupported.
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
   `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
-  currently 24.22.0; this floor is only for building, testing, and packaging locally.)
+  currently 24.22.1; this floor is only for building, testing, and packaging locally.)
   `@types/node` stays at `^22` to enforce that development API floor.
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
@@ -415,10 +415,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.7, use frontend main revision
+For Desktop 1.4.8, use frontend main revision
 `1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
 CI pins that same revision for this release; it is unchanged since 1.4.5. See
-the [1.4.7 release notes](CHANGELOG.md#147---2026-10-26).
+the [1.4.8 release notes](CHANGELOG.md#148---2026-10-28).
 
 ## Packaging and signing
 
