@@ -7,7 +7,7 @@ the cost of accessing a saved KEK. The password-derived Argon2id KEK protects
 stolen wallet envelopes while the attacker lacks that KEK. Whoever obtains
 the KEK can decrypt both recovery envelopes without the password.
 
-Runtime baseline: Electron 44, locked to 44.9.3 (Chromium 152.0.7977.167, Node 24.22.0).
+Runtime baseline: Electron 44, locked to 44.10.0 (Chromium 152.0.7977.169, Node 24.22.1).
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) covers the Electron 43/44
 changes against these boundaries.
 The [1.4.3 security notes](CHANGELOG.md#143---2026-10-22) distinguish the
