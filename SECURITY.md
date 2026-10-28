@@ -6,7 +6,7 @@ limits, and how to report a vulnerability. The design rationale is in
 [`docs/ARCHITECTURE_RESEARCH.md`](docs/ARCHITECTURE_RESEARCH.md); the honest
 limits of each control are in [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
-The runtime is Electron 44.9.3, Chromium 152.0.7977.167 and Node 24.22.0.
+The runtime is Electron 44.10.0, Chromium 152.0.7977.169 and Node 24.22.1.
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) records the Electron 43/44
 compatibility checks and the scope of local validation.
 
