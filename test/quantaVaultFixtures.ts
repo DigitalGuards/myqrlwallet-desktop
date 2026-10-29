@@ -1,15 +1,28 @@
 import typed from './fixtures/quantaVault/typed-data-v2.json';
 import approvals from './fixtures/quantaVault/vault-approvals.json';
 import calls from './fixtures/quantaVault/calldata.json';
+import review from './fixtures/quantaVault/review-cases.json';
+import { isRecord } from '../src/shared/guards';
 import { TypedDataPayloadSchema } from '../src/shared/schemas';
 
 export const vaultTestAddress = `Q${'ab'.repeat(64)}`;
 export const vaultSchemeVectors = [...typed.schemeVectors, ...approvals.schemeVectors];
+export const vaultReviewVectors = review.cases;
+export const vaultReviewTime = BigInt(review.reviewTime);
 
 export function vaultPayload(label = 'empty-call') {
-  const fixture = vaultSchemeVectors.find((vector) => vector.label === label);
+  const reviewCase = vaultReviewVectors.find((vector) => vector.label === label);
+  const fixture = vaultSchemeVectors.find(
+    (vector) => vector.label === (reviewCase?.baseLabel ?? label),
+  );
   if (!fixture) throw new Error(`Missing vault fixture: ${label}`);
-  return TypedDataPayloadSchema.parse(structuredClone(fixture.payload));
+  const payload = TypedDataPayloadSchema.parse(structuredClone(fixture.payload));
+  if (reviewCase) {
+    const tx = payload.primaryType === 'VaultApproval' ? payload.message['tx'] : payload.message;
+    if (!isRecord(tx)) throw new Error('Missing vault transaction');
+    Object.assign(tx, reviewCase.tx);
+  }
+  return payload;
 }
 
 export function vaultCalldata(method: string) {

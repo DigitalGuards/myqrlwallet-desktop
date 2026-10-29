@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { QRL_ZERO_ADDRESS } from '../src/shared/address';
 import { keccak_256, shake256 } from '@noble/hashes/sha3.js';
 import { computeTypedDataDigest, typeHash, typedDataSchemeTag } from '../src/signer/typedData';
 import { encodeType, typedDataSchemeVersion } from '../src/shared/typedData';
@@ -25,6 +26,7 @@ import {
   vaultCalldata,
   vaultPayload,
   vaultSchemeVectors,
+  vaultReviewVectors,
   vaultTestAddress,
   vaultWord,
 } from './quantaVaultFixtures';
@@ -38,6 +40,15 @@ import timelockVault from './fixtures/quantaVault/timelock-vault.json';
 
 const hex = (value: Uint8Array): string => `0x${Buffer.from(value).toString('hex')}`;
 const bytes = (value: string): Buffer => Buffer.from(value.slice(2), 'hex');
+function reviewCall(label: string) {
+  const request = recognizeVaultRequest(vaultPayload(label));
+  assert.ok(request && request.kind !== 'VaultMessage');
+  return decodeVaultCall(
+    request.tx,
+    request.chainId,
+    request.kind === 'VaultApproval' ? request.outerVault : request.vault,
+  );
+}
 function normalized(value: VaultAbiValue): unknown {
   if (typeof value === 'bigint') return value.toString();
   return typeof value === 'string' ? value : value.map(normalized);
@@ -77,6 +88,93 @@ for (const vector of vaultSchemeVectors) {
     );
   });
 }
+
+for (const vector of vaultReviewVectors) {
+  test(`vault review digest and policy parity: ${vector.label}`, () => {
+    const payload = vaultPayload(vector.label);
+    assert.equal(recognizeVaultRequest(payload)?.kind, payload.primaryType);
+    assert.equal(hex(computeTypedDataDigest(payload)), vector.digestHex);
+    assert.equal(vaultApprovalBlocked(payload), false);
+  });
+}
+
+test('zero batch targets resolve to the executing contract for both approval kinds and operations', () => {
+  for (const kind of ['tx', 'approval']) {
+    for (const operation of ['call', 'delegatecall']) {
+      const label = `${kind}-zero-target-${operation}`;
+      const request = recognizeVaultRequest(vaultPayload(label));
+      assert.ok(request && request.kind !== 'VaultMessage');
+      const executingVault = request.kind === 'VaultApproval' ? request.outerVault : request.vault;
+      const children = reviewCall(label).children;
+      assert.equal(children.length, 1);
+      assert.equal(children[0]?.to, operation === 'call' ? request.tx.to : executingVault);
+      assert.equal(children[0].batchTarget, QRL_ZERO_ADDRESS);
+      assert.equal(children[0].method, 'changeThreshold');
+      assert.deepEqual(children[0].args, [{ name: '_threshold', type: 'uint256', value: 2n }]);
+      assert.deepEqual(children[0].warnings, ['securityChange']);
+    }
+  }
+});
+
+test('scheduled updateDelay, revoked zero role, unlimited approve and invalid operation match review vectors', () => {
+  const scheduled = reviewCall('scheduled-update-delay');
+  assert.equal(scheduled.method, 'schedule');
+  assert.equal(scheduled.children[0]?.method, 'updateDelay');
+  assert.deepEqual(scheduled.children[0].args, [{ name: 'newDelay', type: 'uint256', value: 0n }]);
+  assert.deepEqual(scheduled.children[0].warnings, ['securityChange']);
+  assert.deepEqual(reviewCall('revoke-zero-role').warnings, ['securityChange']);
+  const unlimited = reviewCall('unlimited-approve');
+  assert.equal(unlimited.method, 'approve');
+  assert.deepEqual(unlimited.warnings, ['unlimitedAllowance']);
+  assert.equal(unlimited.args[0]?.value, `Q${'66'.repeat(64)}`);
+  assert.equal(unlimited.args[1]?.value, VAULT_MAX_UINT256);
+  assert.deepEqual(
+    decodeVaultCall(
+      call(replaceWord(vaultCalldata('approve').data, 1, VAULT_MAX_UINT256 - 1n)),
+      1n,
+      vaultTestAddress,
+    ).warnings,
+    [],
+  );
+  const invalid = reviewCall('invalid-operation');
+  assert.equal(invalid.status, 'decoded');
+  assert.equal(invalid.method, 'approve');
+  assert.equal(invalid.operation, 2n);
+  assert.deepEqual(invalid.warnings, ['invalidOperation']);
+  assert.equal(invalid.args[1]?.value, 1234500n);
+});
+
+test('operation errors stay distinct on every calldata path and repeated warnings are deduplicated', () => {
+  for (const [data, status, warnings] of [
+    ['0x', 'empty', ['invalidOperation']],
+    ['0xdeadbeef', 'unknown', ['invalidOperation', 'unknownCalldata']],
+    [vaultCalldata('approve').data, 'decoded', ['invalidOperation']],
+    [
+      vaultCalldata('approve').data.slice(0, -2),
+      'invalid',
+      ['invalidOperation', 'invalidCalldata'],
+    ],
+  ] as const) {
+    const decoded = decodeVaultCall(call(data, 2n), 1n, vaultTestAddress);
+    assert.equal(decoded.status, status);
+    assert.deepEqual(decoded.warnings, warnings);
+  }
+  assert.deepEqual(
+    decodeVaultCall(call(vaultCalldata('simulateAndRevert').data, 1n), 1n, vaultTestAddress)
+      .warnings,
+    ['delegateCall'],
+  );
+  assert.deepEqual(
+    decodeVaultCall(
+      call(vaultCalldata('simulateAndRevert').data, 1n),
+      1n,
+      vaultTestAddress,
+      QUANTA_VAULT_CONFIG,
+      1,
+    ).warnings,
+    ['delegateCall', 'depthLimit'],
+  );
+});
 
 test('nested vault opaque message retains identity and digest', () => {
   const payload = TypedDataPayloadSchema.parse(nested.messagePayload);
@@ -133,7 +231,7 @@ test('every precomputed selector and role matches its signature and fixture', ()
 
 for (const vector of calldataVectors) {
   test(`calldata argument parity: ${vector.method}`, () => {
-    const decoded = decodeVaultCall(call(vector.data), 1n);
+    const decoded = decodeVaultCall(call(vector.data), 1n, vaultTestAddress);
     assert.equal(decoded.status, 'decoded');
     assert.equal(decoded.method, vector.method);
     assert.deepEqual(
@@ -200,7 +298,7 @@ for (const vector of timelock.batches) {
 }
 test('scheduled ownership handoffs expand', () => {
   for (const method of ['schedule', 'execute'] as const) {
-    const decoded = decodeVaultCall(call(timelockVault.accept[method]), 1n);
+    const decoded = decodeVaultCall(call(timelockVault.accept[method]), 1n, vaultTestAddress);
     assert.equal(decoded.children.length, 1);
     assert.equal(decoded.children[0]?.to, timelockVault.registrar);
     assert.equal(decoded.children[0].method, 'acceptOwnership');
@@ -314,18 +412,25 @@ test('security, opaque approvals, module execution, simulation and open roles wa
     'grantRole',
     'revokeRole',
     'renounceRole',
+    'updateDelay',
   ])
     assert.ok(
-      decodeVaultCall(call(vaultCalldata(method).data), 1n).warnings.includes('securityChange'),
+      decodeVaultCall(call(vaultCalldata(method).data), 1n, vaultTestAddress).warnings.includes(
+        'securityChange',
+      ),
     );
   for (const method of ['approveHash', 'signMessage'])
     assert.ok(
-      decodeVaultCall(call(vaultCalldata(method).data), 1n).warnings.includes('opaqueApproval'),
+      decodeVaultCall(call(vaultCalldata(method).data), 1n, vaultTestAddress).warnings.includes(
+        'opaqueApproval',
+      ),
     );
   assert.ok(
-    decodeVaultCall(call(vaultCalldata('simulateAndRevert').data), 1n).warnings.includes(
-      'delegateCall',
-    ),
+    decodeVaultCall(
+      call(vaultCalldata('simulateAndRevert').data),
+      1n,
+      vaultTestAddress,
+    ).warnings.includes('delegateCall'),
   );
   for (const method of [
     'execTransaction',
@@ -333,40 +438,50 @@ test('security, opaque approvals, module execution, simulation and open roles wa
     'execTransactionFromModuleReturnData',
   ])
     assert.ok(
-      decodeVaultCall(call(vaultCalldata(method).data), 1n).children[0]?.warnings.includes(
-        'delegateCall',
-      ),
+      decodeVaultCall(
+        call(vaultCalldata(method).data),
+        1n,
+        vaultTestAddress,
+      ).children[0]?.warnings.includes('delegateCall'),
     );
   for (const method of ['grantRole', 'revokeRole', 'renounceRole'])
-    assert.ok(
-      decodeVaultCall(call(replaceWord(vaultCalldata(method).data, 1, 0n)), 1n).warnings.includes(
-        'openRole',
-      ),
+    assert.deepEqual(
+      decodeVaultCall(call(replaceWord(vaultCalldata(method).data, 1, 0n)), 1n, vaultTestAddress)
+        .warnings,
+      method === 'grantRole' ? ['securityChange', 'openRole'] : ['securityChange'],
     );
 });
 
 test('only a pinned chain-specific call-only target suppresses the outer DelegateCall warning', () => {
   const data = vaultCalldata('multiSend').data;
   const config = { multiSendCallOnly: { '1': [vaultTestAddress] } };
-  assert.ok(decodeVaultCall(call(data, 1n), 1n).warnings.includes('delegateCall'));
-  const pinned = decodeVaultCall(call(data, 1n), 1n, config);
+  assert.ok(
+    decodeVaultCall(call(data, 1n), 1n, vaultTestAddress).warnings.includes('delegateCall'),
+  );
+  const pinned = decodeVaultCall(call(data, 1n), 1n, vaultTestAddress, config);
   assert.equal(pinned.warnings.includes('delegateCall'), false);
   assert.ok(pinned.children[1]?.warnings.includes('delegateCall'));
   for (const decoded of [
-    decodeVaultCall(call(data, 1n), 2n, config),
-    decodeVaultCall(call(data, 1n, nested.outer), 1n, config),
-    decodeVaultCall(call(vaultCalldata('signMessage').data, 1n), 1n, config),
-    decodeVaultCall(call(data, 1n), 1n, config, 1),
+    decodeVaultCall(call(data, 1n), 2n, vaultTestAddress, config),
+    decodeVaultCall(call(data, 1n, nested.outer), 1n, vaultTestAddress, config),
+    decodeVaultCall(call(vaultCalldata('signMessage').data, 1n), 1n, vaultTestAddress, config),
+    decodeVaultCall(call(data, 1n), 1n, vaultTestAddress, config, 1),
   ])
     assert.ok(decoded.warnings.includes('delegateCall'));
 });
 
 test('unknown bytes and depth limits retain their bytes and warnings', () => {
-  const unknown = decodeVaultCall(call('0xdeadbeef1234', 1n), 1n);
+  const unknown = decodeVaultCall(call('0xdeadbeef1234', 1n), 1n, vaultTestAddress);
   assert.equal(unknown.status, 'unknown');
   assert.equal(unknown.data, '0xdeadbeef1234');
   assert.deepEqual(unknown.warnings, ['delegateCall', 'unknownCalldata']);
-  const decoded = decodeVaultCall(call(vaultCalldata('schedule').data), 1n, QUANTA_VAULT_CONFIG, 1);
+  const decoded = decodeVaultCall(
+    call(vaultCalldata('schedule').data),
+    1n,
+    vaultTestAddress,
+    QUANTA_VAULT_CONFIG,
+    1,
+  );
   assert.deepEqual(decoded.children, []);
   assert.ok(decoded.warnings.includes('depthLimit'));
   assert.equal(
@@ -377,6 +492,7 @@ test('unknown bytes and depth limits retain their bytes and warnings', () => {
     decodeVaultCall(
       call(vaultCalldata('multiSend').data),
       1n,
+      vaultTestAddress,
       QUANTA_VAULT_CONFIG,
       1,
     ).warnings.includes('delegateCall'),
@@ -394,7 +510,7 @@ test('malformed QRVM ABI fails closed without partial decoding', () => {
     replaceWord(data, 1, 1n << 511n),
     replaceWord(data, 1, 63n),
   ]) {
-    const decoded = decodeVaultCall(call(malformed), 1n);
+    const decoded = decodeVaultCall(call(malformed), 1n, vaultTestAddress);
     assert.equal(decoded.status, 'invalid');
     assert.equal(decoded.data, malformed);
     assert.deepEqual(decoded.args, []);
@@ -406,12 +522,15 @@ test('malformed QRVM ABI fails closed without partial decoding', () => {
     replaceWord(vaultCalldata('execTransactionFromModule').data, 3, 256n),
     replaceWord(vaultCalldata('cancel').data, 0, 1n),
   ])
-    assert.equal(decodeVaultCall(call(malformed), 1n).status, 'invalid');
+    assert.equal(decodeVaultCall(call(malformed), 1n, vaultTestAddress).status, 'invalid');
   const unequal = timelock.batches.find((entry) => entry.label === 'unequal-hash-inputs');
   assert.ok(unequal);
   assert.equal(
-    decodeVaultCall(call(vaultCalldata('executeBatch').selector + unequal.encoding.slice(2)), 1n)
-      .status,
+    decodeVaultCall(
+      call(vaultCalldata('executeBatch').selector + unequal.encoding.slice(2)),
+      1n,
+      vaultTestAddress,
+    ).status,
     'invalid',
   );
   for (let size = 1; size < 193; size++)

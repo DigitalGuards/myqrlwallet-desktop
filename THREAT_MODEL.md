@@ -439,22 +439,43 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   address, amount, operation, selector, date, role or batch entry, uses a fixed
   `Vault` label and the dApp U+200E/pipe continuation style. Only static labels
   and warnings are trusted text. No RPC lookup, QNS name or renderer-supplied
-  token metadata contributes to this block; tokens use full addresses and
-  base units. A trusted note states that decoding assumes a genuine QuantaVault
+  token metadata contributes to this block. All decoded addresses use full
+  QIP-55 checksum case through the shared public-address helper; ABI decoding
+  retains canonical lowercase addresses for protocol parity. Amounts use base
+  units. The approve and transferFrom selectors identify either a QRC-20 amount
+  or an NFT token ID. A trusted note states that decoding assumes a genuine QuantaVault
   at verifyingContract, which main cannot verify.
   The decoder uses precomputed selectors, 64-byte QRVM words and complete
   canonical ABI validation. It explains vault administration, module execution,
-  simulation, opaque approvals, QRC-20 calls, ownership and timelocks, expanding
-  one level of enclosed calls. Deeper calls retain bytes and a warning. It names
-  both vaults for VaultApproval, flags DelegateCall and opaque 64-byte messages,
-  and shows nonce and validUntil with date-range, maximum and 30-day warnings.
-  Each batch entry stays together on one page. Decoded and raw rows share the
-  existing 30-line and 10-page budgets. If the combined review exceeds ten pages,
-  or an entire entry cannot fit on one page, decoded data collapses to one
-  explicit entry-count/DelegateCall-count row; all static warnings remain.
-  Counts cover the expanded entry level. Raw message rows retain their order,
-  complete row boundaries and existing bounded value previews. If that fallback
-  also exceeds the cap, preparation fails before any dialog opens.
+  simulation, opaque approvals, token calls, ownership and timelocks, expanding
+  one level of enclosed calls. Unknown and deeper calldata warnings explain the
+  first-byte preview and require full calldata verification in the QuantaVault
+  app before approval. Single-child and batch arguments represented by expanded
+  entries appear once. Zero-address MultiSend destinations show the effective
+  executing contract and a note about the original zero target. DelegateCall
+  uses verifyingContract for VaultTx and the outer vault for VaultApproval.
+  The block names both vaults for VaultApproval and flags DelegateCall, opaque
+  64-byte messages, security changes including updateDelay, grantRole to the
+  zero address, invalid operations separately from invalid calldata, and
+  maximum QRC-20 allowances with the token-standard qualification. It shows
+  nonce and validUntil with date-range, maximum, 30-day and already-expired
+  warnings. Expiry uses the device clock and explains that the vault rejects an
+  expired request. A nonzero txGas warning stays with its decoded row: a failed
+  inner call can complete and spend the nonce, and anyone executing can force
+  that failure when txGas is below what the call needs. These warnings preserve
+  approval availability and the refund refusal below.
+  Each child entry stays together on one page. Decoded and raw rows share the
+  existing 30-line and 10-page budgets and the same bounded byte-preview helper.
+  If the combined review exceeds ten pages, or an entire entry cannot fit on
+  one page, only child entry groups collapse to one explicit entry-count and
+  child-DelegateCall-count row. All top-level rows and every warning remain,
+  including approval kind, vault identities, destination, value, operation,
+  method, nonce, validUntil and txGas. The top-level operation has its own row.
+  Requests without children have no entry count. The reduced view is built
+  only after pagination overflows; already-generated raw rows are reused. Raw
+  message rows retain their order, complete row boundaries and bounded value
+  previews. If the reduced review also exceeds the cap, preparation fails
+  before any dialog opens.
   Vault pages therefore keep the typed-data native envelope.
   `test:native:confirm -- --vault` shows every line and both buttons of the vault
   corpus on Linux GTK 3 under Xvfb at 1024x768 and 1280x720, DejaVu Sans 8 to

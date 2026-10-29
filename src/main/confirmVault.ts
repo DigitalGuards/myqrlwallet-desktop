@@ -1,8 +1,10 @@
 /** Payload-only QuantaVault review. Every value row is dApp-sourced by the caller. */
 import { groupQrlAddress } from '../shared/address';
+import { toChecksumQrlAddress } from '../shared/addressCase';
 import { hasVaultRefund, recognizeVaultRequest, VAULT_MAX_UINT256 } from '../shared/quantaVault';
 import {
   decodeVaultCall,
+  VAULT_BATCH_METHODS,
   vaultRoleLabel,
   type DecodedVaultCall,
   type VaultAbiValue,
@@ -14,8 +16,8 @@ export type VaultReviewRow = { label: string; value: string } | { warning: strin
 export interface VaultReview {
   /** A batch entry is one indivisible group. Other rows can page individually. */
   groups: VaultReviewRow[][];
-  /** One explicit count row, retaining every trusted warning. */
-  collapsed: VaultReviewRow[][];
+  /** Built only after overflow; preserves top-level rows and every warning. */
+  collapse?: () => VaultReviewRow[][];
 }
 
 interface VaultFormat {
@@ -30,11 +32,21 @@ const WARNINGS: Record<VaultCallWarning, string> = {
   securityChange: 'WARNING: This call changes ownership, roles or vault security settings.',
   opaqueApproval:
     'WARNING: Opaque digest/value. Its meaning cannot be verified; it may authorize another action.',
-  openRole: 'WARNING: The zero address can open a timelock role to everyone.',
-  depthLimit: 'WARNING: Deeper calls are unexpanded. Review their bytes.',
-  unknownCalldata: 'WARNING: Unknown calldata. Review the raw bytes.',
+  openRole: 'WARNING: Granting this role to the zero address opens it to everyone.',
+  depthLimit:
+    'WARNING: Deeper calls are unexpanded. This window shows only the first bytes. Verify the full calldata in the QuantaVault app before approving.',
+  unknownCalldata:
+    'WARNING: Unknown calldata. This window shows only the first bytes. Verify the full calldata in the QuantaVault app before approving.',
   invalidCalldata: 'WARNING: Invalid calldata. Decoding unavailable.',
+  invalidOperation:
+    'WARNING: The vault rejects every operation other than Call (0) and DelegateCall (1). This transaction cannot execute.',
+  unlimitedAllowance:
+    "WARNING: Unlimited QRC-20 allowance. If this is a QRC-20 token, the spender can spend the vault's entire token balance.",
 };
+const TX_GAS_WARNING =
+  'WARNING: txGas is nonzero. A failed inner call can complete and spend the nonce. If txGas is below what the call needs, anyone executing can supply just enough gas to pass the gas check and force that failure.';
+
+const displayAddress = (value: string): string => groupQrlAddress(toChecksumQrlAddress(value));
 
 const valueRow = (label: string, value: string): VaultReviewRow => ({
   label: `Vault ${label}:`,
@@ -67,16 +79,16 @@ function argumentValue(
   if (typeof value === 'bigint') {
     if (name === 'operation') return operation(value);
     if (name === 'validUntil') return expiry(value);
-    if (name === 'amount' || (name === 'value' && ['transfer', 'approve'].includes(method ?? '')))
-      return `${value.toString()} base units`;
+    if (name === 'amount')
+      return `${value.toString()} base units${method === 'approve' || method === 'transferFrom' ? ' (QRC-20 amount or NFT token ID)' : ''}`;
     return value.toString();
   }
-  if (type === 'address') return groupQrlAddress(value);
+  if (type === 'address') return displayAddress(value);
   if (name === 'role') {
     const role = vaultRoleLabel(value);
     if (role) return `${role} (${value})`;
   }
-  return type === 'bytes' ? format.bytes(value) : value;
+  return type.startsWith('bytes') ? format.bytes(value) : value;
 }
 
 function* argumentRows(
@@ -101,10 +113,17 @@ function* argumentRows(
 }
 
 function callRows(call: DecodedVaultCall, format: VaultFormat): VaultReviewRow[] {
-  const token = call.method === 'transfer' || call.method === 'approve';
+  const token = call.method === 'transfer';
   const method = token ? `QRC-20 ${call.method}` : call.method;
   const rows = [
-    valueRow(token ? 'destination/token' : 'destination', groupQrlAddress(call.to)),
+    valueRow(token ? 'destination/token' : 'destination', displayAddress(call.to)),
+    ...(call.batchTarget
+      ? [
+          warning(
+            'NOTE: This batch entry named the zero address. Its effective target is the executing contract.',
+          ),
+        ]
+      : []),
     valueRow('value', format.quanta(call.value)),
     valueRow('operation', operation(call.operation)),
     ...call.warnings.map((code) => warning(WARNINGS[code])),
@@ -112,21 +131,25 @@ function callRows(call: DecodedVaultCall, format: VaultFormat): VaultReviewRow[]
   ];
   if (call.status !== 'decoded') rows.push(valueRow('bytes', format.bytes(call.data)));
   for (const arg of call.args) {
-    // The decoder has validated each full batch. Its parallel arrays and packed
-    // transactions are represented together in the indivisible entry groups.
+    // Expanded children already represent these arguments in complete entry groups.
+    // At the depth boundary children are absent, so every argument stays visible.
     if (
       call.children.length > 0 &&
-      ((call.method === 'multiSend' && arg.name === 'transactions') ||
-        (['scheduleBatch', 'executeBatch'].includes(call.method ?? '') &&
-          ['targets', 'values', 'payloads'].includes(arg.name)))
+      (VAULT_BATCH_METHODS.has(call.method ?? '')
+        ? ['transactions', 'targets', 'values', 'payloads'].includes(arg.name)
+        : [
+            'to',
+            'target',
+            'targetContract',
+            'value',
+            'data',
+            'payload',
+            'calldataPayload',
+            'operation',
+          ].includes(arg.name))
     )
       continue;
     rows.push(...argumentRows(arg.value, arg.type, arg.name, call.method, format));
-  }
-  if (call.children.length > 0) {
-    rows.push(
-      valueRow('enclosed calls', `${call.children.length} entries, shown individually below`),
-    );
   }
   return rows;
 }
@@ -146,7 +169,7 @@ export function vaultReview(
         ),
       ],
     ];
-    return { groups, collapsed: groups };
+    return { groups };
   }
   const rows = [
     warning(ASSUMPTION),
@@ -160,12 +183,12 @@ export function vaultReview(
     ),
     valueRow(
       request.kind === 'VaultApproval' ? 'approving vault' : 'address',
-      groupQrlAddress(request.vault),
+      displayAddress(request.vault),
     ),
   ];
-  let entries = 1;
-  let delegateCalls = 0;
+  let childCalls: readonly DecodedVaultCall[] = [];
   const children: VaultReviewRow[][] = [];
+  const gasRows: VaultReviewRow[] = [];
   if (request.kind === 'VaultMessage') {
     if (request.message.length === 130) rows.push(warning(WARNINGS.opaqueApproval));
     rows.push(valueRow('message', format.bytes(request.message)));
@@ -174,36 +197,63 @@ export function vaultReview(
       throw new Error('QuantaVault refunds are unsupported. All refund fields must be zero.');
     }
     if (request.kind === 'VaultApproval')
-      rows.push(valueRow('outer vault', groupQrlAddress(request.outerVault)));
-    const call = decodeVaultCall(request.tx, request.chainId);
+      rows.push(valueRow('outer vault', displayAddress(request.outerVault)));
+    const call = decodeVaultCall(
+      request.tx,
+      request.chainId,
+      request.kind === 'VaultApproval' ? request.outerVault : request.vault,
+    );
     rows.push(...callRows(call, format));
-    const batch = ['multiSend', 'scheduleBatch', 'executeBatch'].includes(call.method ?? '');
-    const calls = batch || call.children.length ? call.children : [call];
-    entries = calls.length;
-    delegateCalls = calls.filter((entry) => entry.operation === 1n).length;
+    childCalls = call.children;
     for (const [index, child] of call.children.entries()) {
-      children.push([valueRow('entry', `${index + 1} of ${entries}`), ...callRows(child, format)]);
+      children.push([
+        valueRow('entry', `${index + 1} of ${call.children.length}`),
+        ...callRows(child, format),
+      ]);
     }
     // These belong to the signed VaultTx, so keep them before the batch groups.
     rows.push(valueRow('nonce', request.tx.nonce.toString()));
     rows.push(valueRow('validUntil', expiry(request.tx.validUntil)));
+    const nowSeconds = BigInt(Math.floor(now / 1000));
+    if (request.tx.validUntil < nowSeconds)
+      rows.push(
+        warning(
+          "WARNING: According to this device's clock, this approval has already expired and the vault will reject it. The device clock may be incorrect.",
+        ),
+      );
     if (request.tx.validUntil === VAULT_MAX_UINT256)
       rows.push(warning('WARNING: Maximum validUntil grants effectively unlimited validity.'));
-    else if (request.tx.validUntil > BigInt(Math.floor(now / 1000)) + 30n * 86400n)
+    else if (request.tx.validUntil > nowSeconds + 30n * 86400n)
       rows.push(warning('WARNING: validUntil is more than 30 days away.'));
+    gasRows.push(valueRow('txGas', request.tx.txGas.toString()));
+    if (request.tx.txGas !== 0n) gasRows.push(warning(TX_GAS_WARNING));
   }
-  const groups = [...rows.map((row) => [row]), ...children];
-  const warnings = new Set(groups.flat().flatMap((row) => ('warning' in row ? [row.warning] : [])));
+  const topLevel = rows.map((row) => [row]);
+  if (gasRows.length) topLevel.push(gasRows);
+  const groups = [...topLevel, ...children];
+  if (!children.length) return { groups };
   return {
     groups,
-    collapsed: [
-      [
-        valueRow(
-          'summary',
-          `${entries} entries, decoding omitted, ${delegateCalls} DelegateCall entries`,
-        ),
-      ],
-      ...[...warnings].map((text) => [warning(text)]),
-    ],
+    collapse: () => {
+      const delegateCalls = childCalls.filter((entry) => entry.operation === 1n).length;
+      const seen = new Set(rows.flatMap((row) => ('warning' in row ? [row.warning] : [])));
+      const warnings: VaultReviewRow[][] = [];
+      for (const row of children.flat()) {
+        if ('warning' in row && !seen.has(row.warning)) {
+          seen.add(row.warning);
+          warnings.push([row]);
+        }
+      }
+      return [
+        ...topLevel,
+        [
+          valueRow(
+            'summary',
+            `${children.length} entries, decoding omitted, ${delegateCalls} DelegateCall entries`,
+          ),
+        ],
+        ...warnings,
+      ];
+    },
   };
 }

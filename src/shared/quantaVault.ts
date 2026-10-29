@@ -1,6 +1,5 @@
 import { isRecord } from './guards';
-import { isQrlAddress } from './address';
-import { QRL_ZERO_ADDRESS } from './quantaVaultConfig';
+import { isQrlAddress, QRL_ZERO_ADDRESS } from './address';
 import type { StructDef, TypedDataPayload } from './typedData';
 
 export const VAULT_DOMAIN_FIELDS: StructDef = [

@@ -471,21 +471,25 @@ function typedDataPages(
   lines.push(wrapDetailText(`Primary type: ${payload.primaryType}`, 'dapp'));
   const review = vaultReview(payload, {
     quanta: formatQuanta,
-    bytes: (value) => {
-      const limit = TYPED_DATA_DISPLAY_LIMITS.valueChars;
-      if (value.length <= limit) return value;
-      const suffix = `… [${(value.length - 2) / 2} bytes]`;
-      // Hex pairs are indivisible, and the byte count makes the omission explicit.
-      return value.slice(0, Math.floor((limit - suffix.length) / 2) * 2) + suffix;
-    },
+    bytes: (value) => typedScalar('bytes', value, payload.types),
   });
+  const raw = typedMessageRows(payload);
+  const cached: string[] = [];
+  function* rawRows(): Generator<string> {
+    yield* cached;
+    // Retain the underlying iterator across a failed pagination attempt.
+    for (let next = raw.next(); !next.done; next = raw.next()) {
+      cached.push(next.value);
+      yield next.value;
+    }
+  }
   try {
-    return paginateTypedReview(header, lines, payload, review?.groups ?? []);
+    return paginateTypedReview(header, lines, rawRows(), review?.groups ?? []);
   } catch (error) {
     // Only supplemental decoding can collapse. Raw rows and mandatory metadata
     // still fail closed if the explicit fallback also exceeds the review cap.
-    if (!(error instanceof TypedReviewLimitError) || !review) throw error;
-    return paginateTypedReview(header, lines, payload, review.collapsed);
+    if (!(error instanceof TypedReviewLimitError) || !review?.collapse) throw error;
+    return paginateTypedReview(header, lines, rawRows(), review.collapse());
   }
 }
 
@@ -498,15 +502,17 @@ class TypedReviewLimitError extends Error {
 }
 
 function formatVaultRow(row: VaultReviewRow): string {
+  // Values contain canonical numbers, validated hex and static labels. Byte
+  // previews already carry typedScalar's quoting and escaping.
   return 'warning' in row
     ? wrapDetailText(row.warning)
-    : wrapDetailText(`${row.label} ${singleLineText(row.value)}`, 'dapp');
+    : wrapDetailText(`${row.label} ${row.value}`, 'dapp');
 }
 
 function paginateTypedReview(
   header: string[],
   metadata: string[],
-  payload: TypedDataPayload,
+  rawRows: Iterable<string>,
   decoded: VaultReviewRow[][],
 ): string[] {
   const baseLines = typedDataDisplayLines(`${header.join('\n')}\n\n${SIGNATURE_APPROVAL_NOTE}`);
@@ -519,8 +525,7 @@ function paginateTypedReview(
     for (const group of decoded)
       yield { heading: 'QuantaVault decoded request:', rows: group.map(formatVaultRow) };
     // Generate raw rows lazily, retaining their exact order and one-page boundary.
-    for (const field of typedMessageRows(payload))
-      yield { heading: 'Message fields:', rows: [field] };
+    for (const field of rawRows) yield { heading: 'Message fields:', rows: [field] };
   }
   for (const { heading, rows } of groups()) {
     const cost = typedDataDisplayLines(rows.join('\n'));
