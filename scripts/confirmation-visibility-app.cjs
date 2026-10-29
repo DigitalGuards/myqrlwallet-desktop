@@ -91,21 +91,23 @@ app
     };
     const fixtures = JSON.parse(fs.readFileSync(path.join(directory, 'cases.json')));
     for (const fixture of fixtures) {
-      current = { name: fixture.name, version: 'legacy', pages: [] };
-      results.push(current);
-      const { title, message, pages } = fixture.legacy;
-      assert.equal(pages.length, 1);
-      const legacyResult = await dialog.showMessageBox(parent, {
-        type: 'warning',
-        title,
-        message: `Request 1\n${message}`,
-        detail: pages[0],
-        buttons: ['Cancel', 'Approve & sign'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      });
-      assert.equal(legacyResult.response, 0, 'Enter cancels even an overflowing legacy dialog');
+      if (fixture.legacy) {
+        current = { name: fixture.name, version: 'legacy', pages: [] };
+        results.push(current);
+        const { title, message, pages } = fixture.legacy;
+        assert.equal(pages.length, 1);
+        const legacyResult = await dialog.showMessageBox(parent, {
+          type: 'warning',
+          title,
+          message: `Request 1\n${message}`,
+          detail: pages[0],
+          buttons: ['Cancel', 'Approve & sign'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        });
+        assert.equal(legacyResult.response, 0, 'Enter cancels even an overflowing legacy dialog');
+      }
       if (process.env.CONFIRMATION_BASELINE_ONLY === '1') continue;
       current = { name: fixture.name, version: 'new', pages: [] };
       results.push(current);

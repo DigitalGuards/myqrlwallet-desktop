@@ -3,6 +3,7 @@ import type { SignatureRequest, SignatureResult } from '../shared/schemas';
 import type { SignerBridge } from './signerBridge';
 import type { ConfirmContext } from './confirmSummary';
 import { EXPECTED_CHAIN_ID } from './config';
+import { vaultApprovalBlocked } from '../shared/quantaVault';
 import { recallBuild } from './buildRecords';
 import * as rpc from './rpc';
 
@@ -16,6 +17,11 @@ export async function signWithConfirmation(
   req: SignatureRequest,
   { signer, confirm }: SignatureDeps,
 ): Promise<SignatureResult> {
+  // Application policy belongs to main. The signer retains generic structural
+  // re-validation; even a replacement confirmation callback cannot bypass this.
+  if (req.kind === 'typedData' && vaultApprovalBlocked(req.payload)) {
+    throw new Error('QuantaVault refunds are unsupported. All refund fields must be zero.');
+  }
   // Transactions bind to the chain id: resolve it BEFORE the modal (fail fast
   // when the node is unreachable) and require it to match the tx the user is
   // shown, so the value confirmed in the dialog is exactly the value signed.

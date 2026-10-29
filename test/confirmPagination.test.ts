@@ -23,6 +23,7 @@ import { DIALOG_CHROME_MESSAGE, messageRequest, QUANTASWAP_MESSAGE } from './mes
 
 import { assertDetailWidth, assertTrustedLineStarts, unfoldDetail } from './confirmLayout';
 import { groupQrlAddress } from '../src/shared/address';
+import { vaultBatchPayload, vaultPayload } from './quantaVaultFixtures';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -81,6 +82,56 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
     },
   );
   return { shown, mock };
+}
+
+for (const [label, payload] of [
+  ['decoded batch', vaultBatchPayload(5)],
+  ['collapsed batch', vaultBatchPayload(50)],
+  ['nested approval', vaultPayload('approval-empty')],
+  ['opaque message', vaultPayload('digest-message')],
+] as const) {
+  const vaultRequest = typedRequest(payload);
+  const vaultPages = summariseSignatureRequest(vaultRequest, context).pages;
+  for (const cancelAt of [-1, 0, vaultPages.length - 1]) {
+    test(`vault ${label} confirmation handoff, cancel page ${cancelAt}`, async (t) => {
+      const { shown } = mockDialogs(t, cancelAt);
+      let signatures = 0;
+      const pending = signWithConfirmation(vaultRequest, {
+        signer: {
+          status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+          sign: (received) => {
+            assert.equal(received, vaultRequest);
+            assert.equal(shown.length, vaultPages.length);
+            signatures++;
+            return Promise.resolve({
+              kind: 'typedData',
+              signer: SIGNER,
+              signature: '0x02',
+              publicKey: '0x00',
+              descriptor: '0x010000',
+              digest: '0x00',
+              schemeVersion: 'QRL-SIGN-TYPED-v2',
+            });
+          },
+        },
+        confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+      });
+      if (cancelAt === -1) await finishConfirmation(t, pending);
+      else await finishConfirmation(t, assert.rejects(pending, /user rejected signature/));
+      assert.equal(signatures, cancelAt === -1 ? 1 : 0);
+      assert.equal(shown.length, cancelAt === -1 ? vaultPages.length : cancelAt + 1);
+      for (const [index, options] of shown.entries()) {
+        assert.equal(
+          options.detail,
+          wrapDetailText(`${vaultPages[index]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+        );
+        assert.deepEqual(
+          options.buttons,
+          index === vaultPages.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+        );
+      }
+    });
+  }
 }
 
 test('native dialogs offer Next in order and Approve only on the last page', async (t) => {

@@ -429,6 +429,42 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   participate in the signature. Rows are generated lazily and preparation
   stops when an eleventh page would be required. Such requests fail closed
   with a desktop review-size error before any dialog is shown.
+  QuantaVault requests add a main-computed decoded block before all raw message
+  rows (`src/main/confirmVault.ts`, `src/shared/quantaVault*.ts`). Recognition
+  requires the exact four-field QRLDomain schema and domain keys, name
+  `QuantaVault`, version `1`, and ordered field identities for VaultTx,
+  VaultMessage or VaultApproval. VaultApproval requires exactly QRLDomain,
+  VaultApproval and VaultTx in its types map. A QuantaVault-named mismatch
+  receives a warning and the raw review. Every decoded value, including an
+  address, amount, operation, selector, date, role or batch entry, uses a fixed
+  `Vault` label and the dApp U+200E/pipe continuation style. Only static labels
+  and warnings are trusted text. No RPC lookup, QNS name or renderer-supplied
+  token metadata contributes to this block; tokens use full addresses and
+  base units. A trusted note states that decoding assumes a genuine QuantaVault
+  at verifyingContract, which main cannot verify.
+  The decoder uses precomputed selectors, 64-byte QRVM words and complete
+  canonical ABI validation. It explains vault administration, module execution,
+  simulation, opaque approvals, QRC-20 calls, ownership and timelocks, expanding
+  one level of enclosed calls. Deeper calls retain bytes and a warning. It names
+  both vaults for VaultApproval, flags DelegateCall and opaque 64-byte messages,
+  and shows nonce and validUntil with date-range, maximum and 30-day warnings.
+  Each batch entry stays together on one page. Decoded and raw rows share the
+  existing 30-line and 10-page budgets. If the combined review exceeds ten pages,
+  or an entire entry cannot fit on one page, decoded data collapses to one
+  explicit entry-count/DelegateCall-count row; all static warnings remain.
+  Counts cover the expanded entry level. Raw message rows retain their order,
+  complete row boundaries and existing bounded value previews. If that fallback
+  also exceeds the cap, preparation fails before any dialog opens.
+  Vault pages therefore keep the typed-data native envelope.
+  `test:native:confirm -- --vault` shows every line and both buttons of the vault
+  corpus on Linux GTK 3 under Xvfb at 1024x768 and 1280x720, DejaVu Sans 8 to
+  12 pt at 100% text and 8 to 9 pt at 125% text. Larger text can move a full
+  page's last lines and both buttons below the work area, as for any 30-line
+  typed-data page; Enter then cancels.
+  Main's `signWithConfirmation` rejects every recognized VaultTx or nested
+  VaultApproval tx with nonzero baseGas, gasPrice, gasToken or refundReceiver
+  before calling confirm. The layout rejects these requests as a second check.
+  The signer retains generic structural re-validation and typed-data signing.
   Pages before the last offer `Next` and `Cancel`. Only the last offers
   `Cancel` at index 0 and `Approve & sign` at index 1; a single-page request
   uses the same order. Cancel is the default and Escape cancels on every page.
