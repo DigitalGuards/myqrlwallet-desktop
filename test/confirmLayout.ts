@@ -26,6 +26,7 @@ export function assertTrustedLineStarts(detail: string): void {
     'Signing:',
     'Domain ',
     'Primary type:',
+    'Vault ',
   ];
   const trustedPrefixes = [
     'Account:',
@@ -40,6 +41,7 @@ export function assertTrustedLineStarts(detail: string): void {
     'Scheme:',
     'Wallet network chainId:',
     'Message fields:',
+    'QuantaVault decoded request:',
     'Message (text, ',
     'Message (hex, ',
     'NOTE:',

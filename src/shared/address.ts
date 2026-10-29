@@ -1,5 +1,6 @@
 /** Native QIP-55 account address shape shared by every process boundary. */
 export const QRL_ADDRESS_HEX_LENGTH = 128;
+export const QRL_ZERO_ADDRESS = `Q${'0'.repeat(QRL_ADDRESS_HEX_LENGTH)}`;
 export const QRL_ADDRESS_LENGTH = 1 + QRL_ADDRESS_HEX_LENGTH;
 export const QRL_ADDRESS_PATTERN = /^Q[0-9a-fA-F]{128}$/;
 const LEGACY_QRL_ADDRESS_PATTERN = /^Q[0-9a-fA-F]{40}$/;

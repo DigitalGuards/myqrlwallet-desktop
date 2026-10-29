@@ -6,6 +6,8 @@ import { createRequire } from 'node:module';
 import { buildSync } from 'esbuild';
 import { visibilityCases } from '../test/confirmationVisibilityFixtures.ts';
 import { loadBaseline, root } from './confirmation-baseline.mjs';
+import { vaultBatchPayload, vaultPayload } from '../test/quantaVaultFixtures.ts';
+import { typedRequest } from '../test/typedDataFixtures.ts';
 
 // Every run owns its X server. Refuse an inherited desktop display, including Wayland.
 if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
@@ -13,7 +15,9 @@ if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
 const require = createRequire(import.meta.url);
 const baselineOnly = process.argv.includes('--baseline-only');
 const headingOnly = process.argv.includes('--heading-only');
+const vaultOnly = process.argv.includes('--vault');
 if (headingOnly && !baselineOnly) throw new Error('--heading-only requires --baseline-only.');
+if (vaultOnly && baselineOnly) throw new Error('--vault requires the current confirmation.');
 const directory = mkdtempSync(path.join(tmpdir(), 'confirmation-visibility-'));
 console.log('Native visibility evidence:', directory);
 const include = [
@@ -44,31 +48,48 @@ const baseline = loadBaseline();
 writeFileSync(
   path.join(directory, 'cases.json'),
   JSON.stringify(
-    visibilityCases
-      .filter(
-        (fixture) =>
-          fixture.request.kind === 'transaction' &&
-          (!headingOnly || fixture.name === 'transaction 80 digit heading'),
-      )
-      .map((fixture) => {
-        const summary = baseline.summariseSignatureRequest(fixture.request, fixture.context);
-        return {
-          ...fixture,
-          legacy: {
-            ...summary,
-            pages: headingOnly
-              ? ['Amount: 1 Quanta']
-              : summary.pages.map((page) =>
-                  baseline.wrapDetailText(`${page}\n\n${baseline.SIGNATURE_APPROVAL_NOTE}`),
-                ),
-          },
-        };
-      }),
+    vaultOnly
+      ? [
+          ['vault decoded batch', vaultBatchPayload(5)],
+          ['vault collapsed batch', vaultBatchPayload(50)],
+          ['vault nested approval', vaultPayload('approval-empty')],
+          ['vault opaque message', vaultPayload('digest-message')],
+        ].map(([name, payload]) => ({
+          name,
+          request: typedRequest(payload),
+          context: { connectedChainId: 1 },
+        }))
+      : visibilityCases
+          .filter(
+            (fixture) =>
+              fixture.request.kind === 'transaction' &&
+              (!headingOnly || fixture.name === 'transaction 80 digit heading'),
+          )
+          .map((fixture) => {
+            const summary = baseline.summariseSignatureRequest(fixture.request, fixture.context);
+            return {
+              ...fixture,
+              legacy: {
+                ...summary,
+                pages: headingOnly
+                  ? ['Amount: 1 Quanta']
+                  : summary.pages.map((page) =>
+                      baseline.wrapDetailText(`${page}\n\n${baseline.SIGNATURE_APPROVAL_NOTE}`),
+                    ),
+              },
+            };
+          }),
   ),
 );
-const profiles = ['1024x768', '1280x720'].flatMap((size) =>
-  [8, 9, 10, 11, 12].flatMap((points) => [1, 1.25].map((scale) => ({ size, points, scale }))),
-);
+// Typed-data pages, vault rows included, keep their fixed 30-line budget. A full
+// page fits both work areas at 100% text and at 125% text up to 9 pt; larger
+// text can move its last lines and both buttons below the work area.
+const typedDataEnvelope = ({ points, scale }) => scale === 1 || points <= 9;
+const profiles = ['1024x768', '1280x720']
+  .flatMap((size) =>
+    [8, 9, 10, 11, 12].flatMap((points) => [1, 1.25].map((scale) => ({ size, points, scale }))),
+  )
+  .filter((profile) => !vaultOnly || typedDataEnvelope(profile));
 const selected = process.argv.indexOf('--profile');
 const jobs =
   selected < 0

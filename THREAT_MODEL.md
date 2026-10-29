@@ -429,6 +429,63 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   participate in the signature. Rows are generated lazily and preparation
   stops when an eleventh page would be required. Such requests fail closed
   with a desktop review-size error before any dialog is shown.
+  QuantaVault requests add a main-computed decoded block before all raw message
+  rows (`src/main/confirmVault.ts`, `src/shared/quantaVault*.ts`). Recognition
+  requires the exact four-field QRLDomain schema and domain keys, name
+  `QuantaVault`, version `1`, and ordered field identities for VaultTx,
+  VaultMessage or VaultApproval. VaultApproval requires exactly QRLDomain,
+  VaultApproval and VaultTx in its types map. A QuantaVault-named mismatch
+  receives a warning and the raw review. Every decoded value, including an
+  address, amount, operation, selector, date, role or batch entry, uses a fixed
+  `Vault` label and the dApp U+200E/pipe continuation style. Only static labels
+  and warnings are trusted text. No RPC lookup, QNS name or renderer-supplied
+  token metadata contributes to this block. All decoded addresses use full
+  QIP-55 checksum case through the shared public-address helper; ABI decoding
+  retains canonical lowercase addresses for protocol parity. Amounts use base
+  units. The approve and transferFrom selectors identify either a QRC-20 amount
+  or an NFT token ID. A trusted note states that decoding assumes a genuine QuantaVault
+  at verifyingContract, which main cannot verify.
+  The decoder uses precomputed selectors, 64-byte QRVM words and complete
+  canonical ABI validation. It explains vault administration, module execution,
+  simulation, opaque approvals, token calls, ownership and timelocks, expanding
+  one level of enclosed calls. Unknown and deeper calldata warnings explain the
+  first-byte preview and require full calldata verification in the QuantaVault
+  app before approval. Single-child and batch arguments represented by expanded
+  entries appear once. Zero-address MultiSend destinations show the effective
+  executing contract and a note about the original zero target. DelegateCall
+  uses verifyingContract for VaultTx and the outer vault for VaultApproval.
+  The block names both vaults for VaultApproval and flags DelegateCall, opaque
+  64-byte messages, security changes including updateDelay, grantRole to the
+  zero address, invalid operations separately from invalid calldata, and
+  maximum QRC-20 allowances with the token-standard qualification. It shows
+  nonce and validUntil with date-range, maximum, 30-day and already-expired
+  warnings. Expiry uses the device clock and explains that the vault rejects an
+  expired request. A nonzero txGas warning stays with its decoded row: a failed
+  inner call can complete and spend the nonce, and anyone executing can force
+  that failure when txGas is below what the call needs. These warnings preserve
+  approval availability and the refund refusal below.
+  Each child entry stays together on one page. Decoded and raw rows share the
+  existing 30-line and 10-page budgets and the same bounded byte-preview helper.
+  If the combined review exceeds ten pages, or an entire entry cannot fit on
+  one page, only child entry groups collapse to one explicit entry-count and
+  child-DelegateCall-count row. All top-level rows and every warning remain,
+  including approval kind, vault identities, destination, value, operation,
+  method, nonce, validUntil and txGas. The top-level operation has its own row.
+  Requests without children have no entry count. The reduced view is built
+  only after pagination overflows; already-generated raw rows are reused. Raw
+  message rows retain their order, complete row boundaries and bounded value
+  previews. If the reduced review also exceeds the cap, preparation fails
+  before any dialog opens.
+  Vault pages therefore keep the typed-data native envelope.
+  `test:native:confirm -- --vault` shows every line and both buttons of the vault
+  corpus on Linux GTK 3 under Xvfb at 1024x768 and 1280x720, DejaVu Sans 8 to
+  12 pt at 100% text and 8 to 9 pt at 125% text. Larger text can move a full
+  page's last lines and both buttons below the work area, as for any 30-line
+  typed-data page; Enter then cancels.
+  Main's `signWithConfirmation` rejects every recognized VaultTx or nested
+  VaultApproval tx with nonzero baseGas, gasPrice, gasToken or refundReceiver
+  before calling confirm. The layout rejects these requests as a second check.
+  The signer retains generic structural re-validation and typed-data signing.
   Pages before the last offer `Next` and `Cancel`. Only the last offers
   `Cancel` at index 0 and `Approve & sign` at index 1; a single-page request
   uses the same order. Cancel is the default and Escape cancels on every page.

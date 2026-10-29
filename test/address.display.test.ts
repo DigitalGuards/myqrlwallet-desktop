@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatQrlAddressFingerprint, groupQrlAddress } from '../src/shared/address';
+import {
+  formatQrlAddressFingerprint,
+  groupQrlAddress,
+  QRL_ADDRESS_HEX_LENGTH,
+  QRL_ZERO_ADDRESS,
+} from '../src/shared/address';
 
 const Q128 = `Q11111111${'2'.repeat(52)}33333333${'4'.repeat(52)}55555555`;
 const Q40 = `Q11111111${'2'.repeat(8)}33333333${'4'.repeat(8)}55555555`;
@@ -42,12 +47,32 @@ test('full review grouping preserves every address character', () => {
 });
 
 import { toChecksumAddress } from '@theqrl/wallet.js';
+import { toChecksumQrlAddress } from '../src/shared/addressCase';
 import { assertValidQrlAddressCase, hasValidQrlAddressCase } from '../src/signer/addressCase';
 
 test('uniform-case bodies pass the QIP-55 case rule', () => {
   const lower = `Q${'ab'.repeat(64)}`;
   assert.equal(hasValidQrlAddressCase(lower), true);
   assert.equal(hasValidQrlAddressCase(`Q${'AB'.repeat(64)}`), true);
+});
+
+test('public checksum display matches wallet.js vectors across the full address width', () => {
+  assert.equal(QRL_ZERO_ADDRESS, `Q${'0'.repeat(QRL_ADDRESS_HEX_LENGTH)}`);
+  for (const address of [
+    QRL_ZERO_ADDRESS,
+    `Q${'ab'.repeat(64)}`,
+    `Q${'0123456789abcdef'.repeat(8)}`,
+    `Q${'0'.repeat(112)}abcdef0123456789`,
+    `Q${'ff'.repeat(64)}`,
+  ]) {
+    const expected = toChecksumAddress(address);
+    for (const input of [address, `Q${address.slice(1).toUpperCase()}`, expected]) {
+      assert.equal(toChecksumQrlAddress(input), expected);
+      assert.equal(hasValidQrlAddressCase(toChecksumQrlAddress(input)), true);
+    }
+  }
+  for (const invalid of ['', 'Q1234', `q${'a'.repeat(128)}`, `Q${'0'.repeat(40)}`])
+    assert.throws(() => toChecksumQrlAddress(invalid), /Invalid QRL address/);
 });
 
 test('only the exact checksummed mixed-case body passes the signer gate', () => {

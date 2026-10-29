@@ -547,7 +547,11 @@ select the headers). It runs 20 isolated Xvfb profiles, measures every live
 line and both buttons, and writes JSON evidence under a temporary directory.
 It refuses inherited X11/Wayland displays. Both checks remain local scripts;
 the complete native sweep exceeds the roughly two-minute CI budget and adds
-no required check name.
+no required check name. `npm run test:native:confirm -- --vault` runs the
+QuantaVault corpus (decoded batch, collapsed batch, nested approval, opaque
+message) through the same measurements. Those pages keep the 30-line typed-data
+budget, so this mode covers the 14 profiles where a full page fits: 8 to 12 pt
+at 100% text and 8 to 9 pt at 125% text.
 
 The origin and storage checks use isolated profiles and private Xvfb displays.
 Set `QRL_FRONTEND_DIR` to the frontend checkout used for the build, and

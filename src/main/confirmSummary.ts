@@ -15,6 +15,7 @@
 import type { DAppOrigin, SignatureRequest } from '../shared/schemas';
 import type { GasBuildRecord } from './buildRecords';
 import { groupQrlAddress } from '../shared/address';
+import { vaultReview, type VaultReviewRow } from './confirmVault';
 import { isArray, isRecord } from '../shared/guards';
 import {
   parseFieldType,
@@ -468,40 +469,88 @@ function typedDataPages(
     );
   }
   lines.push(wrapDetailText(`Primary type: ${payload.primaryType}`, 'dapp'));
-  const maxPages = TYPED_DATA_DISPLAY_LIMITS.pages;
-  // Metadata is mandatory on page one; later pages repeat the compact header.
-  const base = header.join('\n');
-  const baseLines = typedDataDisplayLines(`${base}\n\n${SIGNATURE_APPROVAL_NOTE}`);
-  const heading = 'Message fields:';
-  const headingLines = typedDataDisplayLines(heading);
-  const continuationLines = baseLines + headingLines;
-  let used = baseLines + typedDataDisplayLines(lines.join('\n'));
+  const review = vaultReview(payload, {
+    quanta: formatQuanta,
+    bytes: (value) => typedScalar('bytes', value, payload.types),
+  });
+  const raw = typedMessageRows(payload);
+  const cached: string[] = [];
+  function* rawRows(): Generator<string> {
+    yield* cached;
+    // Retain the underlying iterator across a failed pagination attempt.
+    for (let next = raw.next(); !next.done; next = raw.next()) {
+      cached.push(next.value);
+      yield next.value;
+    }
+  }
+  try {
+    return paginateTypedReview(header, lines, rawRows(), review?.groups ?? []);
+  } catch (error) {
+    // Only supplemental decoding can collapse. Raw rows and mandatory metadata
+    // still fail closed if the explicit fallback also exceeds the review cap.
+    if (!(error instanceof TypedReviewLimitError) || !review?.collapse) throw error;
+    return paginateTypedReview(header, lines, rawRows(), review.collapse());
+  }
+}
+
+class TypedReviewLimitError extends Error {
+  constructor() {
+    super(
+      `Typed-data request is too large to review safely on desktop (maximum ${TYPED_DATA_DISPLAY_LIMITS.pages} pages).`,
+    );
+  }
+}
+
+function formatVaultRow(row: VaultReviewRow): string {
+  // Values contain canonical numbers, validated hex and static labels. Byte
+  // previews already carry typedScalar's quoting and escaping.
+  return 'warning' in row
+    ? wrapDetailText(row.warning)
+    : wrapDetailText(`${row.label} ${row.value}`, 'dapp');
+}
+
+function paginateTypedReview(
+  header: string[],
+  metadata: string[],
+  rawRows: Iterable<string>,
+  decoded: VaultReviewRow[][],
+): string[] {
+  const baseLines = typedDataDisplayLines(`${header.join('\n')}\n\n${SIGNATURE_APPROVAL_NOTE}`);
+  let used = baseLines + typedDataDisplayLines(metadata.join('\n'));
   if (used > TYPED_DATA_DISPLAY_LIMITS.lines) throw new Error(TYPED_METADATA_ERROR);
-  const bodies = [lines];
-  let body = lines;
-  let needsHeading = true;
-  // Consume rows lazily so a request over the page limit stops formatting as
-  // soon as it is known to be too large. No dialog is shown during preparation.
-  for (const field of typedMessageRows(payload)) {
-    const cost = typedDataDisplayLines(field);
-    if (used + cost + (needsHeading ? headingLines : 0) > TYPED_DATA_DISPLAY_LIMITS.lines) {
-      if (bodies.length >= maxPages || continuationLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines) {
-        throw new Error(
-          `Typed-data request is too large to review safely on desktop (maximum ${maxPages} pages).`,
-        );
-      }
+  let body = [...metadata];
+  const bodies = [body];
+  let lastHeading: string | undefined;
+  function* groups(): Generator<{ heading: string; rows: string[] }> {
+    for (const group of decoded)
+      yield { heading: 'QuantaVault decoded request:', rows: group.map(formatVaultRow) };
+    // Generate raw rows lazily, retaining their exact order and one-page boundary.
+    for (const field of rawRows) yield { heading: 'Message fields:', rows: [field] };
+  }
+  for (const { heading, rows } of groups()) {
+    const cost = typedDataDisplayLines(rows.join('\n'));
+    const headingLines = typedDataDisplayLines(heading);
+    if (
+      used + cost + (lastHeading === heading ? 0 : headingLines) >
+      TYPED_DATA_DISPLAY_LIMITS.lines
+    ) {
+      if (
+        bodies.length >= TYPED_DATA_DISPLAY_LIMITS.pages ||
+        baseLines + headingLines + cost > TYPED_DATA_DISPLAY_LIMITS.lines
+      )
+        throw new TypedReviewLimitError();
       body = [];
       bodies.push(body);
       used = baseLines;
-      needsHeading = true;
+      lastHeading = undefined;
     }
-    // Keep the section heading with its first complete row on every page.
-    if (needsHeading) {
+    // A heading stays with its first complete group, including each batch entry.
+    if (lastHeading !== heading) {
       body.push(heading);
       used += headingLines;
-      needsHeading = false;
+      lastHeading = heading;
     }
-    body.push(field);
+    body.push(...rows);
     used += cost;
   }
   return bodies.map((bodyLines) => wrapDetailText([...header, ...bodyLines].join('\n')));

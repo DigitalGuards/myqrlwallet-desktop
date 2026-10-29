@@ -16,21 +16,31 @@ export function publicKeyToQrlAddress(publicKey: Uint8Array): string {
   return `Q${Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** Format a public address with wallet.js-compatible QIP-55 checksum casing. */
+export function toChecksumQrlAddress(value: string): string {
+  if (!isQrlAddress(value)) throw new Error('Invalid QRL address');
+  const lower = value.slice(1).toLowerCase();
+  const hash = shake256(new TextEncoder().encode(lower), { dkLen: QRL_ADDRESS_HEX_LENGTH / 2 });
+  let result = 'Q';
+  for (let i = 0; i < lower.length; i++) {
+    const byte = hash[Math.floor(i / 2)];
+    if (byte === undefined) throw new Error('Incomplete QIP-55 checksum');
+    const nibble = i % 2 === 0 ? byte >> 4 : byte & 15;
+    const char = lower.charAt(i);
+    result += nibble >= 8 ? char.toUpperCase() : char;
+  }
+  return result;
+}
+
 /** Uniform-case bodies pass; mixed-case bodies must match wallet.js QIP-55. */
 export function hasValidQrlAddressCase(value: string): boolean {
   if (!isQrlAddress(value)) return false;
   const body = value.slice(1);
-  const lower = body.toLowerCase();
-  if (body === lower || body === body.toUpperCase()) return true;
-  const hash = shake256(new TextEncoder().encode(lower), { dkLen: QRL_ADDRESS_HEX_LENGTH / 2 });
-  for (let i = 0; i < body.length; i++) {
-    const byte = hash[Math.floor(i / 2)];
-    if (byte === undefined) return false;
-    const nibble = i % 2 === 0 ? byte >> 4 : byte & 15;
-    const char = lower.charAt(i);
-    if (body.charAt(i) !== (nibble >= 8 ? char.toUpperCase() : char)) return false;
-  }
-  return true;
+  return (
+    body === body.toLowerCase() ||
+    body === body.toUpperCase() ||
+    value === toChecksumQrlAddress(value)
+  );
 }
 
 export function assertValidQrlAddressCase(value: string, label: string): void {

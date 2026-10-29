@@ -23,6 +23,9 @@ import { DIALOG_CHROME_MESSAGE, messageRequest, QUANTASWAP_MESSAGE } from './mes
 
 import { assertDetailWidth, assertTrustedLineStarts, unfoldDetail } from './confirmLayout';
 import { groupQrlAddress } from '../src/shared/address';
+import { vaultBatchPayload, vaultPayload, vaultCalldata } from './quantaVaultFixtures';
+import { VAULT_MAX_UINT256 } from '../src/shared/quantaVault';
+import { isRecord } from '../src/shared/guards';
 
 register(new URL('./electronMockLoader.mjs', import.meta.url));
 const { BrowserWindow, dialog } = await import('electron');
@@ -83,6 +86,58 @@ function mockDialogs(t: TestContext, cancelAt = -1, cancelResponse?: number) {
   return { shown, mock };
 }
 
+for (const [label, payload] of [
+  ['decoded batch', vaultBatchPayload(5)],
+  ['collapsed batch', vaultBatchPayload(50)],
+  ['nested approval', vaultPayload('approval-empty')],
+  ['opaque message', vaultPayload('digest-message')],
+] as const) {
+  const vaultRequest = typedRequest(payload);
+  for (const cancellation of ['approve', 'first', 'last'] as const) {
+    test(`vault ${label} confirmation handoff: ${cancellation}`, async (t) => {
+      const vaultPages = summariseSignatureRequest(vaultRequest, context).pages;
+      const cancelAt =
+        cancellation === 'approve' ? -1 : cancellation === 'first' ? 0 : vaultPages.length - 1;
+      const { shown } = mockDialogs(t, cancelAt);
+      let signatures = 0;
+      const pending = signWithConfirmation(vaultRequest, {
+        signer: {
+          status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+          sign: (received) => {
+            assert.equal(received, vaultRequest);
+            assert.equal(shown.length, vaultPages.length);
+            signatures++;
+            return Promise.resolve({
+              kind: 'typedData',
+              signer: SIGNER,
+              signature: '0x02',
+              publicKey: '0x00',
+              descriptor: '0x010000',
+              digest: '0x00',
+              schemeVersion: 'QRL-SIGN-TYPED-v2',
+            });
+          },
+        },
+        confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+      });
+      if (cancelAt === -1) await finishConfirmation(t, pending);
+      else await finishConfirmation(t, assert.rejects(pending, /user rejected signature/));
+      assert.equal(signatures, cancelAt === -1 ? 1 : 0);
+      assert.equal(shown.length, cancelAt === -1 ? vaultPages.length : cancelAt + 1);
+      for (const [index, options] of shown.entries()) {
+        assert.equal(
+          options.detail,
+          wrapDetailText(`${vaultPages[index]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
+        );
+        assert.deepEqual(
+          options.buttons,
+          index === vaultPages.length - 1 ? ['Cancel', 'Approve & sign'] : ['Next', 'Cancel'],
+        );
+      }
+    });
+  }
+}
+
 test('native dialogs offer Next in order and Approve only on the last page', async (t) => {
   assert.ok(expectedPages.length > 1);
   const { shown } = mockDialogs(t);
@@ -122,6 +177,42 @@ test('native dialogs offer Next in order and Approve only on the last page', asy
       wrapDetailText(`${expectedPages[i]}\n\n${SIGNATURE_APPROVAL_NOTE}`),
     );
   }
+});
+
+test('retained vault rows approve at ten pages and fail closed when the reduced review exceeds the cap', async (t) => {
+  const payload = vaultPayload('approval-empty');
+  const tx = payload.message['tx'];
+  assert.ok(isRecord(tx));
+  tx['data'] = vaultCalldata('execTransaction').data;
+  tx['operation'] = 2;
+  for (const field of ['txGas', 'nonce', 'value']) tx[field] = VAULT_MAX_UINT256.toString();
+  const request = SignatureRequestSchema.parse({
+    ...typedRequest(payload),
+    origin: { via: 'dapp', name: 'W'.repeat(48), url: '', channelId: 'abcdef01' },
+  });
+  const pages = summariseSignatureRequest(request).pages;
+  assert.equal(pages.length, 10);
+  assert.ok(pages.some((page) => unfoldDetail(page).includes('decoding omitted')));
+  const { shown } = mockDialogs(t);
+  assert.equal(await finishConfirmation(t, confirmSignature(parent, request)), true);
+  assert.equal(shown.length, 10);
+  const oversized = SignatureRequestSchema.parse({
+    ...request,
+    origin: { ...request.origin, name: 'W'.repeat(64) },
+  });
+  const sign = t.mock.fn(() => Promise.reject(new Error('unexpected signing')));
+  await assert.rejects(
+    signWithConfirmation(oversized, {
+      signer: {
+        status: () => Promise.resolve({ unlocked: true, address: SIGNER, unlockExpiresAt: null }),
+        sign,
+      },
+      confirm: (req, ctx) => confirmSignature(parent, req, ctx),
+    }),
+    /maximum 10 pages/,
+  );
+  assert.equal(shown.length, 10, 'overflow opens no additional dialogs');
+  assert.equal(sign.mock.callCount(), 0);
 });
 
 test('message signing requires every page and offers Approve only on the last page', async (t) => {
