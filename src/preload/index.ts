@@ -13,10 +13,18 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import { BRIDGE_KEY, EVENTS, IPC } from '../shared/constants';
-import type { QrlWalletApi } from '../shared/bridge';
+import type { QrlWalletApi, QrlWalletNetwork } from '../shared/bridge';
+
+// Replaced by electron-vite with this build's network record, derived from the
+// same table main pins (src/main/config.ts networkBuildDefines).
+declare const __QRL_WALLET_NETWORK__: QrlWalletNetwork;
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
+  // Compatibility metadata, like addressScheme: the network this build was
+  // made for. Main enforces the same pins on every RPC call and signature and
+  // never reads this value back.
+  network: Object.freeze({ ...__QRL_WALLET_NETWORK__ }),
   setLanguage: (language) => ipcRenderer.invoke(IPC.SET_LANGUAGE, language),
   // A COMPATIBILITY HINT. It tells a renderer which optional request fields
   // this shell's schemas understand, so a newer renderer can omit a field an
