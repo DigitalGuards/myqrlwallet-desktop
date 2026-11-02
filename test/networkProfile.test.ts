@@ -220,6 +220,41 @@ test('a mainnet identity must be complete, well formed and differ from testnet',
   }
 });
 
+test('a typo in the dormant mainnet row cannot stop a testnet build', () => {
+  const typos: [string, Partial<NetworkTableEntry>][] = [
+    ['testnet data directory', { userDataDir: 'v3-private' }],
+    ['testnet capability profile', { networkProfile: 'v3-private' }],
+    [
+      'testnet endpoint',
+      { rpcPath: 'testnet', rpcUrl: 'https://qrlwallet.com/api/qrl-rpc/testnet' },
+    ],
+    [
+      'testnet failover endpoint',
+      { rpcUrlSecondary: 'https://dev.qrlwallet.com/api/qrl-rpc/testnet' },
+    ],
+    ['malformed QNS registry', { qnsRegistry: '0x1234' }],
+    ['endpoint outside its path', { rpcUrl: 'https://rpc.example/' }],
+  ];
+  const testnet = resolveNetwork('testnet');
+  for (const [name, typo] of typos) {
+    // Dormant: the testnet build resolves and bakes the same renderer values.
+    const dormant = withMainnet(typo);
+    assert.deepEqual(resolveNetwork('testnet', dormant), testnet, name);
+    assert.deepEqual(
+      rendererNetworkValues('testnet', dormant),
+      rendererNetworkValues('testnet'),
+      name,
+    );
+    assert.throws(() => resolveNetwork('mainnet', dormant), NetworkProfileError, name);
+  }
+  // Once the mainnet row is pinned, a collision with testnet stops both builds.
+  for (const [name, typo] of typos.slice(0, 4)) {
+    const pinned = withMainnet({ chainId: 7, genesisHash: MAINNET_GENESIS, ...typo });
+    assert.throws(() => resolveNetwork('testnet', pinned), /must differ from mainnet/, name);
+    assert.throws(() => resolveNetwork('mainnet', pinned), /must differ from testnet/, name);
+  }
+});
+
 test('selectNetwork returns the pinned network or the reason the profile cannot run', () => {
   const testnet = selectNetwork('testnet');
   assert.equal(testnet.error, null);

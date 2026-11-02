@@ -132,10 +132,11 @@ export function networkProfileName(value: unknown): NetworkProfileName {
 
 /**
  * The pinned network for a build profile. Throws NetworkProfileError for an
- * unknown profile, a network missing either identity pin, a malformed pin,
- * and a network whose chain id, genesis hash, RPC endpoint, profile name or
- * data directory equals another row's. `table` is a parameter so tests can
- * exercise a pinned mainnet without editing NETWORKS.
+ * unknown profile, a network missing either identity pin, a malformed pin, a
+ * network whose chain id or genesis hash equals another row's, and a network
+ * whose RPC endpoint, profile name or data directory equals another pinned
+ * row's. `table` is a parameter so tests can exercise a pinned mainnet
+ * without editing NETWORKS.
  */
 export function resolveNetwork(
   value: unknown,
@@ -172,6 +173,10 @@ export function resolveNetwork(
     if (other.chainId === chainId || other.genesisHash?.toLowerCase() === genesisHash) {
       throw new NetworkProfileError(`The ${profile} network identity must differ from ${name}.`);
     }
+    // The checks below compare against pinned rows only, so a typo in a
+    // dormant row (mainnet before launch) cannot stop a testnet build. The
+    // dormant row meets them once both of its pins are filled in.
+    if (other.chainId === null || other.genesisHash === null) continue;
     const otherEndpoints = [other.rpcUrl, other.rpcUrlSecondary];
     if (ownEndpoints.some((url) => otherEndpoints.includes(url))) {
       throw new NetworkProfileError(`The ${profile} RPC endpoints must differ from ${name}.`);
