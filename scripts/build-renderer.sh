@@ -27,6 +27,16 @@
 # for the main process. Keep the desktop main-process CSP allowlist
 # (src/main/config.ts frontendOrigins) in sync with these origins.
 #
+# The network comes from the build-time QRL_NETWORK_PROFILE: testnet (the
+# default) or mainnet. Its pins, RPC path and QNS default are read from the
+# network table in src/main/config.ts, the same row the main process pins, so
+# the renderer and the broker always ship one network. A profile without both
+# identity pins (mainnet before launch) stops this script before it installs
+# or builds anything.
+#
+# `--print-env` prints the renderer build environment and the desktop CSP, then
+# exits without touching the frontend (test/rendererEnv.test.ts compares it).
+#
 # Fails with guidance if the frontend source or lockfile is absent.
 
 set -euo pipefail
@@ -36,23 +46,65 @@ DESKTOP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 FRONTEND_DIR="${QRL_FRONTEND_DIR:-$(cd "${DESKTOP_DIR}/.." && pwd)/myqrlwallet-frontend}"
 OUT_RENDERER="${DESKTOP_DIR}/out/renderer"
 
+PRINT_ENV=0
+case "${1:-}" in
+  '') ;;
+  --print-env) PRINT_ENV=1 ;;
+  *)
+    echo "[build-renderer] ERROR: unknown argument ${1}" >&2
+    exit 1
+    ;;
+esac
+
 echo "[build-renderer] frontend dir: ${FRONTEND_DIR}"
 echo "[build-renderer] out renderer: ${OUT_RENDERER}"
 
-if [[ ! -d "${FRONTEND_DIR}" ]]; then
-  echo "[build-renderer] ERROR: frontend not found at ${FRONTEND_DIR}." >&2
-  echo "[build-renderer] Initialise the submodule (git submodule update --init" >&2
-  echo "[build-renderer] ../myqrlwallet-frontend) then re-run." >&2
+# The network row for QRL_NETWORK_PROFILE, from src/main/config.ts NETWORKS.
+# scripts/network-values.mjs exits 1 for a profile that cannot run, and the
+# assignment below then stops the script (set -e).
+NETWORK_VALUES="$(cd "${DESKTOP_DIR}" && node --import tsx scripts/network-values.mjs)"
+QRL_NET_NETWORK_PROFILE=''
+QRL_NET_TESTNET_CHAIN_ID=''
+QRL_NET_TESTNET_GENESIS_HASH=''
+QRL_NET_TESTNET_RPC_PATH=''
+QRL_NET_TESTNET_QNS_REGISTRY=''
+QRL_NET_MAINNET_CHAIN_ID=''
+QRL_NET_MAINNET_GENESIS_HASH=''
+QRL_NET_MAINNET_RPC_PATH=''
+QRL_NET_MAINNET_QNS_REGISTRY=''
+while IFS='=' read -r key value; do
+  case "${key}" in
+    NETWORK_PROFILE | TESTNET_CHAIN_ID | TESTNET_GENESIS_HASH | TESTNET_RPC_PATH | \
+      TESTNET_QNS_REGISTRY | MAINNET_CHAIN_ID | MAINNET_GENESIS_HASH | MAINNET_RPC_PATH | \
+      MAINNET_QNS_REGISTRY)
+      printf -v "QRL_NET_${key}" '%s' "${value}"
+      ;;
+    *)
+      echo "[build-renderer] ERROR: unexpected network value '${key}'" >&2
+      exit 1
+      ;;
+  esac
+done <<<"${NETWORK_VALUES}"
+if [[ -z "${QRL_NET_TESTNET_CHAIN_ID}" || -z "${QRL_NET_TESTNET_GENESIS_HASH}" ]]; then
+  echo "[build-renderer] ERROR: the network table returned no testnet pins" >&2
   exit 1
 fi
-
-if [[ ! -f "${FRONTEND_DIR}/package-lock.json" ]]; then
-  echo "[build-renderer] ERROR: frontend lockfile not found at ${FRONTEND_DIR}/package-lock.json." >&2
+if [[ "${QRL_NET_NETWORK_PROFILE}" == "mainnet" && \
+  (-z "${QRL_NET_MAINNET_CHAIN_ID}" || -z "${QRL_NET_MAINNET_GENESIS_HASH}") ]]; then
+  echo "[build-renderer] ERROR: the network table returned no mainnet pins" >&2
   exit 1
 fi
-
-echo "[build-renderer] installing locked frontend dependencies..."
-npm --prefix "${FRONTEND_DIR}" ci
+# Pins come from the network table alone, and a desktop renderer lists exactly
+# the build's network.
+if [[ -n "${VITE_MAINNET_CHAIN_ID:-}" || -n "${VITE_MAINNET_GENESIS_HASH:-}" ]]; then
+  echo "[build-renderer] ERROR: set the mainnet pins in src/main/config.ts NETWORKS; VITE_MAINNET_CHAIN_ID and VITE_MAINNET_GENESIS_HASH must stay unset." >&2
+  exit 1
+fi
+if [[ -n "${VITE_V3_NATIVE_NETWORK:-}" && "${VITE_V3_NATIVE_NETWORK}" != "${QRL_NET_NETWORK_PROFILE}" ]]; then
+  echo "[build-renderer] ERROR: VITE_V3_NATIVE_NETWORK=${VITE_V3_NATIVE_NETWORK} differs from the ${QRL_NET_NETWORK_PROFILE} build profile (QRL_NETWORK_PROFILE)." >&2
+  exit 1
+fi
+echo "[build-renderer] network profile: ${QRL_NET_NETWORK_PROFILE}"
 
 # PRODUCTION defaults (qrlwallet.com). ${VAR:-default} keeps any value the
 # caller already exported, so a staging build just exports
@@ -74,22 +126,85 @@ export VITE_RPC_URL_DEVELOPMENT="${VITE_RPC_URL_DEVELOPMENT:-https://dev.qrlwall
 export VITE_SERVER_URL_DEVELOPMENT="${VITE_SERVER_URL_DEVELOPMENT:-https://dev.qrlwallet.com/api}"
 export VITE_EXPLORER_URL_DEVELOPMENT="${VITE_EXPLORER_URL_DEVELOPMENT:-https://zondscan.com}"
 
-# The renderer and native broker ship the same qualified v3 network identity.
+# The renderer and native broker ship the same qualified v3 network identity,
+# from the network table. The reused frontend's v3 profile always carries the
+# testnet block; a mainnet build adds the mainnet block and lists only mainnet.
 export VITE_WALLET_PROFILE=v3-private
-export VITE_V3_CHAIN_ID=0x301825
-export VITE_V3_GENESIS_HASH=0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4
+export VITE_V3_CHAIN_ID="${QRL_NET_TESTNET_CHAIN_ID}"
+export VITE_V3_GENESIS_HASH="${QRL_NET_TESTNET_GENESIS_HASH}"
 # QNS registry on the v3 testnet, the same one qrlwallet.com uses: Send resolves
 # names ending in .qrl. Leave it empty to build without name resolution.
-export VITE_V3_QNS_REGISTRY="${VITE_V3_QNS_REGISTRY-Qcfc5f3242cE7d413F308D4181fd45D441d535298d78fd2d26833c2650408f636B46590dc10D23221480eFac958705Ba6C266eEB16B5aeafA64202715Adc84424}"
+export VITE_V3_QNS_REGISTRY="${VITE_V3_QNS_REGISTRY-${QRL_NET_TESTNET_QNS_REGISTRY}}"
 if [[ "${VITE_NODE_ENV}" == "production" ]]; then
-  export VITE_V3_RPC_URL="${VITE_RPC_URL_PRODUCTION}/testnet"
+  RENDERER_RPC_BASE="${VITE_RPC_URL_PRODUCTION}"
   export VITE_V3_SERVER_URL="${VITE_SERVER_URL_PRODUCTION}"
   export VITE_V3_EXPLORER_URL="${VITE_EXPLORER_URL_PRODUCTION}"
 else
-  export VITE_V3_RPC_URL="${VITE_RPC_URL_DEVELOPMENT}/testnet"
+  RENDERER_RPC_BASE="${VITE_RPC_URL_DEVELOPMENT}"
   export VITE_V3_SERVER_URL="${VITE_SERVER_URL_DEVELOPMENT}"
   export VITE_V3_EXPLORER_URL="${VITE_EXPLORER_URL_DEVELOPMENT}"
 fi
+export VITE_V3_RPC_URL="${RENDERER_RPC_BASE}/${QRL_NET_TESTNET_RPC_PATH}"
+if [[ "${QRL_NET_NETWORK_PROFILE}" == "mainnet" ]]; then
+  # The desktop renderer lists only the build's network.
+  export VITE_V3_NATIVE_NETWORK=mainnet
+  export VITE_MAINNET_CHAIN_ID="${QRL_NET_MAINNET_CHAIN_ID}"
+  export VITE_MAINNET_GENESIS_HASH="${QRL_NET_MAINNET_GENESIS_HASH}"
+  export VITE_MAINNET_RPC_URL="${RENDERER_RPC_BASE}/${QRL_NET_MAINNET_RPC_PATH}"
+  export VITE_MAINNET_SERVER_URL="${VITE_V3_SERVER_URL}"
+  # Empty by default: mainnet then has no explorer links, explorer discovery
+  # or price. Export VITE_MAINNET_EXPLORER_URL once an explorer indexes it.
+  export VITE_MAINNET_EXPLORER_URL="${VITE_MAINNET_EXPLORER_URL-}"
+  # The mainnet QNS registry from the network table (empty: names off).
+  export VITE_MAINNET_QNS_REGISTRY="${VITE_MAINNET_QNS_REGISTRY-${QRL_NET_MAINNET_QNS_REGISTRY}}"
+fi
+
+# The reused frontend ships a <meta http-equiv="Content-Security-Policy"> tuned
+# for WEB hosting: script-src carries 'unsafe-inline' and connect-src allows
+# http://localhost:* (both fine behind nginx's strict header, wrong for the
+# desktop). The desktop's authoritative CSP is now delivered as a real response
+# header by the app-protocol handler (src/main/appProtocol.ts), but the meta tag
+# stays enforced too, so it is rewritten WHOLESALE to the desktop policy after
+# the build: no inline script, no localhost connects, connect-src limited to the
+# configured backend + relay + explorer. Mirror src/main/security.ts
+# buildContentSecurityPolicy, minus frame-ancestors (ignored in meta CSP).
+if [[ "${VITE_NODE_ENV}" == "production" ]]; then
+  CSP_SERVER_URL="${VITE_SERVER_URL_PRODUCTION:-${VITE_SERVER_URL_DEVELOPMENT}}"
+  CSP_EXPLORER_URL="${VITE_EXPLORER_URL_PRODUCTION:-${VITE_EXPLORER_URL_DEVELOPMENT}}"
+else
+  CSP_SERVER_URL="${VITE_SERVER_URL_DEVELOPMENT}"
+  CSP_EXPLORER_URL="${VITE_EXPLORER_URL_DEVELOPMENT}"
+fi
+SERVER_HOST="$(printf '%s' "${CSP_SERVER_URL}" | sed -E 's#^https?://##; s#/.*$##')"
+EXPLORER_HOST="$(printf '%s' "${CSP_EXPLORER_URL}" | sed -E 's#^https?://##; s#/.*$##')"
+# qrlwallet.com https+wss is the dApp-connect relay, reached directly even by
+# the dev/staging frontend (keep in sync with src/main/config.ts frontendOrigins).
+DESKTOP_CSP="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${SERVER_HOST} wss://${SERVER_HOST} https://qrlwallet.com wss://qrlwallet.com https://${EXPLORER_HOST}; img-src 'self' data: https://${SERVER_HOST}; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'"
+if [[ -z "${SERVER_HOST}" || -z "${EXPLORER_HOST}" ]]; then
+  echo "[build-renderer] ERROR: could not resolve the CSP server and explorer hosts" >&2
+  exit 1
+fi
+
+if [[ "${PRINT_ENV}" == 1 ]]; then
+  env | grep '^VITE_' | LC_ALL=C sort
+  printf 'DESKTOP_CSP=%s\n' "${DESKTOP_CSP}"
+  exit 0
+fi
+
+if [[ ! -d "${FRONTEND_DIR}" ]]; then
+  echo "[build-renderer] ERROR: frontend not found at ${FRONTEND_DIR}." >&2
+  echo "[build-renderer] Initialise the submodule (git submodule update --init" >&2
+  echo "[build-renderer] ../myqrlwallet-frontend) then re-run." >&2
+  exit 1
+fi
+
+if [[ ! -f "${FRONTEND_DIR}/package-lock.json" ]]; then
+  echo "[build-renderer] ERROR: frontend lockfile not found at ${FRONTEND_DIR}/package-lock.json." >&2
+  exit 1
+fi
+
+echo "[build-renderer] installing locked frontend dependencies..."
+npm --prefix "${FRONTEND_DIR}" ci
 
 echo "[build-renderer] building frontend (VITE_DESKTOP=1, VITE_NODE_ENV=${VITE_NODE_ENV})..."
 if [[ "${VITE_NODE_ENV}" == "production" ]]; then
@@ -119,33 +234,7 @@ if [[ ! -s "${RENDER_HTML}" ]]; then
   exit 1
 fi
 
-# The reused frontend ships a <meta http-equiv="Content-Security-Policy"> tuned
-# for WEB hosting: script-src carries 'unsafe-inline' and connect-src allows
-# http://localhost:* (both fine behind nginx's strict header, wrong for the
-# desktop). The desktop's authoritative CSP is now delivered as a real response
-# header by the app-protocol handler (src/main/appProtocol.ts), but the meta tag
-# stays enforced too, so rewrite it WHOLESALE to the desktop policy: no inline
-# script, no localhost connects, connect-src limited to the configured backend
-# + relay + explorer. Mirror src/main/security.ts buildContentSecurityPolicy,
-# minus frame-ancestors (ignored in meta CSP). Idempotent, portable sed (no
-# in-place -i, which differs on BSD/macOS).
-if [[ "${VITE_NODE_ENV}" == "production" ]]; then
-  CSP_SERVER_URL="${VITE_SERVER_URL_PRODUCTION:-${VITE_SERVER_URL_DEVELOPMENT}}"
-  CSP_EXPLORER_URL="${VITE_EXPLORER_URL_PRODUCTION:-${VITE_EXPLORER_URL_DEVELOPMENT}}"
-else
-  CSP_SERVER_URL="${VITE_SERVER_URL_DEVELOPMENT}"
-  CSP_EXPLORER_URL="${VITE_EXPLORER_URL_DEVELOPMENT}"
-fi
-SERVER_HOST="$(printf '%s' "${CSP_SERVER_URL}" | sed -E 's#^https?://##; s#/.*$##')"
-EXPLORER_HOST="$(printf '%s' "${CSP_EXPLORER_URL}" | sed -E 's#^https?://##; s#/.*$##')"
-# qrlwallet.com https+wss is the dApp-connect relay, reached directly even by
-# the dev/staging frontend (keep in sync with src/main/config.ts frontendOrigins).
-DESKTOP_CSP="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${SERVER_HOST} wss://${SERVER_HOST} https://qrlwallet.com wss://qrlwallet.com https://${EXPLORER_HOST}; img-src 'self' data: https://${SERVER_HOST}; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'"
-if [[ -z "${SERVER_HOST}" || -z "${EXPLORER_HOST}" ]]; then
-  echo "[build-renderer] ERROR: could not resolve the CSP server and explorer hosts" >&2
-  exit 1
-fi
-
+# Rewrite the staged renderer's meta CSP to DESKTOP_CSP (derived above).
 # Vite/Prettier may serialize the source meta tag over several lines. Use Node's
 # HTML-text rewrite rather than line-oriented sed so the desktop policy always
 # replaces that complete tag. If a future frontend removes its web meta policy,

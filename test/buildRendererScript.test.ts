@@ -2,10 +2,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,6 +51,15 @@ function makeFixture(t: TestContext) {
   copyFileSync(SOURCE_SCRIPT, scriptPath);
   mkdirSync(join(desktopDir, 'src/migration'), { recursive: true });
   copyFileSync(resolve('src/migration/index.html'), join(desktopDir, 'src/migration/index.html'));
+  // The script reads the network table through scripts/network-values.mjs,
+  // which runs src/main/config.ts under tsx.
+  copyFileSync(
+    resolve('scripts/network-values.mjs'),
+    join(desktopDir, 'scripts/network-values.mjs'),
+  );
+  mkdirSync(join(desktopDir, 'src/main'), { recursive: true });
+  copyFileSync(resolve('src/main/config.ts'), join(desktopDir, 'src/main/config.ts'));
+  symlinkSync(resolve('node_modules'), join(desktopDir, 'node_modules'), 'dir');
   chmodSync(scriptPath, 0o755);
 
   return {
@@ -329,4 +340,24 @@ test('renderer build fails when copying does not stage index.html', (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /ERROR: staged renderer entrypoint missing or empty/);
+});
+
+test('a mainnet build without pinned identity stops before installing anything', (t) => {
+  const fixture = makeFixture(t);
+  const binDir = join(fixture.root, 'bin');
+  const callLog = join(fixture.root, 'npm-calls.log');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+
+  const result = runScript(fixture.scriptPath, binDir, {
+    NPM_CALL_LOG: callLog,
+    QRL_NETWORK_PROFILE: 'mainnet',
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /mainnet network has no pinned chain id and genesis hash/);
+  assert.equal(existsSync(callLog), false, 'npm never ran');
+  assert.equal(existsSync(join(fixture.desktopDir, 'out')), false, 'nothing staged');
 });
