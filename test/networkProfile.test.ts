@@ -17,6 +17,7 @@ import { test } from 'node:test';
 import {
   NETWORKS,
   NetworkProfileError,
+  migratesLegacyData,
   nativeNetworkCapability,
   networkBuildDefines,
   networkProfileName,
@@ -508,6 +509,29 @@ test('main checks the network before anything it registers, creates or starts', 
   // The data directory is the table's, so testnet keeps v3-private.
   assert.match(source, /path\.join\(legacyUserData, NETWORK\.userDataDir\)/);
   assert.doesNotMatch(source, /'v3-private'/);
+});
+
+test('only a testnet build detects and migrates data from earlier releases', async () => {
+  assert.equal(migratesLegacyData(resolveNetwork('testnet')), true);
+  assert.equal(migratesLegacyData(resolveNetwork('testnet', PINNED_MAINNET)), true);
+  assert.equal(migratesLegacyData(resolveNetwork('mainnet', PINNED_MAINNET)), false);
+
+  // index.ts reaches the pre-v3 notice check, the file-origin storage copy and
+  // the single-wallet seed migration only behind that predicate.
+  const source = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8');
+  assert.match(source, /^const LEGACY_DATA = migratesLegacyData\(NETWORK\);$/m);
+  assert.match(
+    source,
+    /async function shouldShowLegacyDataNotice\(\): Promise<boolean> \{\n {2}if \(!LEGACY_DATA\) return false;\n/,
+  );
+  const gated = /\n {4}if \(LEGACY_DATA\) \{\n([\s\S]*?)\n {4}\}\n/.exec(source)?.[1];
+  assert.ok(gated, 'index.ts gates the legacy migrations on LEGACY_DATA');
+  assert.match(gated, /^ {6}if \(!devUrl\) await migrateWalletStorage\(allowStorageHelper\);$/m);
+  assert.match(gated, /^ {6}await migrateLegacySeed\(\);$/m);
+  const calls = source.replace(/^import[\s\S]*?;$/gm, '');
+  for (const call of ['hasLegacyWalletData(', 'migrateWalletStorage(', 'migrateLegacySeed(']) {
+    assert.equal(calls.split(call).length - 1, 1, `${call} has one call site`);
+  }
 });
 
 test('electron-vite refuses an unpinned mainnet build before building anything', () => {

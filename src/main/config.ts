@@ -194,6 +194,16 @@ export function resolveNetwork(
   return Object.freeze({ ...entry, profile, chainId, genesisHash });
 }
 
+/**
+ * Whether a build handles data left by earlier desktop releases: the pre-v3
+ * wallet notice, the file-origin storage copy and the single-wallet seed
+ * migration (src/main/index.ts). Every earlier release ran on testnet, so a
+ * mainnet build starts in its own empty data directory and skips all three.
+ */
+export function migratesLegacyData(network: PinnedNetwork): boolean {
+  return network.profile === 'testnet';
+}
+
 const chainIdHex = (chainId: number): string => `0x${chainId.toString(16)}`;
 
 /** The network record the wallet bridge advertises as window.qrlWallet.network. */
