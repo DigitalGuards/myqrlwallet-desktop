@@ -11,7 +11,7 @@ import { isRecord } from '../src/shared/guards';
 import { readSettingsFile, updateSettingsFile } from '../src/main/settingsFile';
 import { NullVault } from '../src/keyvault/nullVault';
 import { malformed } from './helpers/malformed';
-import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } from '../src/main/config';
+import { networkBuildDefines, pinnedNetwork } from '../src/main/config';
 
 register(new URL('./nativeIpcMockLoader.mjs', import.meta.url));
 const electron = await import('electron');
@@ -22,6 +22,7 @@ const { registerUnlockIpc, showUnlockWindow, setOnUnlockShown } =
   await import('../src/main/unlockWindow');
 const { SignerBridge } = await import('../src/main/signerBridge');
 const { writeSeed, setActiveAddress } = await import('../src/main/seedFile');
+const { chainId: EXPECTED_CHAIN_ID, genesisHash: EXPECTED_GENESIS_HASH } = pinnedNetwork();
 
 function eventFor(sender: WebContents): IpcMainInvokeEvent {
   return malformed<IpcMainInvokeEvent>({ sender, senderFrame: sender.mainFrame });
@@ -149,8 +150,26 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     subscribed.add(channel);
     return electron.ipcRenderer;
   });
+  // electron-vite replaces this constant in the built preload with the value
+  // networkBuildDefines gives the build profile; unset means testnet.
+  const walletNetwork: unknown = JSON.parse(networkBuildDefines(undefined).__QRL_WALLET_NETWORK__);
+  Object.defineProperty(globalThis, '__QRL_WALLET_NETWORK__', {
+    value: walletNetwork,
+    configurable: true,
+  });
+  t.after(() => {
+    Reflect.deleteProperty(globalThis, '__QRL_WALLET_NETWORK__');
+  });
   await import('../src/preload/index');
   assert.ok(isRecord(api));
+  // The testnet build advertises the native capability profile v3-private
+  // with the testnet pins, exactly what the app's capability record carries.
+  assert.deepEqual(api['network'], {
+    networkProfile: 'v3-private',
+    chainId: '0x301825',
+    genesisHash: '0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4',
+  });
+  assert.ok(Object.isFrozen(api['network']));
   await writeSeed(envelope('a'));
   await setActiveAddress(envelope('a').address);
   t.mock.method(globalThis, 'fetch', (_input: unknown, init?: { body?: unknown }) => {
@@ -199,7 +218,7 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
   };
   assert.deepEqual(
     Object.keys(api).sort(),
-    [...Object.keys(calls), 'features', 'addressScheme'].sort(),
+    [...Object.keys(calls), 'features', 'addressScheme', 'network'].sort(),
   );
   for (const [name, args] of Object.entries(calls)) {
     const method: unknown = api[name];

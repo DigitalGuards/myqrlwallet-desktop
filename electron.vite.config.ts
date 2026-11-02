@@ -2,7 +2,13 @@ import { resolve } from 'node:path';
 import { cp, readFile, writeFile } from 'node:fs/promises';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
-import { rendererServerOrigin } from './src/main/config';
+import { networkBuildDefines, rendererServerOrigin } from './src/main/config';
+
+// The network is fixed when the app is built: QRL_NETWORK_PROFILE (testnet by
+// default) selects a row of the network table in src/main/config.ts. A profile
+// without both identity pins (mainnet before launch) throws here, which stops
+// `build`, `build:shell`, `dev` and every `dist*` script.
+const networkDefines = networkBuildDefines(process.env['QRL_NETWORK_PROFILE']);
 
 /**
  * electron-vite builds three targets into `out/`:
@@ -21,6 +27,7 @@ export default defineConfig({
     // staging builds. Launch-time environment changes cannot widen this list.
     define: {
       __QRL_RENDERER_SERVER_ORIGIN__: JSON.stringify(rendererServerOrigin()),
+      ...networkDefines,
     },
     build: {
       externalizeDeps: true,
@@ -38,6 +45,8 @@ export default defineConfig({
     },
   },
   preload: {
+    // The wallet preload advertises the build's network (window.qrlWallet.network).
+    define: networkDefines,
     build: {
       externalizeDeps: true,
       outDir: 'out/preload',
