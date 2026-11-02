@@ -255,13 +255,22 @@ const BUILD_NETWORK_PROFILE: unknown =
     ? __QRL_NETWORK_PROFILE__
     : process.env['QRL_NETWORK_PROFILE'];
 
-type NetworkSelection =
+/** The pinned network a build profile runs on, or the reason it cannot run. */
+export type NetworkSelection =
   | { readonly network: PinnedNetwork; readonly error: null }
   | { readonly network: null; readonly error: string };
 
-function selectNetwork(value: unknown): NetworkSelection {
+/**
+ * resolveNetwork as a value: the pinned network, or the NetworkProfileError
+ * message for a profile that cannot run. pinnedNetwork() serves the build's
+ * selection from NETWORKS; tests pass a table with a pinned mainnet row.
+ */
+export function selectNetwork(
+  value: unknown,
+  table: Readonly<Record<NetworkProfileName, NetworkTableEntry>> = NETWORKS,
+): NetworkSelection {
   try {
-    return { network: resolveNetwork(value), error: null };
+    return { network: resolveNetwork(value, table), error: null };
   } catch (err) {
     if (err instanceof NetworkProfileError) return { network: null, error: err.message };
     throw err;

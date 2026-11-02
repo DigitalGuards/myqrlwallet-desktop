@@ -22,6 +22,7 @@ import {
   networkProfileName,
   rendererNetworkValues,
   resolveNetwork,
+  selectNetwork,
   type NetworkProfileName,
   type NetworkTableEntry,
 } from '../src/main/config';
@@ -219,6 +220,31 @@ test('a mainnet identity must be complete, well formed and differ from testnet',
   }
 });
 
+test('selectNetwork returns the pinned network or the reason the profile cannot run', () => {
+  const testnet = selectNetwork('testnet');
+  assert.equal(testnet.error, null);
+  assert.ok(testnet.network);
+  assert.equal(testnet.network.chainId, 3151909);
+  assert.equal(testnet.network.genesisHash, TESTNET_GENESIS);
+
+  const pinned = selectNetwork('mainnet', PINNED_MAINNET);
+  assert.equal(pinned.error, null);
+  assert.ok(pinned.network);
+  assert.equal(pinned.network.profile, 'mainnet');
+  assert.equal(pinned.network.chainId, 7);
+  assert.equal(pinned.network.genesisHash, MAINNET_GENESIS);
+
+  assert.deepEqual(selectNetwork('mainnet'), {
+    network: null,
+    error:
+      'The mainnet network has no pinned chain id and genesis hash yet, so this build cannot run on it.',
+  });
+  assert.deepEqual(selectNetwork('mainnet-beta', PINNED_MAINNET), {
+    network: null,
+    error: 'QRL_NETWORK_PROFILE must be testnet or mainnet',
+  });
+});
+
 const CONFIG = JSON.stringify(new URL('../src/main/config.ts', import.meta.url).href);
 const RPC = JSON.stringify(new URL('../src/main/rpc.ts', import.meta.url).href);
 const SIGNATURE = JSON.stringify(new URL('../src/main/signatureRequest.ts', import.meta.url).href);
@@ -350,10 +376,8 @@ process.stdout.write(JSON.stringify({ rpcCalls, fetches, signing, steps }));`,
   });
 });
 
-test('signer pins follow the selected profile', () => {
-  const result = inChild(
-    'testnet',
-    `const { signWithConfirmation } = await import(${SIGNATURE});
+/** Signs a message offline and prints the chain id the signer and the confirmation receive. */
+const SIGN_MESSAGE = `const { signWithConfirmation } = await import(${SIGNATURE});
 globalThis.fetch = () => Promise.reject(new Error('offline signing reached the network'));
 const seen = {};
 await signWithConfirmation(
@@ -372,9 +396,23 @@ await signWithConfirmation(
     },
   },
 );
-process.stdout.write(JSON.stringify(seen));`,
+process.stdout.write(JSON.stringify(seen));`;
+
+test('signer pins follow the selected profile', () => {
+  assert.deepEqual(inChild('testnet', SIGN_MESSAGE), {
+    signerChainId: 3151909,
+    confirmChainId: 3151909,
+  });
+  // A pinned mainnet row (test/pinnedMainnetLoader.mjs injects one through
+  // selectNetwork) reaches the signer and the confirmation with its own chain id.
+  const loader = JSON.stringify(new URL('./pinnedMainnetLoader.mjs', import.meta.url).href);
+  assert.deepEqual(
+    inChild(
+      'mainnet',
+      `import { register } from 'node:module';\nregister(${loader});\n${SIGN_MESSAGE}`,
+    ),
+    { signerChainId: 7, confirmChainId: 7 },
   );
-  assert.deepEqual(result, { signerChainId: 3151909, confirmChainId: 3151909 });
 });
 
 test('startup refuses an unpinned network with an error box and exit code 1', () => {
