@@ -7,7 +7,7 @@ import { SCHEME } from '../src/shared/constants';
 import { KDF_DEFAULTS, SEED_FILE_VERSION } from '../src/shared/constants';
 import { parseSignerRequest } from '../src/shared/protocolGuards';
 import type { EncryptedSeed } from '../src/shared/protocol';
-import { EXPECTED_CHAIN_ID } from '../src/main/config';
+import { pinnedNetwork } from '../src/main/config';
 import { summariseSignatureRequest } from '../src/main/confirmSummary';
 import { SignerSession } from '../src/signer/session';
 import { aesGcmEncrypt } from '../src/signer/aead';
@@ -17,6 +17,8 @@ import { encodeType, typedDataSchemeVersion } from '../src/shared/typedData';
 import { signTypedData } from '../src/signer/signing';
 import { computeTypedDataDigest, typedDataSchemeTag, typeHash } from '../src/signer/typedData';
 import { canonical, payloadWith, typedRequest } from './typedDataFixtures';
+
+const { chainId: EXPECTED_CHAIN_ID } = pinnedNetwork();
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 const bytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.slice(2), 'hex'));

@@ -16,9 +16,10 @@ import { windowIcon } from './appIcon';
 import { APP_URLS } from '../shared/appUrls';
 import { createAppProtocolHandler } from './appProtocol';
 import { installFileAccessPolicy, migrateWalletStorage } from './storageMigration';
-import { APP_ID, connectSrcOrigins } from './config';
+import { APP_ID, connectSrcOrigins, pinnedNetwork } from './config';
 import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
-import { logMain } from './log';
+import { logConsole, logMain } from './log';
+import { startupNetwork } from './startupNetwork';
 import { registerIpcHandlers } from './ipc';
 import {
   buildContentSecurityPolicy,
@@ -51,6 +52,22 @@ import { hasLegacyWalletData } from './legacyData';
 import { readSettings, updateSettings } from './settingsFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
+
+// First: a build whose network has no pinned chain id and genesis hash
+// (mainnet before launch) stops here, before anything below registers a
+// protocol, creates a data directory, forks the signer or makes an RPC call.
+const NETWORK = startupNetwork(pinnedNetwork, {
+  showErrorBox: (title, content) => {
+    dialog.showErrorBox(title, content);
+  },
+  exit: (code) => {
+    app.exit(code);
+  },
+  log: (message) => {
+    logConsole.error(message);
+  },
+  title: t('error.startTitle'),
+});
 
 // Register once, before ready. CSP bypass and service workers stay disabled.
 protocol.registerSchemesAsPrivileged([
@@ -129,8 +146,10 @@ const dappIngress = new DappUriIngress({
 
 app.setName('MyQRLWallet');
 // Keep v2 ciphertext, settings and browser state intact for recovery in v1.0.0.
+// Each network has its own directory (testnet: v3-private, mainnet:
+// v3-mainnet), so wallets, settings and browser storage never mix.
 const legacyUserData = app.getPath('userData');
-const currentUserData = path.join(legacyUserData, 'v3-private');
+const currentUserData = path.join(legacyUserData, NETWORK.userDataDir);
 mkdirSync(currentUserData, { recursive: true, mode: 0o700 });
 app.setPath('userData', currentUserData);
 

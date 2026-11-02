@@ -52,11 +52,32 @@ export interface QrlWalletFeatures {
   readonly dappGasLimit: true;
 }
 
+/**
+ * The network this build runs on, in the shape the mobile app advertises in its
+ * native capability record: `networkProfile` is `v3-private` on the testnet and
+ * `v3-mainnet` on mainnet, with that network's chain id and genesis pins.
+ *
+ * Compatibility metadata, like `addressScheme`. It is a build-time constant
+ * from the same network table main enforces (src/main/config.ts NETWORKS), so
+ * a renderer can check that it was bundled for the same network. Main never
+ * reads it back: RPC endpoints and every signature stay pinned in main
+ * whatever a renderer does with this value.
+ */
+export interface QrlWalletNetwork {
+  readonly networkProfile: 'v3-private' | 'v3-mainnet';
+  /** Hex chain id, e.g. `0x301825`. */
+  readonly chainId: string;
+  /** Lowercase genesis block hash. */
+  readonly genesisHash: string;
+}
+
 export interface QrlWalletApi {
   /** Address capability verified by the bundled renderer before using the signer. */
   readonly addressScheme: 'qip55-64';
   /** Optional-field capability flags; see {@link QrlWalletFeatures}. */
   readonly features: QrlWalletFeatures;
+  /** The network this build runs on; see {@link QrlWalletNetwork}. */
+  readonly network: QrlWalletNetwork;
 
   // ---- read-only ----------------------------------------------------------
   getBalance(req: GetBalanceRequest): Promise<BalanceResult>;

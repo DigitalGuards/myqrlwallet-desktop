@@ -22,7 +22,8 @@ process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/te
 
 const rpc = await import('../src/main/rpc');
 const { recallBuild, clearBuildRecords } = await import('../src/main/buildRecords');
-const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
+const { pinnedNetwork } = await import('../src/main/config');
+const { chainId: EXPECTED_CHAIN_ID, genesisHash: EXPECTED_GENESIS_HASH } = pinnedNetwork();
 
 interface RecordedCall {
   method: string;

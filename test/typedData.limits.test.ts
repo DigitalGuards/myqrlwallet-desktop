@@ -15,8 +15,10 @@ import {
   TYPED_DATA_MAX_IPC_BYTES,
 } from '../src/shared/typedDataIpcSize';
 import { computeTypedDataDigest } from '../src/signer/typedData';
-import { EXPECTED_CHAIN_ID } from '../src/main/config';
+import { pinnedNetwork } from '../src/main/config';
 import { payloadWith, SIGNER } from './typedDataFixtures';
+
+const { chainId: EXPECTED_CHAIN_ID } = pinnedNetwork();
 
 function rejects(payload: unknown, reason: RegExp): void {
   const request = { kind: 'typedData', payload, signer: SIGNER };
