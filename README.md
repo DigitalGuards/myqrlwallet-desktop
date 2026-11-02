@@ -376,9 +376,36 @@ QRL 2.0 mainnet is dormant. Its chain ID and genesis hash stay `null` until the
 network publishes them. While either is `null`, `QRL_NETWORK_PROFILE=mainnet`
 stops `npm run build` and every `dist*` script (in `electron-vite` and in
 `build-renderer.sh`, before anything is installed), and a main process built
-for it exits before it creates a data directory or makes an RPC call. Launch
-day: fill in both pins in `NETWORKS` and build with
-`QRL_NETWORK_PROFILE=mainnet`.
+for it exits before it creates a data directory or makes an RPC call.
+
+A mainnet build also checks the staged renderer: `build-renderer.sh` removes
+`out/renderer` and stops unless the renderer contains the mainnet genesis hash
+and `v3-mainnet`. A frontend from before mainnet support ignores
+`VITE_V3_NATIVE_NETWORK` and lists only testnet, so it fails this check. A
+mainnet build also skips the steps for data from earlier releases (the pre-v3
+wallet notice, the file-origin storage copy and the single-wallet seed
+migration), because every earlier release ran on testnet.
+
+Launch day:
+
+1. Fill in both mainnet pins in `NETWORKS` (`src/main/config.ts`).
+2. Bump the frontend revision the renderer is built from: `1ee1fc4` today in
+   `.github/workflows/ci.yml` and `docs/FRONTEND_INTEGRATION.md`. Pick a
+   frontend release with mainnet support; one that lists only testnet fails
+   the renderer check above.
+3. Decide the application identity. Both profiles share `APP_ID`
+   (`src/main/config.ts`), the `appId`, `productName` and `qrlconnect://`
+   protocol entries in `electron-builder.yml`, and the `MyQRLWallet` user data
+   directory (with separate `v3-private` and `v3-mainnet` subdirectories), so
+   both builds register as the `qrlconnect://` handler. Decide whether mainnet
+   keeps this identity or gets its own.
+4. Mainnet has no default failover endpoint and no explorer. Its row sets
+   `rpcUrlSecondary: null`, and `build-renderer.sh` leaves
+   `VITE_MAINNET_EXPLORER_URL` empty, so the renderer shows no explorer links,
+   explorer discovery or price. Add a failover endpoint to the row once the dev
+   backend pins mainnet, and export `VITE_MAINNET_EXPLORER_URL` once an
+   explorer indexes mainnet.
+5. Build with `QRL_NETWORK_PROFILE=mainnet`.
 
 `npm run build:renderer:frontend -- --print-env` prints the renderer build
 environment and exits without building. `test/rendererEnv.test.ts` holds the

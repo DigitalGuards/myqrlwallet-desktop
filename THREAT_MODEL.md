@@ -642,7 +642,10 @@ the build was made for, in the shape of the mobile app's capability record:
 `chainId` and the `genesisHash`. A renderer can use it to check that it was
 bundled for the same network. It is a build-time constant from the same table
 main enforces, and main never reads it back: endpoint qualification and the
-chain ID of every signature stay pinned in main.
+chain ID of every signature stay pinned in main. A mainnet build also stops
+when the staged renderer does not contain the mainnet genesis hash and
+`v3-mainnet` (`scripts/build-renderer.sh`), so a frontend that lists only
+testnet cannot ship next to a main process pinned to mainnet.
 
 ### D. Supply chain
 
