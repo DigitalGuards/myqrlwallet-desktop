@@ -32,7 +32,8 @@
 # network table in src/main/config.ts, the same row the main process pins, so
 # the renderer and the broker always ship one network. A profile without both
 # identity pins (mainnet before launch) stops this script before it installs
-# or builds anything.
+# or builds anything. A mainnet build also checks the staged renderer for the
+# mainnet genesis hash and v3-mainnet, and stops when either is missing.
 #
 # `--print-env` prints the renderer build environment and the desktop CSP, then
 # exits without touching the frontend (test/rendererEnv.test.ts compares it).
@@ -268,5 +269,21 @@ process.stdout.write(action);
 NODE
 )"
 echo "[build-renderer] ${CSP_REWRITE_ACTION} renderer meta CSP (script-src 'self' 'wasm-unsafe-eval', backend ${SERVER_HOST})"
+
+# A mainnet build must bundle a frontend that runs on the pinned mainnet. A
+# frontend from before mainnet support ignores VITE_V3_NATIVE_NETWORK and
+# lists only testnet while main pins mainnet, so the staged renderer has to
+# carry the mainnet genesis hash and the v3-mainnet profile. Without either,
+# the staged renderer is removed and the build stops.
+if [[ "${QRL_NET_NETWORK_PROFILE}" == "mainnet" ]]; then
+  for marker in "${QRL_NET_MAINNET_GENESIS_HASH}" 'v3-mainnet'; do
+    if ! grep -rqF --include='*.js' --include='*.html' -- "${marker}" "${OUT_RENDERER}"; then
+      rm -rf "${OUT_RENDERER}"
+      echo "[build-renderer] ERROR: the staged renderer does not contain ${marker}. Build the renderer from a frontend revision with mainnet support (VITE_V3_NATIVE_NETWORK=mainnet)." >&2
+      exit 1
+    fi
+  done
+  echo "[build-renderer] staged renderer carries the mainnet genesis hash and v3-mainnet"
+fi
 
 echo "[build-renderer] done. Real frontend staged at ${OUT_RENDERER}/index.html"
