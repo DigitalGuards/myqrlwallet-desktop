@@ -510,7 +510,14 @@ hashes. The scheme tag binds both the final digest and the ML-DSA-87 context.
   navigation preserve the current request. Lock, autolock and signer exit also
   abort the open or arming confirmation; continuing requires a fresh request.
 - **What main trusts:** the IPC sender check, strict request schema, and its
-  own pinned network identity. The domain chain ID is compared numerically
+  own pinned network identity. That identity is the row of the network table
+  (`src/main/config.ts` `NETWORKS`) chosen by `QRL_NETWORK_PROFILE` when the app
+  is built: `testnet` pins chain ID 3151909 and its genesis hash; `mainnet`
+  pins nothing yet, so a mainnet build stops at build time and a main process
+  built for it exits before it creates a data directory or makes an RPC call.
+  The profile is a build-time constant that the launch environment cannot
+  change, and each profile keeps its own `userData` directory (`v3-private`,
+  `v3-mainnet`). The domain chain ID is compared numerically
   with the `Wallet network chainId` and a mismatch raises a warning. A domain
   without a chain ID warns that the signature is not bound to a chain and can
   be replayed on other chains. The requested domain is preserved in the
@@ -628,6 +635,14 @@ which optional request fields this shell's schemas understand, so a newer
 renderer can omit a field an older shell would reject. The control stays where
 it was: every value the hint describes is zod-validated at the IPC boundary, so
 a renderer that ignores or forges the hint gains nothing. The schema decides.
+
+**`window.qrlWallet.network` is compatibility metadata.** It names the network
+the build was made for, in the shape of the mobile app's capability record:
+`networkProfile` (`v3-private` on testnet, `v3-mainnet` on mainnet), the hex
+`chainId` and the `genesisHash`. A renderer can use it to check that it was
+bundled for the same network. It is a build-time constant from the same table
+main enforces, and main never reads it back: endpoint qualification and the
+chain ID of every signature stay pinned in main.
 
 ### D. Supply chain
 
