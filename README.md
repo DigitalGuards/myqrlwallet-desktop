@@ -572,9 +572,14 @@ no network). The suites exercise the load-bearing signer logic directly:
   tamper rejection, `signMessage` -> ML-DSA-87 verify, and the create op
   (a generated wallet signs and verifies).
 - `signer.tx.test.ts` - the signature primitive produces a type-2 raw tx with a
-  supplied `networkId` and no provider, binds the signature to `chainId`, and
-  refuses a tx whose `from` is not the unlocked account. This unit test bypasses
-  the wallet UI's RPC prerequisites.
+  supplied `networkId` and no provider, makes no network request, binds the
+  signature to `chainId`, and refuses a tx whose `from` is not the unlocked
+  account or whose fee and amount fields exceed what a type-2 tx can carry.
+  Every derived seed carries the `0x` prefix `@theqrl/web3` 2.0.0 requires.
+  This unit test bypasses the wallet UI's RPC prerequisites.
+- `signer.txVectors.test.ts` - `signTransaction` reproduces raw transactions
+  and hashes recorded under `@theqrl/web3` 1.0.3 byte for byte, with each
+  signature's 32-byte hedging draw fixed to the vector's bytes.
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted

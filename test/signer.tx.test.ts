@@ -13,7 +13,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveSeedFromMnemonic, generateMnemonic, signTransaction } from '../src/signer/signing';
+import {
+  deriveSeedFromHexSeed,
+  deriveSeedFromMnemonic,
+  generateMnemonic,
+  signTransaction,
+} from '../src/signer/signing';
 import { parseSignatureResultForRequest } from '../src/shared/schemas';
 import type { UnsignedTransaction } from '../src/shared/schemas';
 
@@ -112,4 +117,59 @@ test('signTransaction signs a zero-value transfer', async () => {
   );
   assert.equal(result.kind, 'transaction');
   assert.match(result.rawTransaction, /^0x[0-9a-fA-F]+$/);
+});
+
+test('every seed the signer derives carries the 0x prefix @theqrl/web3 2.0.0 requires', async () => {
+  const mnemonic = generateMnemonic();
+  const fromMnemonic = deriveSeedFromMnemonic(mnemonic);
+  const body = fromMnemonic.hexSeed.slice(2);
+  assert.match(fromMnemonic.hexSeed, /^0x[0-9a-f]{102}$/);
+
+  // Import sources the envelope can come from: a recovery phrase, a 0x hex
+  // seed, and the bare or upper-case hex a user pastes. Each stores the one
+  // spelling wallet.js returns, and that spelling signs.
+  for (const input of [`0x${body}`, body, body.toUpperCase()]) {
+    const derived = deriveSeedFromHexSeed(input);
+    assert.equal(derived.hexSeed, fromMnemonic.hexSeed, input.slice(0, 4));
+    assert.equal(derived.address, fromMnemonic.address);
+  }
+  const tx = unsignedTx(fromMnemonic.address, fromMnemonic.address);
+  const signed = await signTransaction(fromMnemonic.hexSeed, tx, CHAIN_ID);
+  assert.match(signed.rawTransaction, /^0x[0-9a-f]+$/);
+
+  // web3 2.0.0 refuses a string seed without the lowercase 0x prefix
+  // (1.0.3 signed with it), which is why the stored spelling matters.
+  await assert.rejects(() => signTransaction(body, tx, CHAIN_ID));
+});
+
+test('signTransaction makes no network request (web3 2.0.0 checks the node chain id only with a provider)', async (t) => {
+  const fetchCalls = t.mock.method(globalThis, 'fetch', () =>
+    Promise.reject(new Error('the signer must stay offline')),
+  );
+  const { hexSeed, address } = deriveSeedFromMnemonic(generateMnemonic());
+  // A chain id no node serves: with a provider, 2.0.0 would ask the node and
+  // refuse the mismatch. The signer has none, so it signs for the chain id
+  // main passed, as before.
+  const result = await signTransaction(hexSeed, unsignedTx(address, address), 4242);
+  assert.match(result.rawTransaction, /^0x[0-9a-f]+$/);
+  assert.equal(fetchCalls.mock.callCount(), 0);
+});
+
+test('signTransaction refuses fee and amount fields a type-2 transaction cannot carry', async () => {
+  const { hexSeed, address } = deriveSeedFromMnemonic(generateMnemonic());
+  const base = unsignedTx(address, address);
+  const overUint256 = (1n << 256n).toString();
+  // The IPC schema admits 80-digit amounts; the encoder caps them at 2^256-1.
+  // Both web3 1.0.3 and 2.0.0 refuse these before signing; only the error
+  // class and text differ between them.
+  const refused: UnsignedTransaction[] = [
+    { ...base, maxPriorityFeePerGas: '3000000000' }, // priority fee above the fee cap
+    { ...base, value: overUint256 },
+    { ...base, maxFeePerGas: overUint256, maxPriorityFeePerGas: '1' },
+    // gas x maxFeePerGas above 2^256-1
+    { ...base, maxFeePerGas: ((1n << 256n) - 1n).toString(), maxPriorityFeePerGas: '1' },
+  ];
+  for (const tx of refused) {
+    await assert.rejects(() => signTransaction(hexSeed, tx, CHAIN_ID));
+  }
 });
