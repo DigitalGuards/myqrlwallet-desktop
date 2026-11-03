@@ -475,6 +475,25 @@ For Desktop 1.4.8, use frontend main revision
 CI pins that same revision for this release; it is unchanged since 1.4.5. See
 the [1.4.8 release notes](CHANGELOG.md#148---2026-10-28).
 
+### Dependency pins
+
+`@theqrl/web3` is pinned to an exact version (`2.0.0`): it encodes every
+transaction the signer signs. `test/signer.txVectors.test.ts` compares the
+signed bytes with vectors recorded under 1.0.3, so run `npm test` after any
+bump.
+
+`package.json` keeps one override for it,
+`"@theqrl/web3-validator": { "zod": "$zod" }`. It is a dedupe guard. The
+validator pins zod exactly, and the override hands it the app's own `zod`
+range, which starts at that pin (`^4.6.7`). npm then installs a single copy,
+shared by the main process, the signer and the validator. `npm ls zod` must
+show one version.
+
+The `@theqrl/mldsa87`, `@theqrl/wallet.js` and `@theqrl/qrl-cryptography`
+overrides went away with web3 2.0.0, which pins those hardened releases
+itself. Web3 still pins them exactly, so a crypto patch release published
+before the next web3 release needs a temporary override again.
+
 ## Packaging and signing
 
 Build the platform installer with electron-builder (26.x GA). Each target runs
@@ -553,9 +572,14 @@ no network). The suites exercise the load-bearing signer logic directly:
   tamper rejection, `signMessage` -> ML-DSA-87 verify, and the create op
   (a generated wallet signs and verifies).
 - `signer.tx.test.ts` - the signature primitive produces a type-2 raw tx with a
-  supplied `networkId` and no provider, binds the signature to `chainId`, and
-  refuses a tx whose `from` is not the unlocked account. This unit test bypasses
-  the wallet UI's RPC prerequisites.
+  supplied `networkId` and no provider, makes no network request, binds the
+  signature to `chainId`, and refuses a tx whose `from` is not the unlocked
+  account or whose fee and amount fields exceed what a type-2 tx can carry.
+  Every derived seed carries the `0x` prefix `@theqrl/web3` 2.0.0 requires.
+  This unit test bypasses the wallet UI's RPC prerequisites.
+- `signer.txVectors.test.ts` - `signTransaction` reproduces raw transactions
+  and hashes recorded under `@theqrl/web3` 1.0.3 byte for byte, with each
+  signature's 32-byte hedging draw fixed to the vector's bytes.
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted
