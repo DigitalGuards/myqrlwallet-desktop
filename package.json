@@ -39,9 +39,6 @@
     "test:confirm:inventory": "node --import tsx scripts/confirmation-pagination-inventory.mjs"
   },
   "overrides": {
-    "@theqrl/mldsa87": "$@theqrl/mldsa87",
-    "@theqrl/wallet.js": "$@theqrl/wallet.js",
-    "@theqrl/qrl-cryptography": "0.3.3",
     "@theqrl/web3-validator": {
       "zod": "$zod"
     },
@@ -55,8 +52,8 @@
     "@node-rs/argon2": "^2.0.2",
     "@theqrl/mldsa87": "^2.2.0",
     "@theqrl/wallet.js": "^6.3.0",
-    "@theqrl/web3": "1.0.3",
-    "zod": "^4.3.4"
+    "@theqrl/web3": "2.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

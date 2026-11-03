@@ -475,6 +475,25 @@ For Desktop 1.4.8, use frontend main revision
 CI pins that same revision for this release; it is unchanged since 1.4.5. See
 the [1.4.8 release notes](CHANGELOG.md#148---2026-10-28).
 
+### Dependency pins
+
+`@theqrl/web3` is pinned to an exact version (`2.0.0`): it encodes every
+transaction the signer signs. `test/signer.txVectors.test.ts` compares the
+signed bytes with vectors recorded under 1.0.3, so run `npm test` after any
+bump.
+
+`package.json` keeps one override for it,
+`"@theqrl/web3-validator": { "zod": "$zod" }`. It is a dedupe guard. The
+validator pins zod exactly, and the override hands it the app's own `zod`
+range, which starts at that pin (`^4.6.7`). npm then installs a single copy,
+shared by the main process, the signer and the validator. `npm ls zod` must
+show one version.
+
+The `@theqrl/mldsa87`, `@theqrl/wallet.js` and `@theqrl/qrl-cryptography`
+overrides went away with web3 2.0.0, which pins those hardened releases
+itself. Web3 still pins them exactly, so a crypto patch release published
+before the next web3 release needs a temporary override again.
+
 ## Packaging and signing
 
 Build the platform installer with electron-builder (26.x GA). Each target runs
