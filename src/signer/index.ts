@@ -7,8 +7,8 @@
  * to main over `process.parentPort`. The renderer has no handle to it.
  *
  * It exposes a single narrow verb set (import / unlock / sign / lock / status)
- * and performs no I/O of its own beyond the optional web3 provider used to
- * sign transactions. It never reads or writes the seed file (main owns disk),
+ * and performs no I/O of its own: transaction signing uses a provider-less web3
+ * (see signTransaction). It never reads or writes the seed file (main owns disk),
  * never logs secrets, and zeroizes every secret buffer on its way out.
  */
 /// <reference types="electron" />

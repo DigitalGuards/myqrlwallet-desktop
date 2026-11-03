@@ -267,7 +267,10 @@ export function signTypedDataDigest(
  * whenever the node is unreachable and (b) hard-fail on a v2 node that exposes
  * only the `qrl_*` namespace. Setting networkId removes that round-trip
  * entirely (verified empirically), so the signer needs no network and no RPC
- * env at all.
+ * env at all. @theqrl/web3 2.0.0 also compares a supplied chainId with the
+ * node's `qrl_chainId`, and only when a provider is set: this provider-less
+ * signer skips that call. Main reads and pins the node's chain id before the
+ * trusted confirmation (`signWithConfirmation`, src/main/signatureRequest.ts).
  *
  * `chainId` is the authoritative value main fetched from the node; we bind the
  * signed transaction to it and ignore any renderer-supplied tx.chainId. We also
@@ -315,9 +318,11 @@ export async function signTransaction(
     ...(tx.data ? { data: tx.data.startsWith('0x') ? tx.data : `0x${tx.data}` } : {}),
   };
   // web3.qrl.accounts.signTransaction treats the extended hex seed as the key.
-  // The pinned @theqrl/web3 1.0.3 is already the 64-byte-address build, so
-  // a conversion error here indicates malformed input, not a wrong web3
-  // build; surface the original error rather than rewrapping it.
+  // @theqrl/web3 2.0.0 accepts only the lowercase 0x spelling of a string
+  // seed. Every stored seed has it: handleImport encrypts the seed that
+  // deriveFromWallet takes from wallet.js getHexExtendedSeed(). The pinned
+  // 2.0.0 is a 64-byte-address build, so a conversion error here means
+  // malformed input. The original error surfaces unwrapped.
   const signed = await web3.qrl.accounts.signTransaction(transactionObject, hexSeed);
   if (!signed.rawTransaction) {
     throw new Error('transaction could not be signed');
