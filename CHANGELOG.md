@@ -2,6 +2,37 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.9 - 2026-11-09
+
+### Security
+
+- Upgrade Electron from 44.10.0 to 44.10.2 in the lockfile and raise the
+  manifest's caret floor to match (#109). It bundles Node 24.22.2 and carries
+  backported fixes from upstream ANGLE, Chromium, Dawn, libaom, libvpx, PDFium,
+  Skia, V8 and WebRTC; Chromium stays 152.0.7977.169. See the
+  [44.10.1](https://github.com/electron/electron/releases/tag/v44.10.1) and
+  [44.10.2](https://github.com/electron/electron/releases/tag/v44.10.2)
+  release notes.
+
+### Changed
+
+- The wallet window bundles the web wallet released on 2026-11-05 (frontend
+  main `b04bfca`): every wallet input is checked as you type, every sub-page
+  has a Back control, and the fee notice quotes only amounts the form accepts.
+- `@theqrl/web3` 2.0.0, the QRL core team's 64-byte-aligned release (#107).
+
+### Added
+
+- Build-time network profiles (#106). A build pins one network, testnet or
+  mainnet, through `QRL_NETWORK_PROFILE`. The mainnet entry stays switched off
+  until its chain ID and genesis hash are filled in: a mainnet build stops,
+  and a mainnet app refuses to start. This release is a testnet build.
+
+### Internal
+
+- CI tests each change once, on its pull request, with the dependency audit
+  last (#108).
+
 ## 1.4.8 - 2026-10-28
 
 ### Security
