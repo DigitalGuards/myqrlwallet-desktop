@@ -66,8 +66,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: DigitalGuards/myqrlwallet-frontend
-          # Desktop 1.4.8 bundles the web wallet released on 2026-10-24.
-          ref: 1ee1fc499c13af462d59e60eacde7ca8ec43ebd0
+          # Desktop 1.4.9 bundles the web wallet released on 2026-11-05.
+          ref: b04bfca533d09a48755d8758572950d7a2d201b3
           path: out/frontend-source
           persist-credentials: false
 

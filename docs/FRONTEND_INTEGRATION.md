@@ -284,8 +284,8 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 
 ## Build the bundled renderer
 
-Desktop 1.4.8 uses frontend main revision
-`1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
+Desktop 1.4.9 uses frontend main revision
+`b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
 This includes English, German, Spanish, Russian and Simplified Chinese catalogs,
 the desktop language choice on the Settings page, the Add NFT picker fix, the
 dApp approval visibility gate, the typed-data chain check and the frontend zod
