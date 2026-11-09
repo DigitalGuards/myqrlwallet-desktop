@@ -20,7 +20,8 @@ process.env['QRL_RPC_URL'] = 'https://primary.example/api/qrl-rpc/testnet';
 process.env['QRL_RPC_URL_SECONDARY'] = 'https://secondary.example/api/qrl-rpc/testnet';
 
 const rpc = await import('../src/main/rpc');
-const { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } = await import('../src/main/config');
+const { pinnedNetwork } = await import('../src/main/config');
+const { chainId: EXPECTED_CHAIN_ID, genesisHash: EXPECTED_GENESIS_HASH } = pinnedNetwork();
 
 interface FetchArgs { url: string; body: unknown }
 let calls: FetchArgs[] = [];

@@ -2,7 +2,7 @@
 import type { SignatureRequest, SignatureResult } from '../shared/schemas';
 import type { SignerBridge } from './signerBridge';
 import type { ConfirmContext } from './confirmSummary';
-import { EXPECTED_CHAIN_ID } from './config';
+import { pinnedNetwork } from './config';
 import { recallBuild } from './buildRecords';
 import * as rpc from './rpc';
 
@@ -16,13 +16,16 @@ export async function signWithConfirmation(
   req: SignatureRequest,
   { signer, confirm }: SignatureDeps,
 ): Promise<SignatureResult> {
+  // The signer's chain id comes from the build's pinned network. A build
+  // without one refuses here, before the confirmation and the signer.
+  const network = pinnedNetwork();
   // Transactions bind to the chain id: resolve it BEFORE the modal (fail fast
   // when the node is unreachable) and require it to match the tx the user is
   // shown, so the value confirmed in the dialog is exactly the value signed.
   // Message and typed-data signing use the configured network identity for
   // display and stay offline. Their digests come entirely from the request.
-  let signingChainId = EXPECTED_CHAIN_ID;
-  let confirmContext: ConfirmContext = { connectedChainId: EXPECTED_CHAIN_ID };
+  let signingChainId = network.chainId;
+  let confirmContext: ConfirmContext = { connectedChainId: network.chainId };
   if (req.kind === 'transaction') {
     // The block gas limit is checked HERE, alongside the chain id, because
     // the renderer supplies the transaction it asks to have signed. The

@@ -9,7 +9,7 @@
  *
  * No secrets pass through this module.
  */
-import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH, RPC_URL, RPC_URL_SECONDARY } from './config';
+import { pinnedNetwork, RPC_URL, RPC_URL_SECONDARY } from './config';
 import { logConsole } from './log';
 import type { BuildTransactionRequest, FeeLevel, UnsignedTransaction } from '../shared/schemas';
 import { rememberBuild } from './buildRecords';
@@ -91,6 +91,8 @@ async function rpcCallOn(url: string, method: string, params: unknown[]): Promis
 
 /** Verify each endpoint before using its account data or sending a signed transaction. */
 async function assertEndpointIdentity(url: string): Promise<void> {
+  // Throws before any request when the build's network has no pinned identity.
+  const network = pinnedNetwork();
   const [chainId, genesis] = await Promise.all([
     rpcCallOn(url, 'qrl_chainId', []),
     rpcCallOn(url, 'qrl_getBlockByNumber', ['0x0', false]),
@@ -98,10 +100,10 @@ async function assertEndpointIdentity(url: string): Promise<void> {
   if (
     typeof chainId !== 'string' ||
     !/^0x[0-9a-f]+$/i.test(chainId) ||
-    BigInt(chainId) !== BigInt(EXPECTED_CHAIN_ID) ||
+    BigInt(chainId) !== BigInt(network.chainId) ||
     !isRecord(genesis) ||
     typeof genesis['hash'] !== 'string' ||
-    genesis['hash'].toLowerCase() !== EXPECTED_GENESIS_HASH
+    genesis['hash'].toLowerCase() !== network.genesisHash
   ) {
     throw new RpcIdentityError(`rpc endpoint ${new URL(url).host} does not match this v3 network`);
   }
@@ -144,8 +146,9 @@ async function rpcReadQuantity(method: string, params: unknown[]): Promise<strin
  * fail the build/sign loudly rather than bind transactions to a guessed chain.
  */
 export async function getChainId(): Promise<number> {
+  const network = pinnedNetwork();
   const chainId = Number(hexToBigInt(await rpcReadQuantity('qrl_chainId', [])));
-  if (chainId !== EXPECTED_CHAIN_ID) throw new RpcIdentityError('rpc chain identity changed');
+  if (chainId !== network.chainId) throw new RpcIdentityError('rpc chain identity changed');
   return chainId;
 }
 

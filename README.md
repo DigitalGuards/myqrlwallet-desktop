@@ -20,7 +20,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 44 (locked to 44.10.0; bundled Node 24.22.1 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
+- **Stack:** Electron 44 (locked to 44.10.2; bundled Node 24.22.2 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded at `app://wallet/index.html`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -108,7 +108,7 @@ decision pending. See [the layout budget](THREAT_MODEL.md#transaction-pages-and-
   or later; Windows ia32 and Linux armv7l are unsupported.
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
   `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
-  currently 24.22.1; this floor is only for building, testing, and packaging locally.)
+  currently 24.22.2; this floor is only for building, testing, and packaging locally.)
   `@types/node` stays at `^22` to enforce that development API floor.
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
@@ -353,8 +353,63 @@ staging build just exports `VITE_NODE_ENV=development` and the `*_DEVELOPMENT`
 vars before building. The main-process CSP `connect-src` allowlist
 (`src/main/config.ts` `frontendOrigins`) is kept in sync with those origins;
 override it with `QRL_FRONTEND_ORIGINS` (space-separated) when repointing.
-All endpoints must serve the pinned v3 chain ID and genesis. Endpoint overrides
-select another provider for that same network.
+All endpoints must serve the chain ID and genesis pinned for the build's
+network profile. Endpoint overrides select another provider for that same
+network.
+
+### Network profile
+
+The network is fixed when the app is built. `QRL_NETWORK_PROFILE` selects one
+row of the network table in `src/main/config.ts` (`NETWORKS`):
+
+| Profile | Chain ID and genesis | Default RPC | Data directory | `window.qrlWallet.network.networkProfile` |
+|---|---|---|---|---|
+| `testnet` (default) | `3151909`, `0xd154...3ea4` | `https://qrlwallet.com/api/qrl-rpc/testnet`, failover to the dev proxy | `v3-private` | `v3-private` |
+| `mainnet` | not pinned yet | `https://qrlwallet.com/api/qrl-rpc/mainnet`, no failover | `v3-mainnet` | `v3-mainnet` |
+
+The main process, the wallet bridge and the bundled renderer
+(`scripts/build-renderer.sh`) all take their pins from that row, so a build
+ships one network end to end. The profile is a build-time constant: setting
+`QRL_NETWORK_PROFILE` when launching a packaged app changes nothing.
+
+QRL 2.0 mainnet is dormant. Its chain ID and genesis hash stay `null` until the
+network publishes them. While either is `null`, `QRL_NETWORK_PROFILE=mainnet`
+stops `npm run build` and every `dist*` script (in `electron-vite` and in
+`build-renderer.sh`, before anything is installed), and a main process built
+for it exits before it creates a data directory or makes an RPC call.
+
+A mainnet build also checks the staged renderer: `build-renderer.sh` removes
+`out/renderer` and stops unless the renderer contains the mainnet genesis hash
+and `v3-mainnet`. A frontend from before mainnet support ignores
+`VITE_V3_NATIVE_NETWORK` and lists only testnet, so it fails this check. A
+mainnet build also skips the steps for data from earlier releases (the pre-v3
+wallet notice, the file-origin storage copy and the single-wallet seed
+migration), because every earlier release ran on testnet.
+
+Launch day:
+
+1. Fill in both mainnet pins in `NETWORKS` (`src/main/config.ts`).
+2. Bump the frontend revision the renderer is built from: `b04bfca` today in
+   `.github/workflows/ci.yml` and `docs/FRONTEND_INTEGRATION.md`. Pick a
+   frontend release with mainnet support; one that lists only testnet fails
+   the renderer check above.
+3. Decide the application identity. Both profiles share `APP_ID`
+   (`src/main/config.ts`), the `appId`, `productName` and `qrlconnect://`
+   protocol entries in `electron-builder.yml`, and the `MyQRLWallet` user data
+   directory (with separate `v3-private` and `v3-mainnet` subdirectories), so
+   both builds register as the `qrlconnect://` handler. Decide whether mainnet
+   keeps this identity or gets its own.
+4. Mainnet has no default failover endpoint and no explorer. Its row sets
+   `rpcUrlSecondary: null`, and `build-renderer.sh` leaves
+   `VITE_MAINNET_EXPLORER_URL` empty, so the renderer shows no explorer links,
+   explorer discovery or price. Add a failover endpoint to the row once the dev
+   backend pins mainnet, and export `VITE_MAINNET_EXPLORER_URL` once an
+   explorer indexes mainnet.
+5. Build with `QRL_NETWORK_PROFILE=mainnet`.
+
+`npm run build:renderer:frontend -- --print-env` prints the renderer build
+environment and exits without building. `test/rendererEnv.test.ts` holds the
+testnet environment to the values desktop 1.4.9 shipped.
 
 ## Directory map
 
@@ -415,10 +470,29 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.8, use frontend main revision
-`1ee1fc499c13af462d59e60eacde7ca8ec43ebd0`, the web wallet released on 2026-10-24.
-CI pins that same revision for this release; it is unchanged since 1.4.5. See
-the [1.4.8 release notes](CHANGELOG.md#148---2026-10-28).
+For Desktop 1.4.9, use frontend main revision
+`b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
+CI pins that same revision for this release. See
+the [1.4.9 release notes](CHANGELOG.md#149---2026-11-09).
+
+### Dependency pins
+
+`@theqrl/web3` is pinned to an exact version (`2.0.0`): it encodes every
+transaction the signer signs. `test/signer.txVectors.test.ts` compares the
+signed bytes with vectors recorded under 1.0.3, so run `npm test` after any
+bump.
+
+`package.json` keeps one override for it,
+`"@theqrl/web3-validator": { "zod": "$zod" }`. It is a dedupe guard. The
+validator pins zod exactly, and the override hands it the app's own `zod`
+range, which starts at that pin (`^4.6.7`). npm then installs a single copy,
+shared by the main process, the signer and the validator. `npm ls zod` must
+show one version.
+
+The `@theqrl/mldsa87`, `@theqrl/wallet.js` and `@theqrl/qrl-cryptography`
+overrides went away with web3 2.0.0, which pins those hardened releases
+itself. Web3 still pins them exactly, so a crypto patch release published
+before the next web3 release needs a temporary override again.
 
 ## Packaging and signing
 
@@ -498,9 +572,14 @@ no network). The suites exercise the load-bearing signer logic directly:
   tamper rejection, `signMessage` -> ML-DSA-87 verify, and the create op
   (a generated wallet signs and verifies).
 - `signer.tx.test.ts` - the signature primitive produces a type-2 raw tx with a
-  supplied `networkId` and no provider, binds the signature to `chainId`, and
-  refuses a tx whose `from` is not the unlocked account. This unit test bypasses
-  the wallet UI's RPC prerequisites.
+  supplied `networkId` and no provider, makes no network request, binds the
+  signature to `chainId`, and refuses a tx whose `from` is not the unlocked
+  account or whose fee and amount fields exceed what a type-2 tx can carry.
+  Every derived seed carries the `0x` prefix `@theqrl/web3` 2.0.0 requires.
+  This unit test bypasses the wallet UI's RPC prerequisites.
+- `signer.txVectors.test.ts` - `signTransaction` reproduces raw transactions
+  and hashes recorded under `@theqrl/web3` 1.0.3 byte for byte, with each
+  signature's 32-byte hedging draw fixed to the vector's bytes.
 - `signer.typedData.test.ts`, `typedData.limits.test.ts`, and `confirmTypedData.test.ts`
   cover canonical v1/v2 hashes and deterministic signatures, SDK-style signer
   verification, locked/mismatched accounts, every resource bound, and trusted

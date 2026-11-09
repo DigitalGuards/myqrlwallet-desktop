@@ -16,9 +16,10 @@ import { windowIcon } from './appIcon';
 import { APP_URLS } from '../shared/appUrls';
 import { createAppProtocolHandler } from './appProtocol';
 import { installFileAccessPolicy, migrateWalletStorage } from './storageMigration';
-import { APP_ID, connectSrcOrigins } from './config';
+import { APP_ID, connectSrcOrigins, migratesLegacyData, pinnedNetwork } from './config';
 import { DappUriIngress, extractDappUriFromArgv, isValidDappUri } from './dappUri';
-import { logMain } from './log';
+import { logConsole, logMain } from './log';
+import { startupNetwork } from './startupNetwork';
 import { registerIpcHandlers } from './ipc';
 import {
   buildContentSecurityPolicy,
@@ -51,6 +52,22 @@ import { hasLegacyWalletData } from './legacyData';
 import { readSettings, updateSettings } from './settingsFile';
 import { createKeyVault, type KeyVault } from '../keyvault';
 import { EVENTS } from '../shared/constants';
+
+// First: a build whose network has no pinned chain id and genesis hash
+// (mainnet before launch) stops here, before anything below registers a
+// protocol, creates a data directory, forks the signer or makes an RPC call.
+const NETWORK = startupNetwork(pinnedNetwork, {
+  showErrorBox: (title, content) => {
+    dialog.showErrorBox(title, content);
+  },
+  exit: (code) => {
+    app.exit(code);
+  },
+  log: (message) => {
+    logConsole.error(message);
+  },
+  title: t('error.startTitle'),
+});
 
 // Register once, before ready. CSP bypass and service workers stay disabled.
 protocol.registerSchemesAsPrivileged([
@@ -129,18 +146,25 @@ const dappIngress = new DappUriIngress({
 
 app.setName('MyQRLWallet');
 // Keep v2 ciphertext, settings and browser state intact for recovery in v1.0.0.
+// Each network has its own directory (testnet: v3-private, mainnet:
+// v3-mainnet), so wallets, settings and browser storage never mix.
 const legacyUserData = app.getPath('userData');
-const currentUserData = path.join(legacyUserData, 'v3-private');
+const currentUserData = path.join(legacyUserData, NETWORK.userDataDir);
 mkdirSync(currentUserData, { recursive: true, mode: 0o700 });
 app.setPath('userData', currentUserData);
+// Earlier releases ran only on testnet, so a mainnet build has no legacy data
+// to detect or migrate and skips every legacy step below.
+const LEGACY_DATA = migratesLegacyData(NETWORK);
 
 /**
- * Whether to draw the one-time "QRL v3 accounts" notice at startup. Both
- * conditions must hold: a pre-v3 wallet envelope is still on disk, and the
- * notice has not been acknowledged yet. Never throws, so a settings-store
- * problem cannot stop the app from opening.
+ * Whether to draw the one-time "QRL v3 accounts" notice at startup. All three
+ * conditions must hold: the build handles legacy data (testnet), a pre-v3
+ * wallet envelope is still on disk, and the notice has not been acknowledged
+ * yet. Never throws, so a settings-store problem cannot stop the app from
+ * opening.
  */
 async function shouldShowLegacyDataNotice(): Promise<boolean> {
+  if (!LEGACY_DATA) return false;
   try {
     if ((await readSettings()).legacyNoticeAckV1 === true) return false;
     return await hasLegacyWalletData(legacyUserData);
@@ -340,11 +364,13 @@ app
 
     lockDownNavigation(app);
 
-    if (!devUrl) await migrateWalletStorage(allowStorageHelper);
+    if (LEGACY_DATA) {
+      if (!devUrl) await migrateWalletStorage(allowStorageHelper);
 
-    // One-shot migration of the legacy single-wallet seed.json into the
-    // per-address multi-wallet store, BEFORE anything reads the store.
-    await migrateLegacySeed();
+      // One-shot migration of the legacy single-wallet seed.json into the
+      // per-address multi-wallet store, BEFORE anything reads the store.
+      await migrateLegacySeed();
+    }
 
     // Fork the signer and resolve the keyvault before exposing IPC.
     await signer.start();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EXPECTED_CHAIN_ID, EXPECTED_GENESIS_HASH } from '../src/main/config';
+import { pinnedNetwork } from '../src/main/config';
 import { signWithConfirmation } from '../src/main/signatureRequest';
 import { clearBuildRecords, rememberBuild } from '../src/main/buildRecords';
 import { isRecord } from '../src/shared/guards';
@@ -8,6 +8,8 @@ import { parseSignerRequest } from '../src/shared/protocolGuards';
 import { SignatureRequestSchema } from '../src/shared/schemas';
 import { signMessage, signTypedData } from '../src/signer/signing';
 import { canonical, SIGNER } from './typedDataFixtures';
+
+const { chainId: EXPECTED_CHAIN_ID, genesisHash: EXPECTED_GENESIS_HASH } = pinnedNetwork();
 
 for (const kind of ['message', 'typedData'] as const) {
   test(`IPC signing handoff passes the configured chain id for offline ${kind} requests`, async (t) => {

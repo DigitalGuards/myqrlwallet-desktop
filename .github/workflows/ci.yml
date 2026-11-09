@@ -1,32 +1,41 @@
 name: CI
 
+# Each change is tested once, on its pull request. The weekly run surfaces drift
+# in the registry and the frontend pin.
 on:
-  push:
-    branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# The weekly run tests dev, where changes land first. Scheduled runs read this
+# file from main.
+env:
+  TEST_REF: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
     name: Quality checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Check out desktop source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.TEST_REF }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.x'
           cache: npm
@@ -38,18 +47,13 @@ jobs:
             node node_modules/electron/install.js
           fi
 
-      - name: Audit production dependencies
-        run: node scripts/audit-gate.mjs
-
       - name: Check formatting
         run: npm run format:check
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Check lint ratchet
+      # The ratchet's first pass lints the same files as npm run lint.
+      - name: Lint and check the lint ratchet
         env:
-          LINT_RATCHET_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          LINT_RATCHET_BASE: ${{ github.event.pull_request.base.sha || 'HEAD' }}
         run: npm run lint:ratchet -- --base-ref "$LINT_RATCHET_BASE"
 
       - name: Type-check
@@ -59,13 +63,17 @@ jobs:
         run: npm test
 
       - name: Check out frontend source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: DigitalGuards/myqrlwallet-frontend
-          # Desktop 1.4.8 bundles the web wallet released on 2026-10-24.
-          ref: 1ee1fc499c13af462d59e60eacde7ca8ec43ebd0
+          # Desktop 1.4.9 bundles the web wallet released on 2026-11-05.
+          ref: b04bfca533d09a48755d8758572950d7a2d201b3
           path: out/frontend-source
           persist-credentials: false
 
       - name: Build desktop and renderer
         run: QRL_FRONTEND_DIR="${{ github.workspace }}/out/frontend-source" npm run build
+
+      # Last, so a failing audit can never skip the checks above.
+      - name: Audit production dependencies
+        run: node scripts/audit-gate.mjs

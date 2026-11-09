@@ -2,10 +2,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,6 +51,15 @@ function makeFixture(t: TestContext) {
   copyFileSync(SOURCE_SCRIPT, scriptPath);
   mkdirSync(join(desktopDir, 'src/migration'), { recursive: true });
   copyFileSync(resolve('src/migration/index.html'), join(desktopDir, 'src/migration/index.html'));
+  // The script reads the network table through scripts/network-values.mjs,
+  // which runs src/main/config.ts under tsx.
+  copyFileSync(
+    resolve('scripts/network-values.mjs'),
+    join(desktopDir, 'scripts/network-values.mjs'),
+  );
+  mkdirSync(join(desktopDir, 'src/main'), { recursive: true });
+  copyFileSync(resolve('src/main/config.ts'), join(desktopDir, 'src/main/config.ts'));
+  symlinkSync(resolve('node_modules'), join(desktopDir, 'node_modules'), 'dir');
   chmodSync(scriptPath, 0o755);
 
   return {
@@ -87,6 +98,10 @@ if [[ "$3" == "run" && "$4" == "build" ]]; then
   fi
   mkdir -p "$2/dist"
   printf '%s\\n' '${html}' > "$2/dist/index.html"
+  if [[ -n "\${MOCK_RENDERER_JS:-}" ]]; then
+    mkdir -p "$2/dist/assets"
+    printf '%s\\n' "$MOCK_RENDERER_JS" > "$2/dist/assets/index.js"
+  fi
 fi
 `,
     { mode: 0o755 },
@@ -329,4 +344,99 @@ test('renderer build fails when copying does not stage index.html', (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /ERROR: staged renderer entrypoint missing or empty/);
+});
+
+test('a mainnet build without pinned identity stops before installing anything', (t) => {
+  const fixture = makeFixture(t);
+  const binDir = join(fixture.root, 'bin');
+  const callLog = join(fixture.root, 'npm-calls.log');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+
+  const result = runScript(fixture.scriptPath, binDir, {
+    NPM_CALL_LOG: callLog,
+    QRL_NETWORK_PROFILE: 'mainnet',
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /mainnet network has no pinned chain id and genesis hash/);
+  assert.equal(existsSync(callLog), false, 'npm never ran');
+  assert.equal(existsSync(join(fixture.desktopDir, 'out')), false, 'nothing staged');
+});
+
+const MAINNET_GENESIS = `0x${'ab'.repeat(32)}`;
+const TESTNET_GENESIS = '0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4';
+
+/**
+ * Points the fixture's network values at a table whose mainnet row carries
+ * test pins, so the script runs a full mainnet build. The real table keeps its
+ * null mainnet pins.
+ */
+function pinMainnet(desktopDir: string) {
+  writeFileSync(
+    join(desktopDir, 'scripts/network-values.mjs'),
+    `import { NETWORKS, rendererNetworkValues } from '../src/main/config.ts';
+const table = { ...NETWORKS, mainnet: { ...NETWORKS.mainnet, chainId: 7, genesisHash: '${MAINNET_GENESIS}' } };
+for (const [key, value] of rendererNetworkValues(process.env.QRL_NETWORK_PROFILE, table)) {
+  process.stdout.write(key + '=' + value + '\\n');
+}
+`,
+  );
+}
+
+test('a mainnet build stops when the staged renderer does not carry the mainnet network', (t) => {
+  const fixture = makeFixture(t);
+  pinMainnet(fixture.desktopDir);
+  const binDir = join(fixture.root, 'bin');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+  const env = { NPM_CALL_LOG: join(fixture.root, 'npm-calls.log'), QRL_NETWORK_PROFILE: 'mainnet' };
+  const staged = join(fixture.desktopDir, 'out/renderer');
+
+  // A frontend from before mainnet support bundles only the testnet network.
+  for (const [bundle, missing] of [
+    [`const genesis = "${TESTNET_GENESIS}"; const profile = "v3-private";`, MAINNET_GENESIS],
+    [`const genesis = "${MAINNET_GENESIS}"; const profile = "v3-private";`, 'v3-mainnet'],
+    [`const genesis = "${TESTNET_GENESIS}"; const profile = "v3-mainnet";`, MAINNET_GENESIS],
+  ]) {
+    const result = runScript(fixture.scriptPath, binDir, { ...env, MOCK_RENDERER_JS: bundle });
+    assert.equal(result.status, 1, bundle);
+    assert.ok(
+      result.stderr.includes(`ERROR: the staged renderer does not contain ${missing}.`),
+      result.stderr,
+    );
+    assert.equal(existsSync(staged), false, 'the mismatched renderer is removed');
+  }
+
+  // A frontend with mainnet support carries both and builds.
+  const result = runScript(fixture.scriptPath, binDir, {
+    ...env,
+    MOCK_RENDERER_JS: `const genesis = "${MAINNET_GENESIS}"; const profile = "v3-mainnet";`,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /staged renderer carries the mainnet genesis hash and v3-mainnet/);
+  assert.ok(existsSync(join(staged, 'index.html')));
+});
+
+test('a testnet build stages the renderer without the mainnet check', (t) => {
+  const fixture = makeFixture(t);
+  pinMainnet(fixture.desktopDir);
+  const binDir = join(fixture.root, 'bin');
+  mkdirSync(fixture.frontendDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(fixture.frontendDir, 'package-lock.json'), '{}\n');
+  writeMockNpm(binDir);
+
+  const result = runScript(fixture.scriptPath, binDir, {
+    NPM_CALL_LOG: join(fixture.root, 'npm-calls.log'),
+    MOCK_RENDERER_JS: `const genesis = "${TESTNET_GENESIS}"; const profile = "v3-private";`,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /mainnet/);
+  assert.ok(existsSync(join(fixture.desktopDir, 'out/renderer/index.html')));
 });

@@ -1,6 +1,6 @@
 {
   "name": "myqrlwallet-desktop",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "Post-quantum QRL desktop wallet: hardened Electron shell whose isolated signer process is the sole holder of plaintext keys.",
   "author": "DigitalGuards",
   "license": "MIT",
@@ -39,9 +39,6 @@
     "test:confirm:inventory": "node --import tsx scripts/confirmation-pagination-inventory.mjs"
   },
   "overrides": {
-    "@theqrl/mldsa87": "$@theqrl/mldsa87",
-    "@theqrl/wallet.js": "$@theqrl/wallet.js",
-    "@theqrl/qrl-cryptography": "0.3.3",
     "@theqrl/web3-validator": {
       "zod": "$zod"
     },
@@ -55,8 +52,8 @@
     "@node-rs/argon2": "^2.0.2",
     "@theqrl/mldsa87": "^2.2.0",
     "@theqrl/wallet.js": "^6.3.0",
-    "@theqrl/web3": "1.0.3",
-    "zod": "^4.3.4"
+    "@theqrl/web3": "2.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",
@@ -71,7 +68,7 @@
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^44.10.0",
+    "electron": "^44.10.2",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
     "eslint": "^10.6.0",
