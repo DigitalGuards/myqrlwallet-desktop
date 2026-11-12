@@ -20,7 +20,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 44 (locked to 44.10.2; bundled Node 24.22.2 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
+- **Stack:** Electron 44 (locked to 44.11.2; bundled Node 24.22.2 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded at `app://wallet/index.html`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -409,7 +409,7 @@ Launch day:
 
 `npm run build:renderer:frontend -- --print-env` prints the renderer build
 environment and exits without building. `test/rendererEnv.test.ts` holds the
-testnet environment to the values desktop 1.4.9 shipped.
+testnet environment to the values desktop 1.4.10 shipped.
 
 ## Directory map
 
@@ -470,10 +470,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.9, use frontend main revision
+For Desktop 1.4.10, use frontend main revision
 `b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
-CI pins that same revision for this release. See
-the [1.4.9 release notes](CHANGELOG.md#149---2026-11-09).
+CI pins that same revision for this release; it is unchanged since 1.4.9. See
+the [1.4.10 release notes](CHANGELOG.md#1410---2026-11-12).
 
 ### Dependency pins
 
