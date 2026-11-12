@@ -2,6 +2,23 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.10 - 2026-11-12
+
+### Security
+
+- Upgrade Electron from 44.10.2 to 44.11.2 in the lockfile and raise the
+  manifest's caret floor to match. It carries backported fixes from upstream
+  ANGLE, Chromium, Dawn, devtools_frontend, FFmpeg, PDFium, Skia and V8, and
+  it no longer trusts certificates issued by eMudhra's revoked RSA
+  intermediates. Node stays 24.22.2 and Chromium stays 152.0.7977.169. See the
+  [44.11.0](https://github.com/electron/electron/releases/tag/v44.11.0),
+  [44.11.1](https://github.com/electron/electron/releases/tag/v44.11.1) and
+  [44.11.2](https://github.com/electron/electron/releases/tag/v44.11.2)
+  release notes.
+
+The wallet window is unchanged: it bundles the web wallet released on
+2026-11-05 (frontend main `b04bfca`), as 1.4.9 does.
+
 ## 1.4.9 - 2026-11-09
 
 ### Security
