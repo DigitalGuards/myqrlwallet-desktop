@@ -389,7 +389,7 @@ migration), because every earlier release ran on testnet.
 Launch day:
 
 1. Fill in both mainnet pins in `NETWORKS` (`src/main/config.ts`).
-2. Bump the frontend revision the renderer is built from: `b04bfca` today in
+2. Bump the frontend revision the renderer is built from: `a22117b` today in
    `.github/workflows/ci.yml` and `docs/FRONTEND_INTEGRATION.md`. Pick a
    frontend release with mainnet support; one that lists only testnet fails
    the renderer check above.
@@ -409,7 +409,7 @@ Launch day:
 
 `npm run build:renderer:frontend -- --print-env` prints the renderer build
 environment and exits without building. `test/rendererEnv.test.ts` holds the
-testnet environment to the values desktop 1.4.10 shipped.
+testnet environment to the values desktop 1.4.11 ships.
 
 ## Directory map
 
@@ -470,10 +470,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.10, use frontend main revision
-`b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
-CI pins that same revision for this release; it is unchanged since 1.4.9. See
-the [1.4.10 release notes](CHANGELOG.md#1410---2026-11-12).
+For Desktop 1.4.11, use frontend revision
+`a22117b41e67e259a2c03848ca1a6ea3730edc94`, the web wallet of the November 2026
+rollout. CI pins that same revision for this release. See the
+[1.4.11 release notes](CHANGELOG.md#1411---2026-11-24).
 
 ### Dependency pins
 

@@ -2,6 +2,34 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.11 - 2026-11-24
+
+### Changed
+
+- The wallet window bundles the web wallet of the November 2026 rollout
+  (frontend `a22117b`, branch `release/2026-11-rollout-prod`):
+  - The desktop Settings page shows plain rows: Language under Preferences,
+    Desktop security under Security.
+  - dApp requests that fail answer with an error code that matches the
+    failure. Code 4001 is sent only when you decline or dismiss a request;
+    wallet and node failures answer -32603, request problems answer -32602
+    or 4100, and a reverting transaction keeps code 3.
+  - NFT transfers and token creation check that the account and network are
+    still the ones they started on before they sign and before they broadcast
+    (store guards from the web wallet's PIN re-check work).
+  - `@qrlwallet/connect` 5.2.1, and typed-data path errors read the same as
+    the SDK's.
+  - The light theme of the web wallet stays off in the desktop build, which
+    keeps the dark look.
+- The block explorer moved from zondscan.com to shorscan.com. The renderer
+  build defaults its explorer URLs to https://shorscan.com, the wallet
+  window's `connect-src` lists https://shorscan.com as the explorer origin,
+  and explorer links open shorscan.com in your browser. zondscan.com leaves
+  both lists: the bundled web wallet builds every explorer link and API call
+  from the shorscan.com base.
+
+Electron stays 44.11.2 (Chromium 152.0.7977.169, Node 24.22.2), as in 1.4.10.
+
 ## 1.4.10 - 2026-11-12
 
 ### Security
