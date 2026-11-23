@@ -227,7 +227,7 @@ compromised renderer cannot address an arbitrary IPC channel.
 - `setWindowOpenHandler`: deny the Electron window unconditionally; an allowlisted
   external link is opened in the user's REAL browser via `shell.openExternal`. The
   allowlist (`EXTERNAL_ALLOWLIST` in `src/main/externalLinks.ts`; https-only,
-  exact host or subdomain on a dot boundary) is: qrlwallet.com, zondscan.com,
+  exact host or subdomain on a dot boundary) is: qrlwallet.com, shorscan.com,
   theqrl.org, github.com, t.me. Arbitrary token / NFT / dApp-supplied URLs are NOT
   allowlisted and are dropped. Unit
   tested in `test/externalLinks.test.ts`.

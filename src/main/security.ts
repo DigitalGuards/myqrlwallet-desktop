@@ -164,7 +164,7 @@ export function lockDownNavigation(app: Electron.App): void {
 
     contents.setWindowOpenHandler(({ url }) => {
       // target=_blank / window.open: open allowlisted external links (e.g.
-      // zondscan) in the user's real browser, never in an Electron window. A
+      // shorscan) in the user's real browser, never in an Electron window. A
       // non-allowlisted URL is dropped (not opened): see externalLinks.ts.
       if (isAllowedExternalUrl(url)) {
         setImmediate(() => void shell.openExternal(url));

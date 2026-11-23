@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { isAllowedExternalUrl, EXTERNAL_ALLOWLIST } from '../src/main/externalLinks';
 
 test('allows trusted ecosystem hosts over https (exact + subdomain)', () => {
-  assert.equal(isAllowedExternalUrl('https://zondscan.com/tx/0xabc'), true);
+  assert.equal(isAllowedExternalUrl('https://shorscan.com/tx/0xabc'), true);
   assert.equal(isAllowedExternalUrl('https://qrlwallet.com/'), true);
   assert.equal(isAllowedExternalUrl('https://dev.qrlwallet.com/'), true); // subdomain
   assert.equal(isAllowedExternalUrl('https://github.com/DigitalGuards/'), true);
@@ -20,18 +20,23 @@ test('allows trusted ecosystem hosts over https (exact + subdomain)', () => {
 });
 
 test('rejects non-https schemes', () => {
-  assert.equal(isAllowedExternalUrl('http://zondscan.com/'), false);
+  assert.equal(isAllowedExternalUrl('http://shorscan.com/'), false);
   assert.equal(isAllowedExternalUrl('file:///etc/passwd'), false);
   assert.equal(isAllowedExternalUrl('qrlconnect://pair'), false);
   assert.equal(isAllowedExternalUrl('data:text/html,hi'), false);
 });
 
 test('rejects lookalike and embedded-allowlist hosts', () => {
-  assert.equal(isAllowedExternalUrl('https://evil-zondscan.com/'), false);
-  assert.equal(isAllowedExternalUrl('https://zondscan.com.evil.test/'), false);
+  assert.equal(isAllowedExternalUrl('https://evil-shorscan.com/'), false);
+  assert.equal(isAllowedExternalUrl('https://shorscan.com.evil.test/'), false);
   assert.equal(isAllowedExternalUrl('https://notgithub.com/'), false);
   assert.equal(isAllowedExternalUrl('https://qrlwallet.com.attacker.io/'), false);
-  assert.equal(isAllowedExternalUrl('https://evil.test/?ref=zondscan.com'), false);
+  assert.equal(isAllowedExternalUrl('https://evil.test/?ref=shorscan.com'), false);
+});
+
+// The explorer moved to shorscan.com and the bundled renderer links only there.
+test('the old explorer host is no longer opened', () => {
+  assert.equal(isAllowedExternalUrl('https://zondscan.com/tx/0xabc'), false);
 });
 
 test('rejects malformed and empty input', () => {
