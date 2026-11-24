@@ -400,7 +400,7 @@ migration), because every earlier release ran on testnet.
 Launch day:
 
 1. Fill in both mainnet pins in `NETWORKS` (`src/main/config.ts`).
-2. Bump the frontend revision the renderer is built from: `120e997` today in
+2. Bump the frontend revision the renderer is built from: `f137af3` today in
    `.github/workflows/ci.yml` and `docs/FRONTEND_INTEGRATION.md`. Pick a
    frontend release with mainnet support; one that lists only testnet fails
    the renderer check above.
@@ -482,7 +482,7 @@ frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
 For Desktop 1.4.11, use frontend revision
-`120e997a621754208c51843865c4aa717f705bb9`, the web wallet of the November 2026
+`f137af3a8e65de0d21a98962547a605af5ef9cf1`, the web wallet of the November 2026
 rollout. CI pins that same revision for this release. See the
 [1.4.11 release notes](CHANGELOG.md#1411---2026-11-24).
 

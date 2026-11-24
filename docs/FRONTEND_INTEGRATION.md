@@ -311,11 +311,11 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 ## Build the bundled renderer
 
 Desktop 1.4.11 uses frontend revision
-`120e997a621754208c51843865c4aa717f705bb9`, the web wallet of the November 2026
+`f137af3a8e65de0d21a98962547a605af5ef9cf1`, the web wallet of the November 2026
 rollout (branch `release/2026-11-rollout-prod`). It builds on the web wallet of
 2026-11-05 that 1.4.10 bundles and adds plain rows on the Settings page with a
 Theme row next to Language (the main process holds the choice, see
-[Colour theme](#colour-theme)), account and network re-checks before NFT
+[Colour theme](#colour-theme); the web wallet's own default is `system`), account and network re-checks before NFT
 transfers and token creation sign, error codes that match the failure for dApp
 requests, `@qrlwallet/connect` 5.2.1 and the shorscan.com explorer host.
 `.github/workflows/ci.yml` pins the same full revision. The pinned commit is

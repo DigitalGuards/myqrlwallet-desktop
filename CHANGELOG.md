@@ -33,9 +33,10 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   app's appearance.
 
 - The wallet window bundles the web wallet of the November 2026 rollout
-  (frontend `120e997`, branch `release/2026-11-rollout-prod`):
+  (frontend `f137af3`, branch `release/2026-11-rollout-prod`):
   - A Theme row on the desktop Settings page, next to Language, that sets
-    the colour theme of the whole app.
+    the colour theme of the whole app. The web wallet's own default follows
+    the system as well; on the desktop the main process leads.
   - The desktop Settings page shows plain rows: Language under Preferences,
     Desktop security under Security.
   - dApp requests that fail answer with an error code that matches the
