@@ -93,10 +93,10 @@ text. Quanta, QRL, QRL 2.0 and MyQRLWallet remain unchanged.
 `IPC.SET_THEME` uses the same `isTrustedSender` top-frame gate and zod argument
 validation as `IPC.SET_LANGUAGE`; the schema accepts exactly `dark`, `light`
 and `system`. Main owns the choice: it stores it as the optional `theme` field
-of `userData/settings.json` only when the user picks one, reads any other
-stored value as the default (`dark`) without touching the other preferences,
-sets `nativeTheme.themeSource` to it, and resolves `system` from the OS
-appearance.
+of `userData/settings.json` only when the user picks one, reads a missing or
+any other stored value as the default (`system`) without touching the other
+preferences, sets `nativeTheme.themeSource` to it (`system` is also Electron's
+own default), and resolves `system` from the OS appearance.
 
 The wallet preload reads main's `{ theme, resolved }` once per document start
 through one synchronous call (`SYNC.GET_THEME`). Main answers it from memory,

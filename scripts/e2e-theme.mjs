@@ -1,15 +1,19 @@
 // Colour theme end to end: real Electron, isolated Xvfb and profile, Playwright
 // for the wallet window, the native unlock window and the settings panel.
-// Checks: dark with nothing stored and nothing written; a light choice reaches
-// the store, nativeTheme, every window background, the wallet bridge, the
-// settings panel and the unlock window after a lock (from the creation-time
-// argument alone, with main's pulls held); `system` follows an
-// emulated OS flip; a restart keeps the choice from the first frame; an invalid
-// stored value reads as dark and keeps the other preferences.
+// The OS appearance is stated per run: QRL_THEME_OS=dark or light (default
+// light) sets GTK_THEME to Adwaita:dark or Adwaita for the app, which is what
+// nativeTheme reads under Xvfb; the run first checks that the app sees it.
+// Checks: with nothing stored the app follows that appearance (system default)
+// from the first frame and writes nothing; a light choice reaches the store,
+// nativeTheme, every window background, the wallet bridge, the settings panel
+// and the unlock window after a lock (from the creation-time argument alone,
+// with main's pulls held); `system` follows an emulated OS flip; a restart
+// keeps the choice from the first frame; an invalid stored value reads as the
+// default and keeps the other preferences.
 // The choice goes through the renderer's Theme row when the bundled renderer
 // has one, else through window.qrlWallet.setTheme. QRL_THEME_EXPECT_ROW=1
 // requires the row.
-// Usage: env -u DISPLAY -u WAYLAND_DISPLAY QRL_FRONTEND_DIR=<frontend> xvfb-run -a npm run test:e2e:theme
+// Usage: env -u DISPLAY -u WAYLAND_DISPLAY QRL_FRONTEND_DIR=<frontend> QRL_THEME_OS=dark|light xvfb-run -a npm run test:e2e:theme
 import assert from 'node:assert/strict';
 import { electronTestArgs, isolatedEnvironment, waitForAppPage } from './electron-test-utils.mjs';
 import { createRequire } from 'node:module';
@@ -27,6 +31,9 @@ const evidence =
 await mkdir(evidence, { recursive: true });
 const profile = await mkdtemp(path.join(evidence, 'profile-'));
 const env = await isolatedEnvironment(profile);
+const OS = process.env.QRL_THEME_OS ?? 'light';
+assert.ok(OS === 'dark' || OS === 'light', 'QRL_THEME_OS is dark or light');
+env.GTK_THEME = OS === 'dark' ? 'Adwaita:dark' : 'Adwaita';
 const settingsFile = path.join(profile, 'user-data/v3-private/settings.json');
 const fixture = {
   hexSeed: '010000' + '01'.repeat(48),
@@ -35,7 +42,10 @@ const fixture = {
 };
 const LIGHT_BG = 'rgb(243, 244, 247)';
 const DARK_BG = 'rgb(8, 12, 22)';
-const result = { checks: [], choiceVia: null, screenshots: [] };
+// What the system default shows under this run's OS appearance.
+const OS_LOOK = OS === 'dark' ? { attr: null, bg: DARK_BG } : { attr: 'light', bg: LIGHT_BG };
+const OS_HEX = OS === 'dark' ? '#080c16' : '#f3f4f7';
+const result = { os: OS, checks: [], choiceVia: null, screenshots: [] };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function poll(fn, description) {
@@ -110,21 +120,33 @@ async function submitUnlock(unlock) {
 
 let app;
 try {
-  // 1. Nothing stored: dark everywhere, nothing written.
+  // 1. Nothing stored: the system default shows the OS appearance from the
+  // first frame, and nothing is written.
   app = await launch();
   await app.context().route(/^https?:/, (route) => route.abort());
+  assert.equal(
+    await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors),
+    OS === 'dark',
+    `the app sees the ${OS} OS appearance`,
+  );
   let wallet = await waitForAppPage(app);
   assert.deepEqual(await wallet.evaluate(() => globalThis.qrlWallet.theme), {
-    theme: 'dark',
-    resolved: 'dark',
+    theme: 'system',
+    resolved: OS,
   });
-  assert.equal(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource), 'dark');
-  assert.ok(
-    (await windows(app)).some((w) => w.url.startsWith('app://wallet/') && w.bg === '#080c16'),
-  );
+  assert.equal(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource), 'system');
+  assert.ok((await windows(app)).some((w) => w.url.startsWith('app://wallet/') && w.bg === OS_HEX));
+  assert.equal(await look(wallet).then((value) => value.attr), OS_LOOK.attr);
   await wallet.evaluate((f) => globalThis.qrlWallet.importWallet(f), fixture);
+  await wallet.evaluate(() => globalThis.qrlWallet.lock());
+  let unlock = await unlockWith(app);
+  assert.deepEqual(await look(unlock), OS_LOOK);
+  assert.ok((await windows(app)).some((w) => w.url.startsWith('app://unlock/') && w.bg === OS_HEX));
+  await submitUnlock(unlock);
   assert.equal((await stored())?.theme, undefined, 'nothing stores the default');
-  result.checks.push('dark with nothing stored, nothing written');
+  result.checks.push(
+    `system default with nothing stored: ${OS} wallet bridge, page, window backgrounds and unlock window; nothing written`,
+  );
 
   // 2. Choose light: the Theme row when the renderer has one, else the bridge.
   await wallet.evaluate(() => {
@@ -183,7 +205,7 @@ try {
   await settings.getByText('Back to wallet').click();
   await delay(500);
   await wallet.evaluate(() => globalThis.qrlWallet.lock());
-  let unlock = await unlockWith(app);
+  unlock = await unlockWith(app);
   assert.deepEqual(await look(unlock), { attr: 'light', bg: LIGHT_BG });
   assert.ok(
     (await windows(app)).some((w) => w.url.startsWith('app://unlock/') && w.bg === '#f3f4f7'),
@@ -253,15 +275,23 @@ try {
   );
   await app.close();
 
-  // 6. An invalid stored value reads as dark and keeps the other preferences.
+  // 6. An invalid stored value reads as the default (system, so the OS
+  // appearance) and keeps the other preferences.
   const before = await stored();
   await writeFile(settingsFile, JSON.stringify({ ...before, theme: 'blue', language: 'de' }));
   app = await launch();
   await app.context().route(/^https?:/, (route) => route.abort());
   unlock = await unlockWith(app);
-  assert.deepEqual(await look(unlock), { attr: null, bg: DARK_BG });
+  assert.deepEqual(await look(unlock), OS_LOOK);
+  assert.ok((await windows(app)).some((w) => w.url.startsWith('app://unlock/') && w.bg === OS_HEX));
   assert.equal(await unlock.evaluate(() => globalThis.document.documentElement.lang), 'de');
-  result.checks.push('invalid stored theme reads as dark, language kept');
+  await submitUnlock(unlock);
+  wallet = await waitForAppPage(app);
+  assert.deepEqual(await wallet.evaluate(() => globalThis.qrlWallet.theme), {
+    theme: 'system',
+    resolved: OS,
+  });
+  result.checks.push(`invalid stored theme reads as the system default (${OS}), language kept`);
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
   console.log('PASS');

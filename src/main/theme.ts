@@ -5,9 +5,11 @@
  * wallet reads `qrlWallet.theme`, picks with `setTheme`, follows
  * `onThemeChanged`).
  *
- * - DEFAULT_THEME is the one place the default lives. Nothing is written until
- *   the user chooses, so a later change of the default reaches everyone who
- *   never chose.
+ * - DEFAULT_THEME is the one place the default lives: `system`, so a user who
+ *   never chose sees the OS appearance, and `nativeTheme.themeSource` keeps
+ *   Electron's own default for them. Nothing is written until the user
+ *   chooses, so a later change of the default reaches everyone who never
+ *   chose.
  * - The choice drives `nativeTheme.themeSource`, so `prefers-color-scheme` in
  *   every window and the OS-drawn dialogs, title bars and menus follow it.
  * - `system` resolves through `nativeTheme.shouldUseDarkColors` and follows
@@ -27,7 +29,7 @@ import {
 import { updateSettings } from './settingsFile';
 
 /** The preference of a user who never chose. Never written to storage. */
-export const DEFAULT_THEME: ThemePreference = 'dark';
+export const DEFAULT_THEME: ThemePreference = 'system';
 
 /** The part of Electron's nativeTheme this module uses. */
 export interface NativeThemeSource {

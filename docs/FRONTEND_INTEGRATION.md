@@ -203,7 +203,7 @@ exists. All three members are optional for a renderer that also runs in older
 shells:
 
 - `qrlWallet.theme?: { theme: 'dark' | 'light' | 'system', resolved: 'dark' | 'light' }`:
-  main's stored choice (or the default, `dark`, when the user never chose) and
+  main's stored choice (or the default, `system`, when the user never chose) and
   its resolution, read once per document start before the page's first script.
   When present, the renderer applies `resolved`, shows `theme` in its Theme
   row and ignores its own stored choice.

@@ -194,7 +194,8 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
   assert.ok(Object.isFrozen(api['network']));
   assert.deepEqual([...synced], [SYNC.GET_THEME]);
   assert.deepEqual([...syncListeners.keys()], Object.values(SYNC));
-  assert.deepEqual(api['theme'], { theme: 'dark', resolved: 'dark' });
+  // The default preference; without an OS reading (no initTheme here) system resolves dark.
+  assert.deepEqual(api['theme'], { theme: 'system', resolved: 'dark' });
   assert.ok(Object.isFrozen(api['theme']));
   await writeSeed(envelope('a'));
   await setActiveAddress(envelope('a').address);

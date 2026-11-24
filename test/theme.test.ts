@@ -65,17 +65,23 @@ async function exists(file: string): Promise<boolean> {
   );
 }
 
-test('nothing stored: the default is dark, nativeTheme follows it and nothing is written', async (t) => {
+test('nothing stored: the default follows the system, nativeTheme keeps system and nothing is written', async (t) => {
   const { file } = await profile(t);
-  assert.equal(theme.DEFAULT_THEME, 'dark');
-  const native = new FakeNativeTheme();
+  assert.equal(theme.DEFAULT_THEME, 'system');
   const stored = await readSettingsFile(file);
   assert.equal(stored.theme, undefined);
-  theme.initTheme(native, stored.theme);
-  assert.deepEqual(theme.getThemeState(), { theme: 'dark', resolved: 'dark' });
-  assert.equal(native.themeSource, 'dark');
-  assert.equal(theme.themeBackground(), THEME_BACKGROUND.dark);
-  assert.equal(theme.themeArgument(), '--qrl-theme=dark');
+  // The OS appearance decides from the first frame: state, window background
+  // and the creation-time argument of the unlock window and settings view.
+  for (const osDark of [true, false]) {
+    const native = new FakeNativeTheme();
+    native.osDark = osDark;
+    theme.initTheme(native, stored.theme);
+    const resolved = osDark ? 'dark' : 'light';
+    assert.equal(native.themeSource, 'system');
+    assert.deepEqual(theme.getThemeState(), { theme: 'system', resolved });
+    assert.equal(theme.themeBackground(), THEME_BACKGROUND[resolved]);
+    assert.equal(theme.themeArgument(), `--qrl-theme=${resolved}`);
+  }
   assert.equal(await exists(file), false, 'reading and applying the default writes nothing');
   // Another preference write never adds the default theme to the file.
   await updateSettingsFile(file, { language: 'de' });
@@ -92,7 +98,7 @@ test('a stored choice is adopted at start', async (t) => {
   assert.equal(theme.themeArgument(), '--qrl-theme=light');
 });
 
-test('an invalid stored theme means the default and keeps every other preference', async (t) => {
+test('an invalid stored theme means the default (system) and keeps every other preference', async (t) => {
   const { file } = await profile(t);
   for (const bad of [
     'blue',
@@ -122,8 +128,10 @@ test('an invalid stored theme means the default and keeps every other preference
       walletOriginMigrationV1: true,
     });
     const native = new FakeNativeTheme();
+    native.osDark = false;
     theme.initTheme(native, stored.theme);
-    assert.deepEqual(theme.getThemeState(), { theme: 'dark', resolved: 'dark' });
+    assert.deepEqual(theme.getThemeState(), { theme: 'system', resolved: 'light' });
+    assert.equal(native.themeSource, 'system');
   }
   // Each valid value survives a read.
   for (const value of THEMES) {
