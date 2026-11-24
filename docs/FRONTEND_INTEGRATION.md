@@ -307,13 +307,14 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 ## Build the bundled renderer
 
 Desktop 1.4.11 uses frontend revision
-`a22117b41e67e259a2c03848ca1a6ea3730edc94`, the web wallet of the November 2026
+`120e997a621754208c51843865c4aa717f705bb9`, the web wallet of the November 2026
 rollout (branch `release/2026-11-rollout-prod`). It builds on the web wallet of
-2026-11-05 that 1.4.10 bundles and adds plain rows on the Settings page,
-account and network re-checks before NFT transfers and token creation sign,
-error codes that match the failure for dApp requests, `@qrlwallet/connect`
-5.2.1 and the shorscan.com explorer host. The light theme stays off in the
-desktop build. `.github/workflows/ci.yml` pins the same full revision.
+2026-11-05 that 1.4.10 bundles and adds plain rows on the Settings page with a
+Theme row next to Language (the main process holds the choice, see
+[Colour theme](#colour-theme)), account and network re-checks before NFT
+transfers and token creation sign, error codes that match the failure for dApp
+requests, `@qrlwallet/connect` 5.2.1 and the shorscan.com explorer host.
+`.github/workflows/ci.yml` pins the same full revision.
 
 `scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
 the frontend checkout, installs its locked dependencies, builds it and stages

@@ -67,7 +67,7 @@ jobs:
         with:
           repository: DigitalGuards/myqrlwallet-frontend
           # Desktop 1.4.11 bundles the web wallet of the November 2026 rollout.
-          ref: a22117b41e67e259a2c03848ca1a6ea3730edc94
+          ref: 120e997a621754208c51843865c4aa717f705bb9
           path: out/frontend-source
           persist-credentials: false
 
