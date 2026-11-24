@@ -49,6 +49,8 @@ interface Harness {
   exposed: () => Record<string, unknown>;
   push: (raw: unknown) => void;
   invoked: string[];
+  /** ipcRenderer.on registrations and synchronous reads, in call order. */
+  order: string[];
   resolvePull: (value: unknown) => Promise<void>;
   rejectPull: () => Promise<void>;
 }
@@ -63,7 +65,7 @@ async function load(
     argv?: string;
     rootFirst?: boolean;
     onThrows?: boolean;
-    sendSync?: () => unknown;
+    sendSync?: (...args: unknown[]) => unknown;
   } = {},
 ): Promise<Harness> {
   let root: FakeElement | null = options.rootFirst ? new FakeElement() : null;
@@ -93,11 +95,13 @@ async function load(
     exposed = value;
   });
   const listeners = new Map<string, (event: unknown, raw: unknown) => void>();
+  const order: string[] = [];
   t.mock.method(
     electron.ipcRenderer,
     'on',
     (channel: string, listener: (event: unknown, raw: unknown) => void) => {
       if (options.onThrows) throw new Error('ipc unavailable');
+      order.push(`on ${channel}`);
       listeners.set(channel, listener);
       return electron.ipcRenderer;
     },
@@ -110,7 +114,13 @@ async function load(
       settle = { resolve, reject };
     });
   });
-  if (options.sendSync) t.mock.method(electron.ipcRenderer, 'sendSync', options.sendSync);
+  const { sendSync } = options;
+  if (sendSync) {
+    t.mock.method(electron.ipcRenderer, 'sendSync', (...args: unknown[]) => {
+      order.push('sendSync');
+      return Reflect.apply(sendSync, undefined, args);
+    });
+  }
   imports += 1;
   await import(`${module}?case=${String(imports)}`);
   const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -131,6 +141,7 @@ async function load(
       listener({ sender: 'event object' }, raw);
     },
     invoked,
+    order,
     resolvePull: async (value) => {
       settle?.resolve(value);
       await flush();
@@ -280,19 +291,36 @@ test('wallet preload: main theme read once at start, exposed as a frozen value',
   assert.equal(page.invoked.at(-1), IPC.SET_THEME);
 });
 
+/** Subscribe through the exposed onThemeChanged; returns what it hears and the unsubscribe. */
+function subscribe(api: Record<string, unknown>): { seen: unknown[][]; off: () => void } {
+  const on = api['onThemeChanged'];
+  if (typeof on !== 'function') assert.fail('onThemeChanged is exposed');
+  const seen: unknown[][] = [];
+  const off: unknown = Reflect.apply(on, api, [(...args: unknown[]) => seen.push(args)]);
+  if (typeof off !== 'function') assert.fail('onThemeChanged returns an unsubscribe');
+  return {
+    seen,
+    off: () => {
+      Reflect.apply(off, undefined, []);
+    },
+  };
+}
+
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 test('wallet preload: onThemeChanged hands over a validated pair only, and unsubscribes', async (t) => {
   const { page } = await loadWallet(t, () => ({ theme: 'dark', resolved: 'dark' }));
+  // One preload listener, registered before the synchronous read.
+  assert.deepEqual(page.order, [`on ${EVENTS.THEME_CHANGED}`, 'sendSync']);
   const api = page.exposed();
-  const subscribe = api['onThemeChanged'];
-  assert.equal(typeof subscribe, 'function');
-  if (typeof subscribe !== 'function') return;
-  const seen: unknown[] = [];
   const removed: string[] = [];
   t.mock.method(electron.ipcRenderer, 'removeListener', (channel: string) => {
     removed.push(channel);
     return electron.ipcRenderer;
   });
-  const off: unknown = Reflect.apply(subscribe, api, [(...args: unknown[]) => seen.push(args)]);
+  const { seen, off } = subscribe(api);
+  await settle();
+  assert.deepEqual(seen, [], 'nothing moved since the start value');
   page.push({ theme: 'light', resolved: 'light', label: 'Approve' });
   for (const raw of [
     null,
@@ -303,14 +331,78 @@ test('wallet preload: onThemeChanged hands over a validated pair only, and unsub
   ]) {
     page.push(raw);
   }
+  await settle();
   assert.deepEqual(
     seen,
     [[{ theme: 'light', resolved: 'light' }]],
     'one call, one argument, no event object',
   );
-  assert.equal(typeof off, 'function');
-  if (typeof off === 'function') Reflect.apply(off, undefined, []);
-  assert.deepEqual(removed, [EVENTS.THEME_CHANGED]);
+  off();
+  page.push({ theme: 'system', resolved: 'dark' });
+  await settle();
+  assert.equal(seen.length, 1, 'a push after the unsubscribe reaches nobody');
+  // Subscribing again never adds an IPC listener.
+  subscribe(api).off();
+  assert.deepEqual(page.order, [`on ${EVENTS.THEME_CHANGED}`, 'sendSync']);
+  assert.deepEqual(removed, [], 'the preload listener stays for the document');
+});
+
+test('wallet preload: a push before the renderer subscribes reaches each new subscriber once', async (t) => {
+  const { page } = await loadWallet(t, () => ({ theme: 'system', resolved: 'dark' }));
+  const api = page.exposed();
+  assert.deepEqual(api['theme'], { theme: 'system', resolved: 'dark' });
+  // The OS flips while the page loads, before the renderer subscribes. Invalid
+  // pushes in between change nothing.
+  page.push({ theme: 'system', resolved: 'light' });
+  page.push({ theme: 'system', resolved: 'purple' });
+  page.push(null);
+  const first = subscribe(api);
+  assert.deepEqual(first.seen, [], 'handed over after the caller has its unsubscribe');
+  await settle();
+  assert.deepEqual(first.seen, [[{ theme: 'system', resolved: 'light' }]]);
+  // A later subscriber gets the same latest state once, and live pushes follow.
+  const second = subscribe(api);
+  await settle();
+  assert.deepEqual(second.seen, [[{ theme: 'system', resolved: 'light' }]]);
+  page.push({ theme: 'light', resolved: 'light' });
+  await settle();
+  for (const subscriber of [first, second]) {
+    assert.deepEqual(subscriber.seen, [
+      [{ theme: 'system', resolved: 'light' }],
+      [{ theme: 'light', resolved: 'light' }],
+    ]);
+  }
+  // A subscriber that unsubscribes at once hears nothing.
+  const gone = subscribe(api);
+  gone.off();
+  await settle();
+  assert.deepEqual(gone.seen, []);
+  // A live push that reaches a new subscriber first is not repeated.
+  const racing = subscribe(api);
+  page.push({ theme: 'dark', resolved: 'dark' });
+  await settle();
+  assert.deepEqual(racing.seen, [[{ theme: 'dark', resolved: 'dark' }]]);
+});
+
+test('wallet preload: no hand-over when the latest push equals the start value', async (t) => {
+  const { page } = await loadWallet(t, () => ({ theme: 'light', resolved: 'light' }));
+  page.push({ theme: 'dark', resolved: 'dark' });
+  page.push({ theme: 'light', resolved: 'light' });
+  const { seen } = subscribe(page.exposed());
+  await settle();
+  assert.deepEqual(seen, []);
+});
+
+test('wallet preload: without a start value the first valid push is handed over', async (t) => {
+  const { page } = await loadWallet(t, () => {
+    throw new Error('no listener');
+  });
+  const api = page.exposed();
+  assert.equal(api['theme'], undefined);
+  page.push({ theme: 'light', resolved: 'light' });
+  const { seen } = subscribe(api);
+  await settle();
+  assert.deepEqual(seen, [[{ theme: 'light', resolved: 'light' }]]);
 });
 
 test('wallet preload: an invalid or failed read leaves theme out and the bridge mounted', async (t) => {

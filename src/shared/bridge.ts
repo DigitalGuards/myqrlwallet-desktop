@@ -153,7 +153,9 @@ export interface QrlWalletApi {
    * unsubscribe. */
   onDAppConnectUri(cb: (uri: string) => void): () => void;
   /** Subscribe to theme changes: a new choice, or an OS appearance flip while
-   * the choice is `system`. Returns an unsubscribe. */
+   * the choice is `system`. A change that arrived after this document started
+   * and before the subscription is handed over once, just after subscribing.
+   * Returns an unsubscribe. */
   onThemeChanged(cb: (state: ThemeState) => void): () => void;
 }
 

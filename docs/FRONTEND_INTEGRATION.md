@@ -213,7 +213,9 @@ shells:
   and the window backgrounds.
 - `qrlWallet.onThemeChanged?(cb): () => void`: a new choice, or an OS
   appearance flip while the choice is `system`. The callback receives the
-  `{ theme, resolved }` pair only; the return value unsubscribes.
+  `{ theme, resolved }` pair only; the return value unsubscribes. A change
+  that arrived after the document started and before the subscription is
+  handed over once, just after subscribing.
 
 The wallet window's background is the resolved theme's page colour
 (`#080c16` dark, `#f3f4f7` light) before the renderer paints.

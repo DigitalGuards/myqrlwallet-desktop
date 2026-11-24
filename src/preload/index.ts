@@ -35,6 +35,25 @@ function themeState(raw: unknown): ThemeState | undefined {
   return Object.freeze({ theme: preference, resolved });
 }
 
+const sameTheme = (a: ThemeState | undefined, b: ThemeState | undefined): boolean =>
+  a?.theme === b?.theme && a?.resolved === b?.resolved;
+
+// One listener for main's theme pushes, registered at document start before
+// the synchronous read, so a push that arrives before the renderer subscribes
+// is kept. It records the latest valid pair and hands it to the subscribers.
+let latestTheme: ThemeState | undefined;
+const themeSubscribers = new Set<(state: ThemeState) => void>();
+try {
+  ipcRenderer.on(EVENTS.THEME_CHANGED, (_event: unknown, raw: unknown): void => {
+    const state = themeState(raw);
+    if (!state) return;
+    latestTheme = state;
+    for (const deliver of [...themeSubscribers]) deliver(state);
+  });
+} catch {
+  // Pushes stay unavailable; the start value below still applies.
+}
+
 // Main's theme when this document starts, before the page's first script.
 // Never throws: a failed or invalid read leaves `theme` out (the renderer then
 // keeps its browser behaviour) and the bridge still mounts.
@@ -46,6 +65,7 @@ function startTheme(): ThemeState | undefined {
   }
 }
 const theme = startTheme();
+latestTheme ??= theme;
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
@@ -94,14 +114,30 @@ const api: QrlWalletApi = {
     return () => ipcRenderer.removeListener(EVENTS.DAPP_CONNECT_URI, listener);
   },
   onThemeChanged: (cb) => {
-    // The event object stays here; only a validated { theme, resolved } pair
-    // reaches the renderer callback.
-    const listener = (_event: unknown, raw: unknown): void => {
-      const state = themeState(raw);
-      if (state) cb(state);
+    // The event object stays in the preload listener above; only a validated
+    // { theme, resolved } pair reaches the renderer callback.
+    let heard = false;
+    const deliver = (state: ThemeState): void => {
+      heard = true;
+      cb(state);
     };
-    ipcRenderer.on(EVENTS.THEME_CHANGED, listener);
-    return () => ipcRenderer.removeListener(EVENTS.THEME_CHANGED, listener);
+    themeSubscribers.add(deliver);
+    // A push that came before this subscription and moved the theme away from
+    // the start value is handed over once, after the caller has its
+    // unsubscribe, unless it unsubscribed or a newer push reached it first.
+    void Promise.resolve().then(() => {
+      if (
+        !heard &&
+        themeSubscribers.has(deliver) &&
+        latestTheme &&
+        !sameTheme(latestTheme, theme)
+      ) {
+        deliver(latestTheme);
+      }
+    });
+    return () => {
+      themeSubscribers.delete(deliver);
+    };
   },
 };
 
