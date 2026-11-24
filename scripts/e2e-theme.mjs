@@ -230,7 +230,15 @@ try {
     theme: 'light',
     resolved: 'light',
   });
-  result.checks.push('restart keeps light: unlock window and wallet bridge');
+  // First frame: light window background from creation, and the renderer's
+  // boot script applied the light set before the app rendered.
+  assert.ok(
+    (await windows(app)).some((w) => w.url.startsWith('app://wallet/') && w.bg === '#f3f4f7'),
+  );
+  assert.equal(await look(wallet).then((value) => value.attr), 'light');
+  result.checks.push(
+    'restart keeps light: unlock window, wallet window background, wallet bridge and page',
+  );
   await app.close();
 
   // 6. An invalid stored value reads as dark and keeps the other preferences.
