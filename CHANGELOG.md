@@ -25,10 +25,12 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 ### Changed
 
 - The app now tells the operating system which appearance it uses. With
-  Dark, also when you never picked a theme, title bars, menus and OS-drawn
-  dialogs are dark, the signing and Remove wallet confirmations included, so
-  on a computer set to light mode they turn dark after the update and match
-  the app. Up to 1.4.10 they followed the system setting.
+  Dark, also when you never picked a theme, the window frames, menus and
+  OS-drawn dialogs, the signing and Remove wallet confirmations included, take
+  the dark appearance wherever the operating system draws them in the app's
+  appearance. On a computer set to light mode they therefore turn dark after
+  the update and match the app. Up to 1.4.10 they followed the system
+  setting.
 
 - The wallet window bundles the web wallet of the November 2026 rollout
   (frontend `120e997`, branch `release/2026-11-rollout-prod`):
