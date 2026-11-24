@@ -109,14 +109,13 @@ creation-time argument, a sender-gated pull (`unlock:getTheme`,
 only and set one attribute on `<html>` that selects one of two bundled colour
 sets. Nothing is exposed to those pages.
 
-Exactly two values the renderer selects reach the unlock window and the
-settings view, and main validates both as enums: the language code, which
-selects one of the bundled text catalogs (see
+Apart from main's own wallet records (the accounts on disk and the active one,
+which the renderer changes only through the sender-gated, schema-checked
+wallet calls), exactly two values the renderer selects reach the unlock window
+and the settings view, and main validates both as enums: the language code,
+which selects one of the bundled text catalogs (see
 [Native language selection](#native-language-selection)), and the theme, which
-selects one of the two bundled colour sets. Nothing else from the renderer
-reaches those surfaces. The accounts the unlock window lists and the active
-account both surfaces show are main's own wallet records, which the renderer
-changes only through the sender-gated, schema-checked wallet calls. The trusted
+selects one of the two bundled colour sets. The trusted
 confirmations stay OS-drawn and in English: the language choice leaves their
 text unchanged, and the theme reaches them only as the operating system
 appearance described below. Appearance and language never establish
