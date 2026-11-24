@@ -10,6 +10,39 @@ const results = [];
 app.commandLine.appendSwitch('disable-gpu');
 app.setPath('userData', path.join(profile, 'user-data'));
 
+// xdotool search walks every window and reads its attributes. A window that
+// closes or maps during that walk ends the search with an X BadWindow error,
+// and a dialog that is still mapping is not listed yet (exit 1, no output).
+// Both are retried with a short backoff; anything else fails the run.
+const SEARCH_ATTEMPTS = 8;
+let searchRetries = 0;
+async function findWindow(title) {
+  for (let attempt = 1; ; attempt += 1) {
+    let reason;
+    try {
+      const ids = execFileSync('xdotool', ['search', '--onlyvisible', '--name', title], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+        .trim()
+        .split('\n')
+        .filter(Boolean);
+      if (ids.length > 0) return ids.at(-1);
+      reason = 'no window listed';
+    } catch (error) {
+      const stderr = String(error.stderr ?? '');
+      if (/BadWindow/.test(stderr)) reason = 'BadWindow';
+      else if (error.status === 1 && stderr.trim() === '') reason = 'no window listed';
+      else throw error;
+    }
+    if (attempt === SEARCH_ATTEMPTS)
+      throw new Error(`xdotool search for "${title}": ${reason} after ${attempt} attempts`);
+    searchRetries += 1;
+    console.error(`xdotool search for "${title}": ${reason}, retry ${attempt}`);
+    await delay(50 * 2 ** (attempt - 1));
+  }
+}
+
 function inside(rect, area) {
   return (
     rect.x >= area.x &&
@@ -76,12 +109,7 @@ app
         assert.equal(options.defaultId, options.buttons.indexOf('Cancel'));
         assert.equal(options.cancelId, options.buttons.indexOf('Cancel'));
       }
-      const ids = execFileSync('xdotool', ['search', '--onlyvisible', '--name', options.title], {
-        encoding: 'utf8',
-      })
-        .trim()
-        .split('\n');
-      const id = ids.at(-1);
+      const id = await findWindow(options.title);
       const final = options.buttons.includes('Approve & sign');
       // Baseline dialogs are measured and cancelled, including ones with hidden buttons.
       const keys =
@@ -138,6 +166,7 @@ app
           ...new Set(results.flatMap((r) => r.pages.flatMap((p) => p.headingRowHeights))),
         ],
         chrome: [...new Set(results.flatMap((r) => r.pages.map((p) => p.chromeHeight)))],
+        searchRetries,
       }),
     );
     app.quit();
