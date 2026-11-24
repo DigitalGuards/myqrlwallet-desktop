@@ -4,6 +4,17 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ## 1.4.11 - 2026-11-24
 
+### Security
+
+- Upgrade Electron from 44.11.2 to 44.11.5 in the lockfile and raise the
+  manifest's caret floor to match. It bundles Node 24.22.3 and carries
+  backported fixes from upstream ANGLE, Chromium, Dawn, FFmpeg, icu, PDFium,
+  Skia, V8 and WebRTC; Chromium stays 152.0.7977.169. See the
+  [44.11.3](https://github.com/electron/electron/releases/tag/v44.11.3),
+  [44.11.4](https://github.com/electron/electron/releases/tag/v44.11.4) and
+  [44.11.5](https://github.com/electron/electron/releases/tag/v44.11.5)
+  release notes.
+
 ### Changed
 
 - The wallet window bundles the web wallet of the November 2026 rollout
@@ -27,8 +38,6 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   and explorer links open shorscan.com in your browser. zondscan.com leaves
   both lists: the bundled web wallet builds every explorer link and API call
   from the shorscan.com base.
-
-Electron stays 44.11.2 (Chromium 152.0.7977.169, Node 24.22.2), as in 1.4.10.
 
 ## 1.4.10 - 2026-11-12
 
