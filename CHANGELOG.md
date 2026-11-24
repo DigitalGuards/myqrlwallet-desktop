@@ -24,6 +24,12 @@ All notable changes to the MyQRLWallet desktop app are documented here.
 
 ### Changed
 
+- The app now tells the operating system which appearance it uses. With
+  Dark, also when you never picked a theme, title bars, menus and OS-drawn
+  dialogs are dark, the signing and Remove wallet confirmations included, so
+  on a computer set to light mode they turn dark after the update and match
+  the app. Up to 1.4.10 they followed the system setting.
+
 - The wallet window bundles the web wallet of the November 2026 rollout
   (frontend `120e997`, branch `release/2026-11-rollout-prod`):
   - A Theme row on the desktop Settings page, next to Language, that sets
@@ -45,6 +51,13 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   and explorer links open shorscan.com in your browser. zondscan.com leaves
   both lists: the bundled web wallet builds every explorer link and API call
   from the shorscan.com base.
+
+### Downgrading
+
+- Once you pick a theme, the desktop settings file holds a `theme` entry that
+  1.4.10 and earlier do not accept. Going back to an earlier version therefore
+  resets the desktop settings (auto-lock, biometric unlock and language) to
+  their defaults. Wallets and the web wallet's own data stay.
 
 ## 1.4.10 - 2026-11-12
 

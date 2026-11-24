@@ -213,7 +213,15 @@ Every `ipcMain.handle` enforces, in order: (1) sender validation, (2) zod parse,
   (`wallet:setTheme`, one of `dark`, `light`, `system`) only switches the light
   or dark appearance the operating system gives OS-drawn dialogs, where the
   platform themes them; see the
-  [threat model](THREAT_MODEL.md#native-colour-theme).
+  [threat model](THREAT_MODEL.md#native-colour-theme). The modal stays in
+  English whatever language the renderer selects.
+- Native surfaces: exactly two values the renderer selects reach the unlock
+  window and the settings view, both validated as enums. The language code
+  (`wallet:setLanguage`) selects one of the bundled text catalogs and the theme
+  (`wallet:setTheme`) selects one of the two bundled colour sets. Nothing else
+  from the renderer reaches those surfaces; the accounts they show come from
+  main's own wallet records. Appearance and language never establish
+  authenticity.
 
 The preload (`src/preload/index.ts`) exposes only the named functions and
 frozen values of `QrlWalletApi` (`src/shared/bridge.ts`) over `contextBridge`.

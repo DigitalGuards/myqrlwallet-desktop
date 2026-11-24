@@ -314,7 +314,9 @@ Theme row next to Language (the main process holds the choice, see
 [Colour theme](#colour-theme)), account and network re-checks before NFT
 transfers and token creation sign, error codes that match the failure for dApp
 requests, `@qrlwallet/connect` 5.2.1 and the shorscan.com explorer host.
-`.github/workflows/ci.yml` pins the same full revision.
+`.github/workflows/ci.yml` pins the same full revision. The pinned commit is
+reachable from frontend main once the frontend release is merged with a merge
+commit, and the frontend release branch stays until then.
 
 `scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
 the frontend checkout, installs its locked dependencies, builds it and stages
