@@ -208,13 +208,20 @@ Every `ipcMain.handle` enforces, in order: (1) sender validation, (2) zod parse,
   boundary, before reaching crypto code. All request schemas are `.strict()`.
 - Spend path: `wallet:requestSignature` additionally routes through the trusted
   main-drawn confirmation modal (`confirmSignature()` in `src/main/confirm.ts`)
-  before any signing occurs. The renderer cannot alter that native modal or
-  bypass its approval gate.
+  before any signing occurs. The renderer cannot alter that native modal's
+  content or bypass its approval gate. Its theme choice
+  (`wallet:setTheme`, one of `dark`, `light`, `system`) only switches the light
+  or dark appearance the operating system gives OS-drawn dialogs, where the
+  platform themes them; see the
+  [threat model](THREAT_MODEL.md#native-colour-theme).
 
-The preload (`src/preload/index.ts`) exposes only the named functions of
-`QrlWalletApi` (`src/shared/bridge.ts`) over `contextBridge`. There is no raw
-`ipcRenderer` pass-through, no `require`, no `fs`/`child_process`/`eval`. A
-compromised renderer cannot address an arbitrary IPC channel.
+The preload (`src/preload/index.ts`) exposes only the named functions and
+frozen values of `QrlWalletApi` (`src/shared/bridge.ts`) over `contextBridge`.
+There is no raw `ipcRenderer` pass-through, no `require`, no
+`fs`/`child_process`/`eval`. A compromised renderer cannot address an arbitrary
+IPC channel. The preload's one synchronous call, the theme read at document
+start (`wallet:getTheme`), runs inside the preload and is never exposed; main
+answers it from memory behind the same sender gate.
 
 ### 4. Navigation lockdown
 

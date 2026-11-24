@@ -15,6 +15,13 @@ All notable changes to the MyQRLWallet desktop app are documented here.
   [44.11.5](https://github.com/electron/electron/releases/tag/v44.11.5)
   release notes.
 
+### Added
+
+- A colour theme: dark (still the default), light, or the same as your
+  system. Pick it on the Settings page next to Language. The unlock window,
+  the desktop security panel and the window frames follow your choice, and
+  the app remembers it across restarts.
+
 ### Changed
 
 - The wallet window bundles the web wallet of the November 2026 rollout
@@ -30,8 +37,6 @@ All notable changes to the MyQRLWallet desktop app are documented here.
     (store guards from the web wallet's PIN re-check work).
   - `@qrlwallet/connect` 5.2.1, and typed-data path errors read the same as
     the SDK's.
-  - The light theme of the web wallet stays off in the desktop build, which
-    keeps the dark look.
 - The block explorer moved from zondscan.com to shorscan.com. The renderer
   build defaults its explorer URLs to https://shorscan.com, the wallet
   window's `connect-src` lists https://shorscan.com as the explorer origin,

@@ -196,6 +196,28 @@ import tabs, route `setActiveAccount` through `setActiveWallet`, drive the
 account list from `listWallets`, and pass the removed address to
 `removeWallet`.
 
+### Colour theme
+
+Main owns the theme, because the unlock window paints before the renderer
+exists. All three members are optional for a renderer that also runs in older
+shells:
+
+- `qrlWallet.theme?: { theme: 'dark' | 'light' | 'system', resolved: 'dark' | 'light' }`:
+  main's stored choice (or the default, `dark`, when the user never chose) and
+  its resolution, read once per document start before the page's first script.
+  When present, the renderer applies `resolved`, shows `theme` in its Theme
+  row and ignores its own stored choice.
+- `qrlWallet.setTheme?(theme): Promise<void>`: the user's pick from the Theme
+  row. Main validates it as one of the three strings, stores it, sets
+  `nativeTheme.themeSource` and restyles the unlock window, the settings panel
+  and the window backgrounds.
+- `qrlWallet.onThemeChanged?(cb): () => void`: a new choice, or an OS
+  appearance flip while the choice is `system`. The callback receives the
+  `{ theme, resolved }` pair only; the return value unsubscribes.
+
+The wallet window's background is the resolved theme's page colour
+(`#080c16` dark, `#f3f4f7` light) before the renderer paints.
+
 ### Typed-data signing
 
 `window.qrlWallet.requestSignature({ kind: 'typedData', payload, signer, origin })`

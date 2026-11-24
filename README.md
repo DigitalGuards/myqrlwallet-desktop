@@ -239,6 +239,17 @@ without losing form input. Custom menu items update immediately. External error
 details retain their original text. Language changes leave open and arming
 trusted confirmations unchanged.
 
+The colour theme is the main process's: it stores the choice (`dark`, `light`
+or `system`; `dark` until the user picks), drives `nativeTheme.themeSource`,
+and paints the window backgrounds, the unlock window and the settings panel in
+the matching colour set. The renderer finds main's state in the optional
+`window.qrlWallet.theme` (`{ theme, resolved }`, present before its first
+script), picks with `window.qrlWallet.setTheme(theme)` and follows
+`window.qrlWallet.onThemeChanged(cb)`. A renderer that finds no `theme` keeps
+its browser behaviour. See the
+[threat model](THREAT_MODEL.md#native-colour-theme) for what this value can
+and cannot change.
+
 `src/shared/locales/` holds the static catalogs. Key/placeholder parity, regional
 resolution, settings persistence and real IPC sender/schema rejection are
 covered by `npm test`. The headless native window probe uses the pinned
