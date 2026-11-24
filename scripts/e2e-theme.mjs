@@ -2,7 +2,8 @@
 // for the wallet window, the native unlock window and the settings panel.
 // Checks: dark with nothing stored and nothing written; a light choice reaches
 // the store, nativeTheme, every window background, the wallet bridge, the
-// settings panel and the unlock window after a lock; `system` follows an
+// settings panel and the unlock window after a lock (from the creation-time
+// argument alone, with main's pulls held); `system` follows an
 // emulated OS flip; a restart keeps the choice from the first frame; an invalid
 // stored value reads as dark and keeps the other preferences.
 // The choice goes through the renderer's Theme row when the bundled renderer
@@ -163,7 +164,16 @@ try {
     `light chosen via ${result.choiceVia}: store, nativeTheme, bridge event, renderer media query, window background`,
   );
 
-  // 3. The settings panel and the unlock window follow.
+  // 3. The settings panel and the unlock window follow, from their creation-time
+  // argument: for the rest of this run main's pulls never answer, and no push
+  // comes without a change, so only the argument can set the light set here.
+  // The restart in step 5 uses the real pull handlers again.
+  await app.evaluate(({ ipcMain }) => {
+    for (const channel of ['settings:getTheme', 'unlock:getTheme']) {
+      ipcMain.removeHandler(channel);
+      ipcMain.handle(channel, () => new Promise(() => undefined));
+    }
+  });
   await wallet.evaluate(() => globalThis.qrlWallet.openDesktopSettings());
   let settings = await page(app, 'app://settings/');
   await settings.getByText('Back to wallet').waitFor({ state: 'visible' });
@@ -181,7 +191,9 @@ try {
   await unlock.screenshot({ path: path.join(evidence, 'unlock-light.png') });
   result.screenshots.push('unlock-light.png');
   await submitUnlock(unlock);
-  result.checks.push('settings panel and unlock window light, unlock window background light');
+  result.checks.push(
+    'settings panel and unlock window light from the creation-time argument alone (pulls held), unlock window background light',
+  );
 
   // 4. system follows an emulated OS appearance flip.
   await wallet.evaluate(() => globalThis.qrlWallet.setTheme('system'));
