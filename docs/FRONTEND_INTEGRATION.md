@@ -210,7 +210,9 @@ shells:
 - `qrlWallet.setTheme?(theme): Promise<void>`: the user's pick from the Theme
   row. Main validates it as one of the three strings, stores it, sets
   `nativeTheme.themeSource` and restyles the unlock window, the settings panel
-  and the window backgrounds.
+  and the window backgrounds. When main cannot store the choice, the promise
+  rejects with the fixed message `theme not saved` and nothing changes; the
+  detail stays in the main log.
 - `qrlWallet.onThemeChanged?(cb): () => void`: a new choice, or an OS
   appearance flip while the choice is `system`. The callback receives the
   `{ theme, resolved }` pair only; the return value unsubscribes. A change

@@ -287,6 +287,60 @@ test('the setTheme handler checks the real sender gate and the strict schema bef
   assert.equal((await readSettingsFile(file)).theme, 'system');
 });
 
+test('a failed theme write rejects with a fixed message, logs the detail in main and changes nothing', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qrl-theme-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  // The profile sits under a regular file, so the settings write fails with a
+  // file-system error that names the absolute path.
+  await writeFile(path.join(dir, 'blocker'), '');
+  const profileDir = path.join(dir, 'blocker', 'MyQRLWallet');
+  t.mock.method(app, 'getPath', () => profileDir);
+  Object.defineProperty(globalThis, '__dirname', { value: '.', configurable: true });
+  t.after(() => {
+    Reflect.deleteProperty(globalThis, '__dirname');
+  });
+  const lines: string[] = [];
+  t.mock.method(console, 'log', (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '));
+  });
+  const native = new FakeNativeTheme();
+  theme.initTheme(native, 'dark');
+  const seen: ThemeState[] = [];
+  t.after(theme.onThemeChanged((state) => seen.push(state)));
+  const { handlers, win } = walletHandlers(t);
+  const handler = handlers.get(IPC.SET_THEME);
+  assert.ok(handler);
+  const event = malformed<IpcMainInvokeEvent>({
+    sender: win.webContents,
+    senderFrame: win.webContents.mainFrame,
+  });
+  let message = '';
+  await assert.rejects(
+    async () => {
+      await handler(event, 'light');
+    },
+    (error: unknown) => {
+      message = error instanceof Error ? error.message : String(error);
+      return true;
+    },
+  );
+  assert.equal(message, 'theme not saved');
+  assert.ok(!message.includes(dir), 'no profile path reaches the renderer');
+  const logged = lines.find((line) => line.includes('[theme] choice not saved'));
+  assert.ok(logged, 'main logs the failure');
+  assert.ok(logged.includes(dir), 'the log keeps the file-system detail');
+  assert.deepEqual(theme.getThemeState(), { theme: 'dark', resolved: 'dark' });
+  assert.equal(native.themeSource, 'dark');
+  assert.deepEqual(seen, [], 'a failed choice pushes nothing');
+  // The sender gate and the schema still answer with their own messages.
+  await assert.rejects(async () => {
+    await handler(event, 'blue');
+  }, /invalid request/);
+  await assert.rejects(async () => {
+    await handler({ ...event, senderFrame: null }, 'light');
+  }, /unauthorized sender/);
+});
+
 test('the synchronous start read answers every sender, with the state only for the wallet window', async (t) => {
   await profile(t);
   Object.defineProperty(globalThis, '__dirname', { value: '.', configurable: true });

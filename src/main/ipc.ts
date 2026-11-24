@@ -19,7 +19,8 @@ import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'elect
 import type { z } from 'zod';
 import { setLanguage } from './language';
 import { getThemeState, setTheme } from './theme';
-import { logConsole } from './log';
+import type { ThemePreference } from '../shared/theme';
+import { logConsole, logMain } from './log';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import { signWithConfirmation } from './signatureRequest';
 import * as rpc from './rpc';
@@ -99,6 +100,17 @@ function recallSignedTxHash(rawTx: string): string | undefined {
   return signedTxHashes.get(rawTx);
 }
 
+/** The renderer's theme choice. A failed settings write is logged here with
+ * its detail; the renderer gets a fixed message, because the file-system error
+ * names the profile path and the temp file. The new error carries no cause, so
+ * the detail stays in main. */
+async function saveTheme(theme: ThemePreference): Promise<void> {
+  await setTheme(theme).catch((err: unknown) => {
+    logMain(`[theme] choice not saved: ${err instanceof Error ? err.message : 'error'}`);
+    throw new Error('theme not saved');
+  });
+}
+
 export function registerIpcHandlers(deps: Deps): void {
   const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
@@ -121,7 +133,7 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   handle(IPC.SET_LANGUAGE, LanguageSchema, setLanguage);
-  handle(IPC.SET_THEME, ThemePreferenceSchema, setTheme);
+  handle(IPC.SET_THEME, ThemePreferenceSchema, saveTheme);
 
   // The wallet preload's one synchronous read: the theme at document start.
   // Registered here, before main creates the wallet window, and answered on
