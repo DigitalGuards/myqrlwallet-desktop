@@ -18,6 +18,7 @@
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import type { z } from 'zod';
 import { setLanguage } from './language';
+import { getThemeState, setTheme } from './theme';
 import { logConsole } from './log';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import { signWithConfirmation } from './signatureRequest';
@@ -42,9 +43,10 @@ import { closeSettingsView } from './settingsView';
 import { isUnlockWindowShown } from './unlockWindow';
 import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
-import { EVENTS, IPC } from '../shared/constants';
+import { EVENTS, IPC, SYNC } from '../shared/constants';
 import {
   LanguageSchema,
+  ThemePreferenceSchema,
   BuildTransactionRequestSchema,
   CreateWalletRequestSchema,
   GetBalanceRequestSchema,
@@ -119,6 +121,22 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   handle(IPC.SET_LANGUAGE, LanguageSchema, setLanguage);
+  handle(IPC.SET_THEME, ThemePreferenceSchema, setTheme);
+
+  // The wallet preload's one synchronous read: the theme at document start.
+  // Registered here, before main creates the wallet window, and answered on
+  // every path: a synchronous call left without a return value (or without a
+  // listener) would hang the renderer. A foreign sender gets null, which the
+  // preload treats as no theme.
+  ipcMain.on(SYNC.GET_THEME, (event) => {
+    let state: ReturnType<typeof getThemeState> | null = null;
+    try {
+      if (isTrustedSender(event, getWindow())) state = getThemeState();
+    } catch {
+      state = null;
+    }
+    event.returnValue = state;
+  });
 
   /** Wrap a handler for a channel that takes no argument: sender validation
    * only, and whatever the renderer sent is ignored. */

@@ -4,9 +4,9 @@ import { test } from 'node:test';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { IpcMainInvokeEvent, WebContents } from 'electron';
+import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { EncryptedSeed } from '../src/shared/protocol';
-import { IPC, KDF_DEFAULTS, SEED_FILE_VERSION } from '../src/shared/constants';
+import { IPC, KDF_DEFAULTS, SEED_FILE_VERSION, SYNC } from '../src/shared/constants';
 import { isRecord } from '../src/shared/guards';
 import { readSettingsFile, updateSettingsFile } from '../src/main/settingsFile';
 import { NullVault } from '../src/keyvault/nullVault';
@@ -58,6 +58,15 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     'handle',
     (channel: string, handler: Parameters<typeof electron.ipcMain.handle>[1]) => {
       handlers.set(channel, handler);
+    },
+  );
+  const syncListeners = new Map<string, (event: IpcMainEvent) => void>();
+  t.mock.method(
+    electron.ipcMain,
+    'on',
+    (channel: string, listener: (event: IpcMainEvent) => void) => {
+      syncListeners.set(channel, listener);
+      return electron.ipcMain;
     },
   );
   const win = new electron.BrowserWindow();
@@ -145,6 +154,19 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     invoked.add(channel);
     return invoke(channel, walletEvent, args[0]);
   });
+  // The preload's one synchronous read goes to main's registered listener.
+  const synced = new Set<string>();
+  t.mock.method(electron.ipcRenderer, 'sendSync', (channel: string) => {
+    synced.add(channel);
+    const listener = syncListeners.get(channel);
+    assert.ok(listener, channel);
+    const event: { sender: unknown; senderFrame: unknown; returnValue?: unknown } = {
+      sender: walletEvent.sender,
+      senderFrame: walletEvent.senderFrame,
+    };
+    listener(malformed<IpcMainEvent>(event));
+    return event.returnValue;
+  });
   const subscribed = new Set<string>();
   t.mock.method(electron.ipcRenderer, 'on', (channel: string) => {
     subscribed.add(channel);
@@ -170,6 +192,10 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     genesisHash: '0xd15407991193e6c23b733dc6bf9c628deaff8f9b6e252aa0d60030952b3e3ea4',
   });
   assert.ok(Object.isFrozen(api['network']));
+  assert.deepEqual([...synced], [SYNC.GET_THEME]);
+  assert.deepEqual([...syncListeners.keys()], Object.values(SYNC));
+  assert.deepEqual(api['theme'], { theme: 'dark', resolved: 'dark' });
+  assert.ok(Object.isFrozen(api['theme']));
   await writeSeed(envelope('a'));
   await setActiveAddress(envelope('a').address);
   t.mock.method(globalThis, 'fetch', (_input: unknown, init?: { body?: unknown }) => {
@@ -198,6 +224,7 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
   };
   const calls: Record<string, unknown[]> = {
     setLanguage: ['de'],
+    setTheme: ['light'],
     getBalance: [{ address: active }],
     buildTransaction: [{ from: active, to: active, value: '1' }],
     requestSignature: [{ kind: 'transaction', tx }],
@@ -213,12 +240,13 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     openDesktopSettings: [],
     onLockStateChanged: [() => undefined],
     onDAppConnectUri: [() => undefined],
+    onThemeChanged: [() => undefined],
     lock: [],
     removeWallet: [{ address: envelope('c').address }],
   };
   assert.deepEqual(
     Object.keys(api).sort(),
-    [...Object.keys(calls), 'features', 'addressScheme', 'network'].sort(),
+    [...Object.keys(calls), 'features', 'addressScheme', 'network', 'theme'].sort(),
   );
   for (const [name, args] of Object.entries(calls)) {
     const method: unknown = api[name];
@@ -231,7 +259,11 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     Object.values(IPC).sort(),
     'every wallet handler exercised',
   );
-  assert.deepEqual([...subscribed].sort(), ['wallet:dappConnectUri', 'wallet:lockStateChanged']);
+  assert.deepEqual([...subscribed].sort(), [
+    'wallet:dappConnectUri',
+    'wallet:lockStateChanged',
+    'wallet:themeChanged',
+  ]);
 
   // The inventory includes ALL handlers under src/main. A new registration
   // location requires extending this test before the isolation gate passes.
@@ -261,11 +293,13 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
       'settings:close',
       'settings:get',
       'settings:getLanguage',
+      'settings:getTheme',
       'settings:removeWallet',
       'settings:set',
       'unlock:biometric',
       'unlock:getInfo',
       'unlock:getLanguage',
+      'unlock:getTheme',
       'unlock:submit',
     ].sort(),
   );
@@ -284,7 +318,12 @@ test('wallet preload inventory and native IPC isolation preserve their boundarie
     { biometricUnlock: false, extra: true },
   ]) {
     await assert.rejects(invoke('settings:set', settingsEvent, raw), /invalid settings payload/);
-    assert.deepEqual(await readSettingsFile(file), { v: 1, language: 'de', autolockMs: 900_000 });
+    assert.deepEqual(await readSettingsFile(file), {
+      v: 1,
+      language: 'de',
+      theme: 'light',
+      autolockMs: 900_000,
+    });
   }
   await invoke('settings:set', settingsEvent, {
     autolockMs: 60_000,
