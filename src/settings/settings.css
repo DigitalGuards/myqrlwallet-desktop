@@ -22,11 +22,45 @@
   --brand-tint: rgb(51 173 230 / 0.1);
   --error: #f26464;
   --ok: #4ddb81;
+  /* Borders of fields and outlined controls; equal to --border in dark. */
+  --control-border: #1e2738;
+  /* Toggle track and knob; equal to --border and --fg in dark. */
+  --toggle-track: #1e2738;
+  --toggle-knob: #f2f5f8;
+  /* Remove-account card and button (the design system's deep red). */
+  --danger-card-border: rgb(127 29 29 / 0.7);
+  --danger-border: #7f1d1d;
+  --danger-tint: rgb(239 68 68 / 0.1);
   --radius: 0.75rem;
   /* Type: the renderer's faces, self-hosted (imported in main.tsx). */
   --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+}
+
+/* Light colour set (the web wallet's "Ink and blue"), selected by
+ * data-theme="light" on <html>, which the preload sets from main's validated
+ * theme. Colours only: layout, text and controls are the same in both sets. */
+:root[data-theme='light'] {
+  --bg: #f3f4f7; /* hsl(220 20% 96%) page */
+  --fg: #0e1525; /* hsl(222 47% 10%) ink */
+  --muted-fg: #4b5363; /* hsl(220 14% 34%) */
+  --faint: #5e6778; /* hsl(220 12% 42%), 4.5:1 or better on page and panel */
+  --border: #d6d9e1; /* hsl(220 16% 86%) hairline */
+  --control-border: #7f8a9f; /* hsl(220 14% 56%), 3:1 on page and panel */
+  --panel: #ffffff;
+  --brand: #0967ae; /* hsl(206 90% 36%) primary */
+  --brand-hover: #07538d; /* hsl(206 90% 29%) */
+  --brand-fg: #ffffff;
+  --brand-ring: rgb(9 103 174 / 0.8);
+  --brand-tint: rgb(9 103 174 / 0.08);
+  --error: #b91c1c;
+  --ok: #166534;
+  --toggle-track: #7f8a9f;
+  --toggle-knob: #ffffff;
+  --danger-card-border: rgb(185 28 28 / 0.5);
+  --danger-border: #b91c1c;
+  --danger-tint: rgb(185 28 28 / 0.08);
 }
 
 * {
@@ -125,7 +159,7 @@ body {
   color: var(--fg);
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   transition:
     border-color 140ms,
@@ -201,7 +235,7 @@ body {
   font-size: 13px;
   color: var(--fg);
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   padding: 7px 10px;
   border-radius: var(--radius);
   outline: none;
@@ -243,7 +277,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: var(--border);
+  background: var(--toggle-track);
   transition: background 140ms;
 }
 
@@ -259,7 +293,7 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--fg);
+  background: var(--toggle-knob);
   transition: transform 140ms;
 }
 
@@ -278,7 +312,7 @@ body {
   color: var(--fg);
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   transition:
     border-color 140ms,
@@ -299,17 +333,17 @@ body {
 /* Destructive section (remove account): the design system's deep red as border
    accent, matching the wallet's destructive-card treatment. */
 .settings-card.danger {
-  border-color: rgb(127 29 29 / 0.7);
+  border-color: var(--danger-card-border);
 }
 
 .settings-button.danger {
-  border-color: #7f1d1d;
+  border-color: var(--danger-border);
   color: var(--error);
 }
 
 .settings-button.danger:hover:not(:disabled) {
   border-color: var(--error);
-  background: rgb(239 68 68 / 0.1);
+  background: var(--danger-tint);
 }
 
 .settings-address {

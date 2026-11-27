@@ -18,7 +18,9 @@
 import { app, type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import type { z } from 'zod';
 import { setLanguage } from './language';
-import { logConsole } from './log';
+import { getThemeState, setTheme } from './theme';
+import type { ThemePreference } from '../shared/theme';
+import { logConsole, logMain } from './log';
 import { confirmRemoveWallet, confirmSignature } from './confirm';
 import { signWithConfirmation } from './signatureRequest';
 import * as rpc from './rpc';
@@ -42,9 +44,10 @@ import { closeSettingsView } from './settingsView';
 import { isUnlockWindowShown } from './unlockWindow';
 import { removeWalletFlow } from './walletRemoval';
 import type { SignerBridge } from './signerBridge';
-import { EVENTS, IPC } from '../shared/constants';
+import { EVENTS, IPC, SYNC } from '../shared/constants';
 import {
   LanguageSchema,
+  ThemePreferenceSchema,
   BuildTransactionRequestSchema,
   CreateWalletRequestSchema,
   GetBalanceRequestSchema,
@@ -97,6 +100,17 @@ function recallSignedTxHash(rawTx: string): string | undefined {
   return signedTxHashes.get(rawTx);
 }
 
+/** The renderer's theme choice. A failed settings write is logged here with
+ * its detail; the renderer gets a fixed message, because the file-system error
+ * names the profile path and the temp file. The new error carries no cause, so
+ * the detail stays in main. */
+async function saveTheme(theme: ThemePreference): Promise<void> {
+  await setTheme(theme).catch((err: unknown) => {
+    logMain(`[theme] choice not saved: ${err instanceof Error ? err.message : 'error'}`);
+    throw new Error('theme not saved');
+  });
+}
+
 export function registerIpcHandlers(deps: Deps): void {
   const { getWindow, signer, keyVault, showUnlock, notifyUnlocked, showSettings } = deps;
 
@@ -119,6 +133,22 @@ export function registerIpcHandlers(deps: Deps): void {
   }
 
   handle(IPC.SET_LANGUAGE, LanguageSchema, setLanguage);
+  handle(IPC.SET_THEME, ThemePreferenceSchema, saveTheme);
+
+  // The wallet preload's one synchronous read: the theme at document start.
+  // Registered here, before main creates the wallet window, and answered on
+  // every path: a synchronous call left without a return value (or without a
+  // listener) would hang the renderer. A foreign sender gets null, which the
+  // preload treats as no theme.
+  ipcMain.on(SYNC.GET_THEME, (event) => {
+    let state: ReturnType<typeof getThemeState> | null = null;
+    try {
+      if (isTrustedSender(event, getWindow())) state = getThemeState();
+    } catch {
+      state = null;
+    }
+    event.returnValue = state;
+  });
 
   /** Wrap a handler for a channel that takes no argument: sender validation
    * only, and whatever the renderer sent is ignored. */

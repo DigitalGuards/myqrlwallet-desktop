@@ -6,9 +6,11 @@
  * to defaults, never throws at startup).
  *
  * File: userData/settings.json. Versioned zod-strict envelope
- * `{ v: 1, autolockMs?, biometricUnlock?, language?, legacyNoticeAckV1?, walletOriginMigrationV1?, unlockPhrase? }`.
+ * `{ v: 1, autolockMs?, biometricUnlock?, language?, theme?, legacyNoticeAckV1?, walletOriginMigrationV1?, unlockPhrase? }`.
  * The legacy unlockPhrase key is accepted only for 1.4.6 compatibility, ignored
- * on read and omitted on every write. All other preferences survive, including
+ * on read and omitted on every write. `theme` holds the user's colour theme
+ * choice; a value other than dark, light or system is dropped on read, so a
+ * bad theme never resets the other preferences. All other preferences survive, including
  * walletOriginMigrationV1 so a completed storage move stays completed.
  * Unknown keys still invalidate the envelope. Same-user malware can read this
  * file; it holds only non-secret preferences.
@@ -28,6 +30,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { LanguageSchema } from '../shared/schemas';
 import type { Language } from '../shared/language';
+import { isThemePreference, type ThemePreference } from '../shared/theme';
 import { DEFAULT_AUTOLOCK_MS } from '../shared/constants';
 
 /** Bounds for a STORED autolock timeout. The env override is not clamped
@@ -39,6 +42,9 @@ export const AUTOLOCK_MAX_MS = 3_600_000;
 const StoredSettingsSchema = z.strictObject({
   v: z.literal(1),
   language: LanguageSchema.optional(),
+  /** The colour theme choice. Any stored value is accepted here and kept by
+   * normalise only when it is dark, light or system. */
+  theme: z.unknown().optional(),
   /** Read-only compatibility with 1.4.6; normalise discards this bounded value. */
   unlockPhrase: z
     .string()
@@ -52,11 +58,17 @@ const StoredSettingsSchema = z.strictObject({
   walletOriginMigrationV1: z.boolean().optional(),
 });
 
-export type StoredSettings = Omit<z.infer<typeof StoredSettingsSchema>, 'unlockPhrase'>;
+export type StoredSettings = Omit<
+  z.infer<typeof StoredSettingsSchema>,
+  'unlockPhrase' | 'theme'
+> & {
+  theme?: ThemePreference | undefined;
+};
 
 /** Main-owned settings store patch. Native security settings use a separate IPC schema. */
 export interface SettingsPatch {
   language?: Language | undefined;
+  theme?: ThemePreference | undefined;
   autolockMs?: number | undefined;
   biometricUnlock?: boolean | undefined;
   legacyNoticeAckV1?: boolean | undefined;
@@ -71,9 +83,10 @@ export function clampAutolockMs(ms: number): number {
 }
 
 /** Retain current preferences and clamp the stored autolock into bounds. */
-function normalise(s: StoredSettings): StoredSettings {
+function normalise(s: z.infer<typeof StoredSettingsSchema>): StoredSettings {
   const out: StoredSettings = { v: 1 };
   if (s.language !== undefined) out.language = s.language;
+  if (isThemePreference(s.theme)) out.theme = s.theme;
   if (s.autolockMs !== undefined) out.autolockMs = clampAutolockMs(s.autolockMs);
   if (s.biometricUnlock !== undefined) out.biometricUnlock = s.biometricUnlock;
   if (s.legacyNoticeAckV1 !== undefined) out.legacyNoticeAckV1 = s.legacyNoticeAckV1;
@@ -166,6 +179,7 @@ async function mergeSettingsFile(filePath: string, patch: SettingsPatch): Promis
   const current = await readSettingsFile(filePath);
   const next: StoredSettings = { ...current };
   if (patch.language !== undefined) next.language = patch.language;
+  if (patch.theme !== undefined) next.theme = patch.theme;
   if (patch.autolockMs !== undefined) next.autolockMs = patch.autolockMs;
   if (patch.biometricUnlock !== undefined) next.biometricUnlock = patch.biometricUnlock;
   if (patch.legacyNoticeAckV1 !== undefined) next.legacyNoticeAckV1 = patch.legacyNoticeAckV1;

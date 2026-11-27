@@ -29,6 +29,7 @@ export class BrowserWindow extends EventEmitter {
   focus() {}
   flashFrame() {}
   setTitle() {}
+  setBackgroundColor() {}
   getBounds() { return { x: 0, y: 0, width: 1024, height: 768 }; }
   getContentSize() { return [1024, 768]; }
   hide() { this.visible = false; }
@@ -44,8 +45,8 @@ export class WebContentsView {
   setBounds() {}
 }
 export const webContents = { getAllWebContents: () => contents };
-export const ipcMain = { handle() {} };
-export const ipcRenderer = { invoke() {}, on() {}, removeListener() {} };
+export const ipcMain = { handle() {}, on() {} };
+export const ipcRenderer = { invoke() {}, on() {}, removeListener() {}, sendSync() {} };
 export const contextBridge = { exposeInMainWorld() {} };
 export const shell = { async openPath() { return ''; } };
 export const dialog = {};

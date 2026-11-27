@@ -19,7 +19,7 @@
  */
 export const EXTERNAL_ALLOWLIST = [
   'qrlwallet.com', // first-party site (incl. dev.qrlwallet.com staging)
-  'zondscan.com', // block explorer: transaction / address links
+  'shorscan.com', // block explorer: transaction / address links
   'theqrl.org', // QRL project
   'github.com', // DigitalGuards repository / issue links
   't.me', // community / support telegram
@@ -27,8 +27,8 @@ export const EXTERNAL_ALLOWLIST = [
 
 /**
  * True iff `url` is an https URL whose host is in EXTERNAL_ALLOWLIST, matched as
- * an exact host or a subdomain on a dot boundary (so `evil-zondscan.com` and
- * `zondscan.com.evil.test` are rejected). https is required so a compromised
+ * an exact host or a subdomain on a dot boundary (so `evil-shorscan.com` and
+ * `shorscan.com.evil.test` are rejected). https is required so a compromised
  * renderer cannot use `shell.openExternal` to launch `file:`, a custom protocol
  * handler, or another dangerous scheme.
  */

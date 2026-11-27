@@ -149,9 +149,12 @@ async function run({ size, points, scale }) {
   });
   writeFileSync(path.join(profile, 'electron.log'), result.stderr);
   process.stdout.write(result.stdout);
+  searchRetries += Number(/"searchRetries":(\d+)/.exec(result.stdout)?.[1] ?? 0);
   if (result.code !== 0)
     throw new Error(`${path.basename(profile)} failed (${result.code}): ${result.stderr}`);
 }
+// Window-search retries across all profiles (see findWindow in the app).
+let searchRetries = 0;
 // Independent virtual displays keep the complete sweep practical as a local check.
 const started = performance.now();
 for (let index = 0; index < jobs.length; index += 2) {
@@ -160,5 +163,5 @@ for (let index = 0; index < jobs.length; index += 2) {
   if (failure) throw failure.reason;
 }
 console.log(
-  `${baselineOnly ? 'Baseline measurement' : 'Native visibility check'}: ${jobs.length} profiles completed in ${((performance.now() - started) / 1000).toFixed(1)}s`,
+  `${baselineOnly ? 'Baseline measurement' : 'Native visibility check'}: ${jobs.length} profiles completed in ${((performance.now() - started) / 1000).toFixed(1)}s, ${searchRetries} window-search retries`,
 );

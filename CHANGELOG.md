@@ -2,6 +2,66 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
+## 1.4.11 - 2026-11-27
+
+### Security
+
+- Upgrade Electron from 44.11.2 to 44.11.5 in the lockfile and raise the
+  manifest's caret floor to match. It bundles Node 24.22.3 and carries
+  backported fixes from upstream ANGLE, Chromium, Dawn, FFmpeg, icu, PDFium,
+  Skia, V8 and WebRTC; Chromium stays 152.0.7977.169. See the
+  [44.11.3](https://github.com/electron/electron/releases/tag/v44.11.3),
+  [44.11.4](https://github.com/electron/electron/releases/tag/v44.11.4) and
+  [44.11.5](https://github.com/electron/electron/releases/tag/v44.11.5)
+  release notes.
+
+### Added
+
+- A colour theme: the same as your system (the default), dark, or light.
+  Pick it on the Settings page next to Language. The unlock window, the
+  desktop security panel and the window frames follow it, and the app
+  remembers your choice across restarts.
+
+### Changed
+
+- The app follows your system's light or dark setting unless you pick Dark
+  or Light. Up to 1.4.10 it was always dark, so on a computer set to light
+  mode it now starts light. While it follows the system, the window frames,
+  menus and OS-drawn dialogs follow the system setting, as up to 1.4.10. With
+  a fixed choice they follow that choice, the signing and Remove wallet
+  confirmations included, wherever the operating system draws them in the
+  app's appearance.
+
+- The wallet window bundles the web wallet of the November 2026 rollout
+  (frontend `f137af3`, branch `release/2026-11-rollout-prod`):
+  - A Theme row on the desktop Settings page, next to Language, that sets
+    the colour theme of the whole app. The web wallet's own default follows
+    the system as well; on the desktop the main process leads.
+  - The desktop Settings page shows plain rows: Language under Preferences,
+    Desktop security under Security.
+  - dApp requests that fail answer with an error code that matches the
+    failure. Code 4001 is sent only when you decline or dismiss a request;
+    wallet and node failures answer -32603, request problems answer -32602
+    or 4100, and a reverting transaction keeps code 3.
+  - NFT transfers and token creation check that the account and network are
+    still the ones they started on before they sign and before they broadcast
+    (store guards from the web wallet's PIN re-check work).
+  - `@qrlwallet/connect` 5.2.1, and typed-data path errors read the same as
+    the SDK's.
+- The block explorer moved from zondscan.com to shorscan.com. The renderer
+  build defaults its explorer URLs to https://shorscan.com, the wallet
+  window's `connect-src` lists https://shorscan.com as the explorer origin,
+  and explorer links open shorscan.com in your browser. zondscan.com leaves
+  both lists: the bundled web wallet builds every explorer link and API call
+  from the shorscan.com base.
+
+### Downgrading
+
+- Once you pick a theme, the desktop settings file holds a `theme` entry that
+  1.4.10 and earlier do not accept. Going back to an earlier version therefore
+  resets the desktop settings (auto-lock, biometric unlock and language) to
+  their defaults. Wallets and the web wallet's own data stay.
+
 ## 1.4.10 - 2026-11-12
 
 ### Security

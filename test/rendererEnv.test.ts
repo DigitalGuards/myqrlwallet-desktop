@@ -3,6 +3,8 @@
  * its `--print-env` mode. The testnet values below are written out by hand and
  * equal what the script produced before network profiles existed (desktop
  * 1.4.8), so a testnet build bundles a byte-identical renderer configuration.
+ * One value moved since: the explorer host is shorscan.com from desktop 1.4.11
+ * on (zondscan.com before), in the explorer URLs and in connect-src.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -18,20 +20,20 @@ const QNS =
   'Qcfc5f3242cE7d413F308D4181fd45D441d535298d78fd2d26833c2650408f636B46590dc10D23221480eFac958705Ba6C266eEB16B5aeafA64202715Adc84424';
 
 const csp = (backend: string): string =>
-  `DESKTOP_CSP=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${backend} wss://${backend} https://qrlwallet.com wss://qrlwallet.com https://zondscan.com; img-src 'self' data: https://${backend}; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'`;
+  `DESKTOP_CSP=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://${backend} wss://${backend} https://qrlwallet.com wss://qrlwallet.com https://shorscan.com; img-src 'self' data: https://${backend}; media-src 'self' blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self'`;
 
-/** Desktop 1.4.8's renderer environment for a default (production) build. */
+/** The renderer environment for a default (production) build. */
 const TESTNET_PRODUCTION = [
   'VITE_DESKTOP=1',
-  'VITE_EXPLORER_URL_DEVELOPMENT=https://zondscan.com',
-  'VITE_EXPLORER_URL_PRODUCTION=https://zondscan.com',
+  'VITE_EXPLORER_URL_DEVELOPMENT=https://shorscan.com',
+  'VITE_EXPLORER_URL_PRODUCTION=https://shorscan.com',
   'VITE_NODE_ENV=production',
   'VITE_RPC_URL_DEVELOPMENT=https://dev.qrlwallet.com/api/qrl-rpc',
   'VITE_RPC_URL_PRODUCTION=https://qrlwallet.com/api/qrl-rpc',
   'VITE_SERVER_URL_DEVELOPMENT=https://dev.qrlwallet.com/api',
   'VITE_SERVER_URL_PRODUCTION=https://qrlwallet.com/api',
   'VITE_V3_CHAIN_ID=0x301825',
-  'VITE_V3_EXPLORER_URL=https://zondscan.com',
+  'VITE_V3_EXPLORER_URL=https://shorscan.com',
   `VITE_V3_GENESIS_HASH=${GENESIS}`,
   `VITE_V3_QNS_REGISTRY=${QNS}`,
   'VITE_V3_RPC_URL=https://qrlwallet.com/api/qrl-rpc/testnet',
@@ -40,7 +42,7 @@ const TESTNET_PRODUCTION = [
   csp('qrlwallet.com'),
 ];
 
-/** Desktop 1.4.8's renderer environment for a staging build. */
+/** The renderer environment for a staging build. */
 const TESTNET_DEVELOPMENT = TESTNET_PRODUCTION.map((line) => {
   if (line === 'VITE_NODE_ENV=production') return 'VITE_NODE_ENV=development';
   if (line.startsWith('VITE_V3_RPC_URL='))
@@ -73,7 +75,7 @@ function printEnv(script: string, extra: Record<string, string> = {}) {
   };
 }
 
-test('the default testnet build keeps the desktop 1.4.8 renderer environment', () => {
+test('the default testnet build keeps its renderer environment', () => {
   for (const extra of [{}, { QRL_NETWORK_PROFILE: '' }, { QRL_NETWORK_PROFILE: 'testnet' }]) {
     const result = printEnv(SCRIPT, extra);
     assert.equal(result.status, 0, result.stderr);
@@ -81,7 +83,7 @@ test('the default testnet build keeps the desktop 1.4.8 renderer environment', (
   }
 });
 
-test('a testnet staging build keeps the desktop 1.4.8 renderer environment', () => {
+test('a testnet staging build keeps its renderer environment', () => {
   const result = printEnv(SCRIPT, { VITE_NODE_ENV: 'development' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.lines, TESTNET_DEVELOPMENT);
