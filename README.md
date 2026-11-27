@@ -20,7 +20,7 @@ renderer-hardening checklist as-built is in [`SECURITY.md`](SECURITY.md).
 
 ## At a glance
 
-- **Stack:** Electron 44 (locked to 44.11.2; bundled Node 24.22.2 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
+- **Stack:** Electron 44 (locked to 44.11.5; bundled Node 24.22.3 + Chromium 152.0.7977.169) + electron-vite 5 + electron-builder 26 (GA), TypeScript (strict). The renderer is the real `myqrlwallet-frontend` (React 19), built unchanged. See the [Electron 44 upgrade review](docs/ELECTRON_44_UPGRADE.md) and [1.4.3 security notes](CHANGELOG.md#143---2026-10-22).
 - **Renderer reuse:** the web wallet is the desktop UI, with no fork. It is built with `VITE_DESKTOP=1` and loaded at `app://wallet/index.html`; the few desktop adaptations are runtime-gated and web-safe (see "Renderer reuse" below). A frontend update is just a rebuild.
 - **Key isolation:** the signer generates accounts, encrypts the desktop wallet envelopes, and decrypts keys for unlock and signing. Setup and import expose recovery material to the renderer and main as described above. The desktop bridge routes signing to the signer; in-page PIN storage and signing entry points throw as defense-in-depth. Encrypted-wallet-file decryption remains enabled in the renderer.
 - **Post-quantum signing:** Halborn-audited `@theqrl/mldsa87` (ML-DSA-87 / FIPS 204, NIST Level 5), run ONLY inside the signer process.
@@ -108,7 +108,7 @@ decision pending. See [the layout budget](THREAT_MODEL.md#transaction-pages-and-
   or later; Windows ia32 and Linux armv7l are unsupported.
 - Node `>=22.13.0` for the dev toolchain. The repo pins `22` (current LTS) in
   `.nvmrc`; run `nvm use`. (The packaged app runs on Electron's own bundled Node,
-  currently 24.22.2; this floor is only for building, testing, and packaging locally.)
+  currently 24.22.3; this floor is only for building, testing, and packaging locally.)
   `@types/node` stays at `^22` to enforce that development API floor.
 - A sibling `../myqrlwallet-frontend` checkout. The renderer is built FROM that
   directory (never vendored into this repo), so the desktop and frontend repos
@@ -238,6 +238,17 @@ Unlock and settings update in place, including displayed wallet-owned errors,
 without losing form input. Custom menu items update immediately. External error
 details retain their original text. Language changes leave open and arming
 trusted confirmations unchanged.
+
+The colour theme is the main process's: it stores the choice (`dark`, `light`
+or `system`; `system` until the user picks), drives `nativeTheme.themeSource`,
+and paints the window backgrounds, the unlock window and the settings panel in
+the matching colour set. The renderer finds main's state in the optional
+`window.qrlWallet.theme` (`{ theme, resolved }`, present before its first
+script), picks with `window.qrlWallet.setTheme(theme)` and follows
+`window.qrlWallet.onThemeChanged(cb)`. A renderer that finds no `theme` keeps
+its browser behaviour. See the
+[threat model](THREAT_MODEL.md#native-colour-theme) for what this value can
+and cannot change.
 
 `src/shared/locales/` holds the static catalogs. Key/placeholder parity, regional
 resolution, settings persistence and real IPC sender/schema rejection are
@@ -389,7 +400,7 @@ migration), because every earlier release ran on testnet.
 Launch day:
 
 1. Fill in both mainnet pins in `NETWORKS` (`src/main/config.ts`).
-2. Bump the frontend revision the renderer is built from: `b04bfca` today in
+2. Bump the frontend revision the renderer is built from: `f137af3` today in
    `.github/workflows/ci.yml` and `docs/FRONTEND_INTEGRATION.md`. Pick a
    frontend release with mainnet support; one that lists only testnet fails
    the renderer check above.
@@ -409,7 +420,7 @@ Launch day:
 
 `npm run build:renderer:frontend -- --print-env` prints the renderer build
 environment and exits without building. `test/rendererEnv.test.ts` holds the
-testnet environment to the values desktop 1.4.10 shipped.
+testnet environment to the values desktop 1.4.11 ships.
 
 ## Directory map
 
@@ -470,10 +481,10 @@ For an isolated worktree, set `QRL_FRONTEND_DIR` to a disposable copy of the
 frontend source. The build installs its locked dependencies and builds it there,
 then stages the output into this desktop checkout.
 
-For Desktop 1.4.10, use frontend main revision
-`b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
-CI pins that same revision for this release; it is unchanged since 1.4.9. See
-the [1.4.10 release notes](CHANGELOG.md#1410---2026-11-12).
+For Desktop 1.4.11, use frontend revision
+`f137af3a8e65de0d21a98962547a605af5ef9cf1`, the web wallet of the November 2026
+rollout. CI pins that same revision for this release. See the
+[1.4.11 release notes](CHANGELOG.md#1411---2026-11-27).
 
 ### Dependency pins
 

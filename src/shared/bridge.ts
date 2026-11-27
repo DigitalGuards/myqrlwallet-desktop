@@ -12,6 +12,7 @@
  * minimal lifecycle calls a working wallet needs (provision, status, lock).
  */
 import type { Language } from './language';
+import type { ThemePreference, ThemeState } from './theme';
 import type {
   BalanceResult,
   BuildTransactionRequest,
@@ -78,6 +79,15 @@ export interface QrlWalletApi {
   readonly features: QrlWalletFeatures;
   /** The network this build runs on; see {@link QrlWalletNetwork}. */
   readonly network: QrlWalletNetwork;
+  /**
+   * The colour theme main holds (the stored choice, or the default when the
+   * user never chose) and what it resolves to, read when this document
+   * started. Main is the source of truth: a renderer that finds this value
+   * applies `resolved`, shows `theme` in its Theme row and follows
+   * {@link QrlWalletApi.onThemeChanged}. Absent when the read failed; the
+   * renderer then keeps its browser behaviour.
+   */
+  readonly theme?: ThemeState;
 
   // ---- read-only ----------------------------------------------------------
   getBalance(req: GetBalanceRequest): Promise<BalanceResult>;
@@ -129,6 +139,10 @@ export interface QrlWalletApi {
   openDesktopSettings(): Promise<void>;
   /** Select one bundled native catalog; persists and applies immediately. */
   setLanguage(language: Language): Promise<void>;
+  /** Store the user's colour theme choice (dark, light or system). Main
+   * restyles the unlock window, the settings view, the window backgrounds and
+   * the OS-drawn parts, then answers through onThemeChanged. */
+  setTheme(theme: ThemePreference): Promise<void>;
 
   // ---- events -------------------------------------------------------------
   /** Subscribe to lock-state changes (e.g. autolock). Returns an unsubscribe. */
@@ -138,6 +152,11 @@ export interface QrlWalletApi {
    * dApp-connect stack parses it behind its consent modal. Returns an
    * unsubscribe. */
   onDAppConnectUri(cb: (uri: string) => void): () => void;
+  /** Subscribe to theme changes: a new choice, or an OS appearance flip while
+   * the choice is `system`. A change that arrived after this document started
+   * and before the subscription is handed over once, just after subscribing.
+   * Returns an unsubscribe. */
+  onThemeChanged(cb: (state: ThemeState) => void): () => void;
 }
 
 declare global {

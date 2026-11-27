@@ -7,7 +7,7 @@ the cost of accessing a saved KEK. The password-derived Argon2id KEK protects
 stolen wallet envelopes while the attacker lacks that KEK. Whoever obtains
 the KEK can decrypt both recovery envelopes without the password.
 
-Runtime baseline: Electron 44, locked to 44.11.2 (Chromium 152.0.7977.169, Node 24.22.2).
+Runtime baseline: Electron 44, locked to 44.11.5 (Chromium 152.0.7977.169, Node 24.22.3).
 The [upgrade review](docs/ELECTRON_44_UPGRADE.md) covers the Electron 43/44
 changes against these boundaries.
 The [1.4.3 security notes](CHANGELOG.md#143---2026-10-22) distinguish the
@@ -74,15 +74,61 @@ updates are serialized so concurrent language and security-setting writes
 preserve each other's fields. The wallet renderer gains no access to auto-lock,
 biometric preferences or other settings through this method.
 
-The isolated unlock and settings surfaces receive only a validated language
-code through their narrow read/subscription bridges; each renders its own
+The isolated unlock and settings surfaces receive two validated values from
+main: a language code, through their narrow read/subscription bridges, and a
+resolved colour theme, `dark` or `light`, which selects one of two bundled
+colour sets and nothing else (see
+[Native colour theme](#native-colour-theme)). Each surface renders its own
 bundled catalog. A live change updates those surfaces and custom menu items
-without a reload. Open and arming trusted confirmations stay in English and
-continue under the existing lifecycle and abort checks.
+without a reload. Open and arming trusted confirmations stay OS-drawn and in
+English and continue under the existing lifecycle and abort checks.
 
 Translation interpolation uses one replacement pass, so data containing
 placeholder syntax remains data. External error details retain their original
 text. Quanta, QRL, QRL 2.0 and MyQRLWallet remain unchanged.
+
+### Native colour theme
+
+`window.qrlWallet.setTheme(theme)` is the renderer's sole theme control.
+`IPC.SET_THEME` uses the same `isTrustedSender` top-frame gate and zod argument
+validation as `IPC.SET_LANGUAGE`; the schema accepts exactly `dark`, `light`
+and `system`. Main owns the choice: it stores it as the optional `theme` field
+of `userData/settings.json` only when the user picks one, reads a missing or
+any other stored value as the default (`system`) without touching the other
+preferences, sets `nativeTheme.themeSource` to it (`system` is also Electron's
+own default), and resolves `system` from the OS appearance.
+
+The wallet preload reads main's `{ theme, resolved }` once per document start
+through one synchronous call (`SYNC.GET_THEME`). Main answers it from memory,
+behind the same `isTrustedSender` gate, with `null` for any other sender, and
+the preload exposes only the validated, frozen result as
+`window.qrlWallet.theme`; later changes arrive through `onThemeChanged`. The
+unlock window and the settings view take the resolved value from a
+creation-time argument, a sender-gated pull (`unlock:getTheme`,
+`settings:getTheme`) and main's push. Their preloads accept `dark` or `light`
+only and set one attribute on `<html>` that selects one of two bundled colour
+sets. Nothing is exposed to those pages.
+
+Apart from main's own wallet records (the accounts on disk and the active one,
+which the renderer changes only through the sender-gated, schema-checked
+wallet calls), exactly two values the renderer selects reach the unlock window
+and the settings view, and main validates both as enums: the language code,
+which selects one of the bundled text catalogs (see
+[Native language selection](#native-language-selection)), and the theme, which
+selects one of the two bundled colour sets. The trusted
+confirmations stay OS-drawn and in English: the language choice leaves their
+text unchanged, and the theme reaches them only as the operating system
+appearance described below. Appearance and language never establish
+authenticity.
+
+Through `nativeTheme.themeSource` the choice also selects the light or dark
+appearance the operating system gives the app's window frames, menus and
+OS-drawn dialogs, the trusted confirmations included, where the platform
+applies the app's appearance to them. Their text, pages, buttons, default
+button and arming delay are unchanged. A compromised renderer can therefore
+switch the unlock window, the settings view and those OS-drawn parts between
+the two appearances. Appearance never establishes authenticity; see the unlock
+phishing limit below.
 
 ## Attacker model and what each control buys (and its limits)
 
@@ -183,7 +229,9 @@ design).
   prompt is the separate native window titled `Unlock MyQRLWallet` (localized
   in the other supported languages), which the wallet window cannot draw into.
   A matching title or appearance alone cannot establish authenticity: other
-  software on the computer can imitate both. Main hides the wallet window while
+  software on the computer can imitate both, and since 1.4.11 the wallet
+  renderer chooses the unlock window's colour set (dark or light), so its
+  colours carry no authenticity either. Main hides the wallet window while
   locked. Every transaction and signature still requires approval in the native
   confirmation window, so a captured password alone authorizes no transaction
   or signature.

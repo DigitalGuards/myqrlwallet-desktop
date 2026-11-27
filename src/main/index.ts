@@ -11,7 +11,8 @@ import { startupLanguage } from '../shared/language';
 import { installApplicationMenu } from './applicationMenu';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, nativeTheme, protocol, session } from 'electron';
+import { initTheme, onThemeChanged, themeBackground } from './theme';
 import { windowIcon } from './appIcon';
 import { APP_URLS } from '../shared/appUrls';
 import { createAppProtocolHandler } from './appProtocol';
@@ -262,7 +263,8 @@ function createWindow(startLocked = false): void {
     minWidth: 720,
     minHeight: 560,
     show: false,
-    backgroundColor: '#080c16',
+    // The resolved theme's page colour, painted before the renderer exists.
+    backgroundColor: themeBackground(),
     ...windowIcon,
     title: 'MyQRLWallet',
     autoHideMenuBar: true,
@@ -302,10 +304,18 @@ app
   .then(async () => {
     // Native windows and menus open before the wallet window reports its
     // language, so start in the saved choice.
-    const { language: savedLanguage } = await readSettings();
+    const saved = await readSettings();
     applyLanguage(
-      startupLanguage(savedLanguage, app.getPreferredSystemLanguages(), app.getLocale()),
+      startupLanguage(saved.language, app.getPreferredSystemLanguages(), app.getLocale()),
     );
+    // The theme is main's: the stored choice (or the default when the user
+    // never chose) drives nativeTheme before any window or dialog exists.
+    initTheme(nativeTheme, saved.theme);
+    onThemeChanged((state) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.setBackgroundColor(themeBackground(state.resolved));
+      mainWindow.webContents.send(EVENTS.THEME_CHANGED, state);
+    });
     logMain(`[boot] MyQRLWallet ${app.getVersion()} packaged=${app.isPackaged}`);
     // chromium app user model id (Windows notifications / taskbar grouping).
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID);

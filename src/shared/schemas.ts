@@ -11,8 +11,11 @@
  */
 import { z } from 'zod';
 import { LANGUAGES } from './language';
+import { THEMES } from './theme';
 
 export const LanguageSchema = z.enum(LANGUAGES);
+/** The colour theme a renderer may pick: exactly one of three strings. */
+export const ThemePreferenceSchema = z.enum(THEMES);
 import { MLDSA87, SCHEME } from './constants';
 import { QRL_ADDRESS_PATTERN } from './address';
 import { assertValidQrlAddressCase } from './addressCase';

@@ -1,7 +1,7 @@
 # Electron 44 upgrade review
 
-This historical review covers Desktop 1.4.1 and Electron 44.7.0. Desktop 1.4.10
-uses Electron 44.11.2, Chromium 152.0.7977.169 and Node 24.22.2; see
+This historical review covers Desktop 1.4.1 and Electron 44.7.0. Desktop 1.4.11
+uses Electron 44.11.5, Chromium 152.0.7977.169 and Node 24.22.3; see
 [SECURITY.md](../SECURITY.md) for the current runtime baseline and limits.
 
 The desktop runtime moves from Electron 42.11.12 to 44.7.0, declared as

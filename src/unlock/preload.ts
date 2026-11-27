@@ -49,3 +49,55 @@ const api = {
 };
 
 contextBridge.exposeInMainWorld('unlockBridge', api);
+
+// ---- Colour theme (styling only) -------------------------------------------
+// Sets data-theme="light" on <html> for the light colour set and removes it for
+// dark; the stylesheet keys on that attribute. The resolved theme comes from
+// the creation-time argument (first frame), then from main's pull and push.
+// Each value is checked against the literal list and anything else is ignored.
+// Nothing here is exposed to the page, and a failure leaves the dark set on
+// with the bridge above already mounted.
+const THEME_ARGUMENT = '--qrl-theme=';
+let wantedTheme: 'dark' | 'light' | null = null;
+let themeObserver: MutationObserver | null = null;
+function paintTheme(): boolean {
+  // Null while the preload runs: <html> does not exist yet.
+  const root = document.querySelector('html');
+  if (!root || wantedTheme === null) return false;
+  if (wantedTheme === 'light') root.setAttribute('data-theme', 'light');
+  else root.removeAttribute('data-theme');
+  return true;
+}
+function applyTheme(resolved: unknown): void {
+  if (resolved !== 'dark' && resolved !== 'light') return;
+  wantedTheme = resolved;
+  if (paintTheme() || themeObserver) return;
+  // The preload runs before <html> exists: paint as soon as the parser adds
+  // it, before the page's first script and its first frame.
+  const observer = new MutationObserver(() => {
+    if (paintTheme()) {
+      observer.disconnect();
+      themeObserver = null;
+    }
+  });
+  themeObserver = observer;
+  observer.observe(document, { childList: true });
+}
+function resolvedTheme(raw: unknown): unknown {
+  return typeof raw === 'object' && raw !== null ? Reflect.get(raw, 'resolved') : undefined;
+}
+try {
+  const argument = process.argv.find((entry) => entry.startsWith(THEME_ARGUMENT));
+  if (argument !== undefined) applyTheme(argument.slice(THEME_ARGUMENT.length));
+  ipcRenderer.on('wallet:themeChanged', (_event: Electron.IpcRendererEvent, raw: unknown) => {
+    applyTheme(resolvedTheme(raw));
+  });
+  ipcRenderer.invoke('unlock:getTheme').then(
+    (raw: unknown) => {
+      applyTheme(resolvedTheme(raw));
+    },
+    () => undefined,
+  );
+} catch {
+  // Styling only: the window keeps the dark colour set.
+}
