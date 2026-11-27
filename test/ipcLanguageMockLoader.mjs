@@ -5,7 +5,7 @@ const mockUrl = `data:text/javascript,${encodeURIComponent(`
     isDestroyed() { return false; }
   }
   export class WebContentsView {}
-  export const ipcMain = { handle() {} };
+  export const ipcMain = { handle() {}, on() {} };
   export const shell = {};
   export const dialog = { async showMessageBox() { throw new Error('Unexpected dialog'); } };
   export const screen = new EventEmitter();

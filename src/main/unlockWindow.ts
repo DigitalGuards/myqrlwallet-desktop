@@ -11,6 +11,7 @@
  * revealing the wallet behind it.
  */
 import { getLanguage, onLanguageChanged, t } from './language';
+import { getThemeState, onThemeChanged, themeArgument, themeBackground } from './theme';
 import path from 'node:path';
 import { APP_URLS, isAppDocument } from '../shared/appUrls';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
@@ -151,6 +152,18 @@ export function registerUnlockIpc(deps: UnlockDeps): void {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
     return getLanguage();
   });
+  // Colours only: the preload maps the resolved theme to one of two bundled
+  // colour sets. Nothing else of this window depends on it.
+  onThemeChanged((state) => {
+    if (unlockWin && !unlockWin.isDestroyed()) {
+      unlockWin.setBackgroundColor(themeBackground(state.resolved));
+      unlockWin.webContents.send(EVENTS.THEME_CHANGED, state);
+    }
+  });
+  ipcMain.handle('unlock:getTheme', (event) => {
+    if (!fromUnlockWindow(event)) throw new Error('unauthorized');
+    return getThemeState();
+  });
 
   ipcMain.handle('unlock:getInfo', async (event) => {
     if (!fromUnlockWindow(event)) throw new Error('unauthorized');
@@ -282,11 +295,12 @@ export function showUnlockWindow(deps: UnlockDeps): void {
     maximizable: false,
     fullscreenable: false,
     show: false,
-    backgroundColor: '#080c16',
+    backgroundColor: themeBackground(),
     ...windowIcon,
     title: t('unlock.title'),
     autoHideMenuBar: true,
-    webPreferences: hardenedWebPreferences(preload),
+    // The resolved theme rides along for the first frame (colours only).
+    webPreferences: { ...hardenedWebPreferences(preload), additionalArguments: [themeArgument()] },
   });
   unlockWin = win;
 

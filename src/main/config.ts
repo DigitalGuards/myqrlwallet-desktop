@@ -349,8 +349,10 @@ function frontendOrigins(): string[] {
     // dApp-connect relay (same origin).
     'https://qrlwallet.com',
     'wss://qrlwallet.com',
-    // block explorer API (token + NFT discovery).
-    'https://zondscan.com',
+    // block explorer API (token + NFT discovery). The explorer moved from
+    // zondscan.com to shorscan.com; the bundled renderer builds every explorer
+    // link and API call from the shorscan.com base (scripts/build-renderer.sh).
+    'https://shorscan.com',
   ];
 }
 

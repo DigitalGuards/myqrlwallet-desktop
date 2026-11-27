@@ -44,7 +44,14 @@ test('the renderer explorer defaults are allowed by connect-src', () => {
   }
 });
 
-test('the explorer is zondscan.com', () => {
-  assert.equal(rendererDefault('VITE_EXPLORER_URL_PRODUCTION'), 'https://zondscan.com');
-  assert.ok(connectSrc().includes('https://zondscan.com'));
+test('the explorer is shorscan.com', () => {
+  assert.equal(rendererDefault('VITE_EXPLORER_URL_PRODUCTION'), 'https://shorscan.com');
+  assert.equal(rendererDefault('VITE_EXPLORER_URL_DEVELOPMENT'), 'https://shorscan.com');
+  assert.ok(connectSrc().includes('https://shorscan.com'));
+});
+
+// The bundled renderer derives every explorer link and API call from the
+// build-time explorer base, so nothing it ships reaches the old host.
+test('connect-src no longer lists the old explorer host', () => {
+  assert.equal(connectSrc().includes('https://zondscan.com'), false);
 });

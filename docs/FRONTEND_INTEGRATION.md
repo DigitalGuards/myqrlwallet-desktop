@@ -196,6 +196,32 @@ import tabs, route `setActiveAccount` through `setActiveWallet`, drive the
 account list from `listWallets`, and pass the removed address to
 `removeWallet`.
 
+### Colour theme
+
+Main owns the theme, because the unlock window paints before the renderer
+exists. All three members are optional for a renderer that also runs in older
+shells:
+
+- `qrlWallet.theme?: { theme: 'dark' | 'light' | 'system', resolved: 'dark' | 'light' }`:
+  main's stored choice (or the default, `system`, when the user never chose) and
+  its resolution, read once per document start before the page's first script.
+  When present, the renderer applies `resolved`, shows `theme` in its Theme
+  row and ignores its own stored choice.
+- `qrlWallet.setTheme?(theme): Promise<void>`: the user's pick from the Theme
+  row. Main validates it as one of the three strings, stores it, sets
+  `nativeTheme.themeSource` and restyles the unlock window, the settings panel
+  and the window backgrounds. When main cannot store the choice, the promise
+  rejects with the fixed message `theme not saved` and nothing changes; the
+  detail stays in the main log.
+- `qrlWallet.onThemeChanged?(cb): () => void`: a new choice, or an OS
+  appearance flip while the choice is `system`. The callback receives the
+  `{ theme, resolved }` pair only; the return value unsubscribes. A change
+  that arrived after the document started and before the subscription is
+  handed over once, just after subscribing.
+
+The wallet window's background is the resolved theme's page colour
+(`#080c16` dark, `#f3f4f7` light) before the renderer paints.
+
 ### Typed-data signing
 
 `window.qrlWallet.requestSignature({ kind: 'typedData', payload, signer, origin })`
@@ -284,12 +310,17 @@ Autolock state reaches the wallet UI through `onLockStateChanged`.
 
 ## Build the bundled renderer
 
-Desktop 1.4.10 uses frontend main revision
-`b04bfca533d09a48755d8758572950d7a2d201b3`, the web wallet released on 2026-11-05.
-This includes English, German, Spanish, Russian and Simplified Chinese catalogs,
-the desktop language choice on the Settings page, the Add NFT picker fix, the
-dApp approval visibility gate, the typed-data chain check and the frontend zod
-fix. `.github/workflows/ci.yml` pins the same full revision.
+Desktop 1.4.11 uses frontend revision
+`f137af3a8e65de0d21a98962547a605af5ef9cf1`, the web wallet of the November 2026
+rollout (branch `release/2026-11-rollout-prod`). It builds on the web wallet of
+2026-11-05 that 1.4.10 bundles and adds plain rows on the Settings page with a
+Theme row next to Language (the main process holds the choice, see
+[Colour theme](#colour-theme); the web wallet's own default is `system`), account and network re-checks before NFT
+transfers and token creation sign, error codes that match the failure for dApp
+requests, `@qrlwallet/connect` 5.2.1 and the shorscan.com explorer host.
+`.github/workflows/ci.yml` pins the same full revision. The pinned commit is
+reachable from frontend main once the frontend release is merged with a merge
+commit, and the frontend release branch stays until then.
 
 `scripts/build-renderer.sh` (run via `npm run build:renderer:frontend`) resolves
 the frontend checkout, installs its locked dependencies, builds it and stages

@@ -9,12 +9,17 @@
 /**
  * IPC channels exposed to the renderer through the preload contextBridge.
  * Every channel is request/response (`ipcRenderer.invoke` / `ipcMain.handle`).
+ * The one synchronous read (the theme at document start) is listed apart, in
+ * `SYNC` below.
  * The renderer never sees these strings directly: the preload wraps each one
  * in a narrow named function, so a compromised renderer cannot invoke an
  * arbitrary channel.
  */
 export const IPC = {
   SET_LANGUAGE: 'wallet:setLanguage',
+  /** Stores the user's colour theme choice (dark, light or system) and
+   * restyles every surface main paints. */
+  SET_THEME: 'wallet:setTheme',
   /** Returns the on-chain balance for an address (read-only, no unlock). */
   GET_BALANCE: 'wallet:getBalance',
   /** Assembles an unsigned transaction (nonce/gas/chainId filled from RPC). */
@@ -66,9 +71,27 @@ export const IPC = {
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 
+/**
+ * Synchronous reads the wallet preload makes once per document start, before
+ * the page's first script. Only the theme: the wallet document can reload
+ * during the window's life (main reloads it after a native wallet removal, the
+ * renderer can reload itself), and a value passed at window creation would be
+ * stale after a later choice. Main answers from memory on every path, sender
+ * gated, and registers the listener before the wallet window exists (an
+ * unanswered or unregistered synchronous call would hang the renderer). The
+ * preload exposes only the resulting frozen value.
+ */
+export const SYNC = {
+  GET_THEME: 'wallet:getTheme',
+} as const;
+
 /** Renderer-facing event channels (main -> renderer, one-way). */
 export const EVENTS = {
   LANGUAGE_CHANGED: 'wallet:languageChanged',
+  /** Emitted with `{ theme, resolved }` when the choice changes or the OS
+   * appearance flips while the choice is `system`. Sent to the wallet window,
+   * the unlock window and the settings view. */
+  THEME_CHANGED: 'wallet:themeChanged',
   /** Emitted with a boolean `locked` whenever the signer session changes. */
   LOCK_STATE_CHANGED: 'wallet:lockStateChanged',
   /** Emitted with a raw qrlconnect:// URI string that arrived via the OS

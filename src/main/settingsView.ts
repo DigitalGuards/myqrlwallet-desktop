@@ -31,6 +31,7 @@
  * wallet window because the panel has no window of its own.
  */
 import { getLanguage, onLanguageChanged } from './language';
+import { getThemeState, onThemeChanged, themeArgument, themeBackground } from './theme';
 import path from 'node:path';
 import { APP_URLS, isAppDocument } from '../shared/appUrls';
 import {
@@ -131,6 +132,18 @@ export function registerSettingsIpc(deps: SettingsDeps): void {
   ipcMain.handle('settings:getLanguage', (event) => {
     if (!fromSettingsView(event)) throw new Error('unauthorized');
     return getLanguage();
+  });
+  // Colours only: the preload maps the resolved theme to one of two bundled
+  // colour sets. Nothing else of this panel depends on it.
+  onThemeChanged((state) => {
+    if (settingsView && !settingsView.webContents.isDestroyed()) {
+      settingsView.setBackgroundColor(themeBackground(state.resolved));
+      settingsView.webContents.send(EVENTS.THEME_CHANGED, state);
+    }
+  });
+  ipcMain.handle('settings:getTheme', (event) => {
+    if (!fromSettingsView(event)) throw new Error('unauthorized');
+    return getThemeState();
   });
 
   ipcMain.handle('settings:get', async (event) => {
@@ -386,11 +399,14 @@ export function showSettingsView(deps: SettingsDeps): void {
   if (!win) return; // resolveOpenAction already excluded this; narrowing only.
 
   const preload = path.join(__dirname, '../preload/settings.js');
-  const view = new WebContentsView({ webPreferences: hardenedWebPreferences(preload) });
+  // The resolved theme rides along for the first frame (colours only).
+  const view = new WebContentsView({
+    webPreferences: { ...hardenedWebPreferences(preload), additionalArguments: [themeArgument()] },
+  });
   settingsView = view;
-  // Pre-paint color = the design-system canvas (--background, #080c16) so the
-  // first frame matches settings.css exactly.
-  view.setBackgroundColor('#080c16');
+  // Pre-paint color = the design-system canvas (--background of the resolved
+  // theme) so the first frame matches settings.css exactly.
+  view.setBackgroundColor(themeBackground());
 
   // Present-failure watchdog: settings gates nothing, so a view that cannot
   // present is simply destroyed and the wallet stays usable. Attaching only

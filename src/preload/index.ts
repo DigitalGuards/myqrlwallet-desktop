@@ -6,18 +6,66 @@
  *
  * HARD RULES (enforced by review, see CLAUDE.md):
  *  - Expose ONLY narrow, named, parameterised async wrappers over
- *    `ipcRenderer.invoke`. Never expose `ipcRenderer` itself, nor a bound
- *    `invoke`, nor `.on/.send`: that would hand the renderer the ability to
- *    call any channel and defeat the per-channel allowlist.
+ *    `ipcRenderer.invoke`, event wrappers that strip the event object, and
+ *    frozen plain values. Never expose `ipcRenderer` itself, nor a bound
+ *    `invoke`, nor `.on/.send/.sendSync`: that would hand the renderer the
+ *    ability to call any channel and defeat the per-channel allowlist.
+ *  - The one synchronous call (SYNC.GET_THEME) runs here, once, before the
+ *    page's first script. Only its validated, frozen result is exposed.
  *  - No key material ever passes through here, in either direction.
  */
 import { contextBridge, ipcRenderer } from 'electron';
-import { BRIDGE_KEY, EVENTS, IPC } from '../shared/constants';
+import { BRIDGE_KEY, EVENTS, IPC, SYNC } from '../shared/constants';
 import type { QrlWalletApi, QrlWalletNetwork } from '../shared/bridge';
+import type { ThemePreference, ThemeState } from '../shared/theme';
 
 // Replaced by electron-vite with this build's network record, derived from the
 // same table main pins (src/main/config.ts networkBuildDefines).
 declare const __QRL_WALLET_NETWORK__: QrlWalletNetwork;
+
+// The theme pair, checked against the literal lists here (a shared runtime
+// import would add a chunk the sandbox cannot load). Anything else is dropped.
+function themeState(raw: unknown): ThemeState | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const theme: unknown = Reflect.get(raw, 'theme');
+  const resolved: unknown = Reflect.get(raw, 'resolved');
+  const preference: ThemePreference | undefined =
+    theme === 'dark' || theme === 'light' || theme === 'system' ? theme : undefined;
+  if (preference === undefined || (resolved !== 'dark' && resolved !== 'light')) return undefined;
+  return Object.freeze({ theme: preference, resolved });
+}
+
+const sameTheme = (a: ThemeState | undefined, b: ThemeState | undefined): boolean =>
+  a?.theme === b?.theme && a?.resolved === b?.resolved;
+
+// One listener for main's theme pushes, registered at document start before
+// the synchronous read, so a push that arrives before the renderer subscribes
+// is kept. It records the latest valid pair and hands it to the subscribers.
+let latestTheme: ThemeState | undefined;
+const themeSubscribers = new Set<(state: ThemeState) => void>();
+try {
+  ipcRenderer.on(EVENTS.THEME_CHANGED, (_event: unknown, raw: unknown): void => {
+    const state = themeState(raw);
+    if (!state) return;
+    latestTheme = state;
+    for (const deliver of [...themeSubscribers]) deliver(state);
+  });
+} catch {
+  // Pushes stay unavailable; the start value below still applies.
+}
+
+// Main's theme when this document starts, before the page's first script.
+// Never throws: a failed or invalid read leaves `theme` out (the renderer then
+// keeps its browser behaviour) and the bridge still mounts.
+function startTheme(): ThemeState | undefined {
+  try {
+    return themeState(ipcRenderer.sendSync(SYNC.GET_THEME));
+  } catch {
+    return undefined;
+  }
+}
+const theme = startTheme();
+latestTheme ??= theme;
 
 const api: QrlWalletApi = {
   addressScheme: 'qip55-64',
@@ -25,7 +73,9 @@ const api: QrlWalletApi = {
   // made for. Main enforces the same pins on every RPC call and signature and
   // never reads this value back.
   network: Object.freeze({ ...__QRL_WALLET_NETWORK__ }),
+  ...(theme ? { theme } : {}),
   setLanguage: (language) => ipcRenderer.invoke(IPC.SET_LANGUAGE, language),
+  setTheme: (next) => ipcRenderer.invoke(IPC.SET_THEME, next),
   // A COMPATIBILITY HINT. It tells a renderer which optional request fields
   // this shell's schemas understand, so a newer renderer can omit a field an
   // older shell would reject. The security control stays the schema: every
@@ -62,6 +112,32 @@ const api: QrlWalletApi = {
     };
     ipcRenderer.on(EVENTS.DAPP_CONNECT_URI, listener);
     return () => ipcRenderer.removeListener(EVENTS.DAPP_CONNECT_URI, listener);
+  },
+  onThemeChanged: (cb) => {
+    // The event object stays in the preload listener above; only a validated
+    // { theme, resolved } pair reaches the renderer callback.
+    let heard = false;
+    const deliver = (state: ThemeState): void => {
+      heard = true;
+      cb(state);
+    };
+    themeSubscribers.add(deliver);
+    // A push that came before this subscription and moved the theme away from
+    // the start value is handed over once, after the caller has its
+    // unsubscribe, unless it unsubscribed or a newer push reached it first.
+    void Promise.resolve().then(() => {
+      if (
+        !heard &&
+        themeSubscribers.has(deliver) &&
+        latestTheme &&
+        !sameTheme(latestTheme, theme)
+      ) {
+        deliver(latestTheme);
+      }
+    });
+    return () => {
+      themeSubscribers.delete(deliver);
+    };
   },
 };
 
