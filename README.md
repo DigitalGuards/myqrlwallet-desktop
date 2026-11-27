@@ -484,7 +484,7 @@ then stages the output into this desktop checkout.
 For Desktop 1.4.11, use frontend revision
 `f137af3a8e65de0d21a98962547a605af5ef9cf1`, the web wallet of the November 2026
 rollout. CI pins that same revision for this release. See the
-[1.4.11 release notes](CHANGELOG.md#1411---2026-11-24).
+[1.4.11 release notes](CHANGELOG.md#1411---2026-11-27).
 
 ### Dependency pins
 

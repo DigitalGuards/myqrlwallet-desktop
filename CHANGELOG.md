@@ -2,7 +2,7 @@
 
 All notable changes to the MyQRLWallet desktop app are documented here.
 
-## 1.4.11 - 2026-11-24
+## 1.4.11 - 2026-11-27
 
 ### Security
 
